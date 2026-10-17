@@ -76,6 +76,8 @@ export function createCheckpointBackendFactory(
     if (settings.mode === "off") return undefined;
     let tracker: CheckpointTracker | undefined;
     let registered = false;
+    // 登记会话根目录的写入（mkdir → tmp → rename）；snapshot 等它结束，收尾时不会还有文件在落盘
+    let registering: Promise<void> = Promise.resolve();
     const warn = (message: string): void => ctx.log("warn", message);
     const get = (): CheckpointTracker => {
       tracker ??= new CheckpointTracker({
@@ -89,8 +91,9 @@ export function createCheckpointBackendFactory(
       });
       if (!registered && settings.sessionsRoot !== undefined) {
         registered = true;
-        registerSessionRoot(settings.dataDir, settings.sessionsRoot).catch((error: unknown) =>
-          ctx.log("debug", msg().session.checkpoints.registerFailed(String(error))),
+        registering = registerSessionRoot(settings.dataDir, settings.sessionsRoot).catch(
+          (error: unknown) =>
+            ctx.log("debug", msg().session.checkpoints.registerFailed(String(error))),
         );
       }
       return tracker;
@@ -134,6 +137,9 @@ export function createCheckpointBackendFactory(
       hooks,
       snapshot: async (userEntryId) => {
         try {
+          // 先让登记写完再记检查点：检查点条目落盘之后请求马上发出，不能再被它拖住
+          get();
+          await registering;
           const shadowCommit = await shadowSnapshot(userEntryId);
           await get().snapshot(userEntryId, shadowCommit !== undefined ? { shadowCommit } : {});
         } catch (error) {
