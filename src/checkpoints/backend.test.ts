@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -94,5 +103,18 @@ describe("createCheckpointBackendFactory", () => {
     expect(await reopened.gitHint("u1")).toBeUndefined();
     await new Promise((r) => setTimeout(r, 20));
     expect(await readSessionRoots(dataDir)).toEqual([join(root, "sessions")]);
+  });
+
+  it("snapshot 返回时会话根目录已登记完成，file-history 里没有残留临时文件", async () => {
+    const backend = createCheckpointBackendFactory({
+      mode: "tools",
+      dataDir,
+      sessionsRoot: join(root, "sessions"),
+    })(ctx())!;
+    turn = "u1";
+    await backend.snapshot("u1");
+    const dir = join(dataDir, "file-history");
+    expect(existsSync(join(dir, "roots.json"))).toBe(true);
+    expect(readdirSync(dir).filter((name) => name.includes(".tmp-"))).toEqual([]);
   });
 });
