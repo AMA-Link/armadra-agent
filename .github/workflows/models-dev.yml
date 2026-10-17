@@ -99,8 +99,12 @@ jobs:
           echo "由 \`.github/workflows/models-dev.yml\` 生成（\`node scripts/update-models-dev.mjs\`，数据 MIT © models.dev）。目录里与新快照相同的覆盖项已自动删除。" >> "$body"
           echo "BODY_PATH=$body" >> "$GITHUB_ENV"
 
+      # 分支在开 PR 之前已经推上去；没有权限开 PR（仓库未允许 Actions 创建 PR 且没有
+      # MODELS_DEV_PR_TOKEN）时不让作业失败，改在下一步给出提示和手动开 PR 的链接
       - name: create / update PR
+        id: pr
         if: steps.diff.outputs.changed == 'true'
+        continue-on-error: true
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.MODELS_DEV_PR_TOKEN || github.token }}
@@ -118,3 +122,18 @@ jobs:
           labels: |
             models-dev
             ${{ steps.update.outputs.review == 'true' && 'needs-review' || '' }}
+
+      - name: PR 未能创建时的提示
+        if: steps.pr.outcome == 'failure'
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          url="https://github.com/$REPO/compare/main...chore/models-dev-refresh?expand=1"
+          echo "::warning title=models-dev PR 未创建::快照已推到 chore/models-dev-refresh。请在仓库 Settings → Actions → General 允许 Actions 创建 PR，或配置 secret MODELS_DEV_PR_TOKEN；也可以手动开 PR：$url"
+          {
+            echo "### models-dev：快照已推送，PR 未创建"
+            echo
+            echo "- 分支：\`chore/models-dev-refresh\`"
+            echo "- 手动开 PR：$url"
+            echo "- 根治：Settings → Actions → General 勾选「Allow GitHub Actions to create and approve pull requests」，或配置 secret \`MODELS_DEV_PR_TOKEN\`"
+          } >> "$GITHUB_STEP_SUMMARY"
