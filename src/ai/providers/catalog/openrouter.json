@@ -137,7 +137,6 @@
     {
       "id": "z-ai/glm-5.3",
       "name": "Z.ai: GLM 5.3",
-      "maxTokens": 943718,
       "thinkingLevelMap": {
         "off": null,
         "minimal": null,

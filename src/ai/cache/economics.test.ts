@@ -5,10 +5,19 @@ import { evaluateWarm, expectedSavings, priceTokens, warmBreakEven } from "./eco
 
 const registry = new ProviderRegistry({ keys: { useEnv: false, userAuthFile: null } });
 
+// 盈亏表的黄金值按这组价格算；价格固定在测试里，不随每周刷新的 models.dev 快照漂移
+const PRICES: Record<string, NonNullable<Model["cost"]>> = {
+  "anthropic/claude-fable-5-1": { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
+  "anthropic/claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  "moonshot/kimi-k3": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3 },
+  "deepseek/deepseek-flash": { input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0 },
+};
+
 function catalog(ref: string): Model {
   const lookup = registry.findModel(ref);
   if (!lookup.ok) throw new Error(`missing ${ref}`);
-  return lookup.model;
+  const cost = PRICES[ref];
+  return cost === undefined ? lookup.model : { ...lookup.model, cost };
 }
 
 const MIN = 0.05;

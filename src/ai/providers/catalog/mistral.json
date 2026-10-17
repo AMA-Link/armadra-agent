@@ -30,12 +30,6 @@
       }
     },
     {
-      "id": "magistral-medium-latest",
-      "cost": {
-        "cacheRead": 0.2
-      }
-    },
-    {
       "id": "codestral-latest"
     },
     {
@@ -70,12 +64,6 @@
       "id": "ministral-8b-latest",
       "cost": {
         "cacheRead": 0.01
-      }
-    },
-    {
-      "id": "pixtral-large-latest",
-      "cost": {
-        "cacheRead": 0.2
       }
     }
   ]
