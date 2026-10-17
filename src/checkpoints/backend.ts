@@ -137,9 +137,11 @@ export function createCheckpointBackendFactory(
       hooks,
       snapshot: async (userEntryId) => {
         try {
+          // 先让登记写完再记检查点：检查点条目落盘之后请求马上发出，不能再被它拖住
+          get();
+          await registering;
           const shadowCommit = await shadowSnapshot(userEntryId);
           await get().snapshot(userEntryId, shadowCommit !== undefined ? { shadowCommit } : {});
-          await registering;
         } catch (error) {
           warn(msg().session.checkpoints.createFailed(describe(error)));
         }
