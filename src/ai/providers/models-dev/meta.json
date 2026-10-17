@@ -125,6 +125,31 @@
       "name": "Muse Spark 1.3 Contributor",
       "reasoning": true,
       "release_date": "2026-09-02"
+    },
+    "muse-wonder-1.0": {
+      "canonical_model_id": "meta/muse-wonder-1.0",
+      "cost": {
+        "cache_read": 0.2,
+        "input": 4,
+        "output": 20
+      },
+      "family": "muse",
+      "limit": {
+        "context": 1048576,
+        "output": 131072
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ]
+      },
+      "name": "Muse Wonder",
+      "reasoning": true,
+      "release_date": "2026-10-12"
     }
   },
   "name": "Meta"
