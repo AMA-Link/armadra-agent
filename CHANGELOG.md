@@ -5,6 +5,19 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## 0.9.0 (2026-10-20)
+
+Version aligned with Armadra and armadra-cloud (all three products now share 0.9.0). No protocol constants changed.
+
+### Fixes
+
+- **Checkpoints no longer slow down the first request**: the wait for the session root registration now happens before the checkpoint entry is written to disk, and the turn-start snapshot waits for that registration, so the end-of-turn cleanup of the temporary directory no longer races with it (#211, #213).
+
+### Maintenance
+
+- **models.dev snapshot refreshed**: two Mistral overrides removed because upstream withdrew those models; the cache keep-warm break-even golden values now use fixed prices so they do not drift when the snapshot is refreshed (#215, #216).
+- **CI**: docs-only changes run only the light `docs` job; the models.dev refresh job no longer fails when it lacks permission to open a PR and prints a manual link in the summary instead (#210, #212, #214).
+
 ## 0.8.1 (2026-10-11)
 
 ### Maintenance
