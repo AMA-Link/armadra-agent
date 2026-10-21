@@ -155,8 +155,8 @@ stdin 关闭后等已开始的运行结束再退出（0）；`ama` 进程的 std
 
 `AcpClient`（`@armadra/agent/acp`）：`initialize`、`newSession`、`resumeSession`（优先，不回放）、`loadSession`、`listSessions`、`closeSession`、`prompt`、`setMode`、`cancel`。
 
-- 声明的客户端能力：`session.configOptions: {}`（接 select 型配置项，不声明 boolean）；不声明 `fs` / `terminal`（Agent 发来的
-  `fs/*`、`terminal/*` 请求回 method not found），也不声明 `auth.terminal`（ama 没有可借给 Agent 的交互终端）。
+- 声明的客户端能力：`session.configOptions: {}`（接 select 型配置项，不声明 boolean）；不声明 `fs`（Agent 发来的 `fs/*` 请求回 method not found）；`terminal` 只在构造参数给了
+  `onTerminal` 时声明（见下），也不声明 `auth.terminal`（ama 没有可借给 Agent 的交互终端）。
 - 线路两侧开 `$/cancel_request`：本端请求的 `signal` 在发出后 abort 会通知 Agent 撤回；Agent 撤回挂起的
   `session/request_permission` / `elicitation/create` 时处理器的 `signal` abort，答 `cancelled` / `cancel`（处理器之后给的选择不作数）。
 - `session/request_permission` 交给 `onPermission`；没有处理器时回首个 `reject_once`（无人值守）。
@@ -171,7 +171,11 @@ stdin 关闭后等已开始的运行结束再退出（0）；`ama` 进程的 std
   与连接关闭时挂起的一律回 `{ action: "cancel" }`。ama 自己作客户端时不给处理器，从不替人填表。
 - 会话配置项：开会话（new / load / resume）答的 `configOptions` 原样交回；`setConfigOption(sessionId, configId, value)` 发
   `session/set_config_option`，答复是全部配置项的新状态。
-- `AcpClient.features`：`{ mcpServers, elicitation, configOptions }`，宿主据此做特性检测。
+- `terminal/*`（Agent 向宿主要终端）：构造参数给了 `onTerminal(method, params, signal)` 才在 `initialize` 声明
+  `clientCapabilities.terminal: true`，并把 `terminal/create|output|wait_for_exit|kill|release` 连同原样参数交给它，返回值即答复，
+  抛 `RpcError` 回对应错误；没给时声明 `terminal: false`、请求回 method not found（与旧版相同）。权限、cwd 限制与输出上限由宿主负责；
+  ama 自己作客户端时不给处理器。
+- `AcpClient.features`：`{ mcpServers, elicitation, configOptions, terminal }`，宿主据此做特性检测。
 
 `AcpDriver` 在客户端之上实现驱动契约（`AgentDriver`）：
 

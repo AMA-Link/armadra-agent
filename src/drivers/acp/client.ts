@@ -3,7 +3,8 @@
  *
  * JSON-RPC over NDJSON（{@link JsonRpcPeer}），手写零依赖；`@armadra/agent/acp` 导出供 Armadra 复用。
  *
- * - 不声明 `fs` / `terminal` 能力：Agent 发来的 `fs/*`、`terminal/*` 请求一律 method not found。
+ * - 不声明 `fs` 能力：Agent 发来的 `fs/*` 请求一律 method not found。`terminal` 同理，除非构造参数给了
+ *   `onTerminal`：此时声明 `terminal: true`，`terminal/*` 请求交给它（ama 自己作客户端不给）。
  * - `session/request_permission` 交给 `onPermission`（驱动再交给 ama 的审批通道，只交给人）；
  *   没有处理器时按无人值守回首个 `reject_once`（没有则 cancelled）。
  * - `cancel(sessionId)` 发 `session/cancel` 通知，并让该会话所有挂起的权限请求回 `cancelled`
@@ -55,6 +56,12 @@ export interface AcpClientHandlers {
    * `signal`：该会话被 cancel、连接关闭时 abort（此时回 `{ action: "cancel" }`，不必再答）。
    */
   onElicitation?(params: AcpElicitationParams, signal: AbortSignal): Promise<AcpElicitationResult>;
+  /**
+   * `terminal/*`（create / output / wait_for_exit / kill / release）：宿主替 Agent 起终端。给了它才声明
+   * `clientCapabilities.terminal: true` 并把这些请求交给它；`method` 是完整方法名，`params` 原样交回，返回值即
+   * 答复，抛 `RpcError` 回对应错误。`signal`：连接关闭时 abort。权限、cwd 限制与输出上限由宿主负责。
+   */
+  onTerminal?(method: string, params: unknown, signal: AbortSignal): Promise<unknown>;
   onProtocolError?(line: string, reason: string): void;
   onClose?(): void;
 }
@@ -96,13 +103,15 @@ export class AcpClient {
    * 本版客户端支持的可选能力，供宿主做特性检测（旧版没有这个字段，旧一点的只有 `mcpServers`）：
    * - `mcpServers`：开会话时可经 {@link AcpSessionOptions} 传 MCP 服务器；
    * - `elicitation`：构造参数 `onElicitation` 接 `elicitation/create`；
-   * - `configOptions`：`setConfigOption` 与开会话答的 `configOptions`。
+   * - `configOptions`：`setConfigOption` 与开会话答的 `configOptions`；
+   * - `terminal`：构造参数 `onTerminal` 接 `terminal/*`。
    */
   static readonly features: {
     readonly mcpServers: true;
     readonly elicitation: true;
     readonly configOptions: true;
-  } = { mcpServers: true, elicitation: true, configOptions: true };
+    readonly terminal: true;
+  } = { mcpServers: true, elicitation: true, configOptions: true, terminal: true };
 
   private readonly peer: JsonRpcPeer;
   /** sessionId → 挂起权限请求的取消器。 */
@@ -160,7 +169,7 @@ export class AcpClient {
         protocolVersion: ACP_PROTOCOL_VERSION,
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
-          terminal: false,
+          terminal: this.options.onTerminal !== undefined,
           session: { configOptions: {} },
           ...(this.options.onElicitation !== undefined ? { elicitation: {} } : {}),
         },
@@ -283,6 +292,8 @@ export class AcpClient {
   ): Promise<unknown> {
     if (method === ACP_METHODS.elicitationCreate && this.options.onElicitation !== undefined)
       return this.onElicitation(params, connection);
+    if (method.startsWith("terminal/") && this.options.onTerminal !== undefined)
+      return this.options.onTerminal(method, params, connection);
     if (method !== ACP_METHODS.requestPermission)
       throw new RpcError(RPC_ERRORS.methodNotFound, `client does not support ${method}`);
     const request = params as AcpRequestPermissionParams;

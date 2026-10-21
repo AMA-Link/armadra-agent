@@ -1,4 +1,6 @@
+import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
+import { JsonRpcPeer, RpcError } from "../jsonrpc.js";
 import { assertAcpWire } from "../../../test/helpers/acp-schema.js";
 import { memoryTransport } from "../test-support.js";
 import { runFakeAcpAgent } from "./testing/fake-agent.js";
@@ -33,6 +35,7 @@ describe("AcpClient 开会话的 mcpServers", () => {
       mcpServers: true,
       elicitation: true,
       configOptions: true,
+      terminal: true,
     });
   });
 
@@ -279,5 +282,80 @@ describe("[ACP-D] AcpClient 的 $/cancel_request", () => {
     expect(answer?.msg["result"]).toEqual({ outcome: { outcome: "cancelled" } });
     assertAcpWire(peer.wire);
     await peer.transport.terminate();
+  });
+});
+
+describe("AcpClient 的 terminal/*", () => {
+  type OnTerminal = NonNullable<ConstructorParameters<typeof AcpClient>[0]["onTerminal"]>;
+
+  /** 客户端与一个最小的对端 Agent（只答 initialize），返回 initialize 收到的参数。 */
+  async function connectTerminal(onTerminal?: OnTerminal) {
+    const toAgent = new PassThrough();
+    const fromAgent = new PassThrough();
+    let initParams: { clientCapabilities: Record<string, unknown> } | undefined;
+    const agent = new JsonRpcPeer({
+      input: toAgent,
+      output: fromAgent,
+      onRequest: async (method, params) => {
+        if (method !== "initialize") throw new RpcError(-32601, method);
+        initParams = params as typeof initParams;
+        return { protocolVersion: 1, agentCapabilities: {} };
+      },
+    });
+    const client = new AcpClient({
+      input: fromAgent,
+      output: toAgent,
+      ...(onTerminal !== undefined ? { onTerminal } : {}),
+    });
+    await client.initialize();
+    return {
+      agent,
+      capabilities: initParams!.clientCapabilities,
+      close: () => {
+        client.close();
+        agent.close();
+      },
+    };
+  }
+
+  it("没给处理器：不声明 terminal，terminal/* 回 method not found", async () => {
+    const { agent, capabilities, close } = await connectTerminal();
+    expect(capabilities["terminal"]).toBe(false);
+    await expect(
+      agent.request("terminal/create", { sessionId: "s", command: "ls" }),
+    ).rejects.toMatchObject({
+      code: -32601,
+    });
+    close();
+  });
+
+  it("给了处理器：声明 terminal: true，五个方法与参数原样交给它，返回值即答复", async () => {
+    const seen: Array<[string, unknown]> = [];
+    const { agent, capabilities, close } = await connectTerminal(async (method, params) => {
+      seen.push([method, params]);
+      return { method };
+    });
+    expect(capabilities["terminal"]).toBe(true);
+    for (const method of [
+      "terminal/create",
+      "terminal/output",
+      "terminal/wait_for_exit",
+      "terminal/kill",
+      "terminal/release",
+    ]) {
+      await expect(agent.request(method, { terminalId: "t1" })).resolves.toEqual({ method });
+    }
+    expect(seen).toHaveLength(5);
+    expect(seen[0]).toEqual(["terminal/create", { terminalId: "t1" }]);
+    close();
+  });
+
+  it("处理器抛 RpcError 即回对应错误；非 terminal/ 方法仍 method not found", async () => {
+    const { agent, close } = await connectTerminal(async () => {
+      throw new RpcError(-32602, "bad cwd");
+    });
+    await expect(agent.request("terminal/create", {})).rejects.toMatchObject({ code: -32602 });
+    await expect(agent.request("fs/read_text_file", {})).rejects.toMatchObject({ code: -32601 });
+    close();
   });
 });

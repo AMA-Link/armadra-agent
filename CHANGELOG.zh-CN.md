@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### ACP
+
+- **`AcpClient` 可接 `terminal/*`**：构造参数新增 `onTerminal(method, params, signal)`，给了它 `initialize` 才声明 `clientCapabilities.terminal: true`，并把 `terminal/create|output|wait_for_exit|kill|release` 交给宿主；不给时线路不变。`AcpClient.features.terminal` 为 `true`（#218）。
+
 ## 0.9.0（2026-10-20）
 
 版本号与 Armadra、armadra-cloud 对齐（三个产品统一为 0.9.0），协议常量无变化。

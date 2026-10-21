@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### ACP
+
+- **`AcpClient` can serve `terminal/*`**: the new `onTerminal(method, params, signal)` constructor option makes `initialize` declare `clientCapabilities.terminal: true` and hands `terminal/create|output|wait_for_exit|kill|release` to the host; without it nothing changes on the wire. `AcpClient.features.terminal` is `true` (#218).
+
 ## 0.9.0 (2026-10-20)
 
 Version aligned with Armadra and armadra-cloud (all three products now share 0.9.0). No protocol constants changed.
