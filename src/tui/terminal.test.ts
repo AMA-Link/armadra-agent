@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   BRACKETED_PASTE_OFF,
   BRACKETED_PASTE_ON,
+  KEYBOARD_ENHANCE_OFF,
+  KEYBOARD_ENHANCE_ON,
   MemoryTerminal,
   ProcessTerminal,
 } from "./terminal.js";
@@ -41,6 +43,32 @@ class FakeStdout extends EventEmitter {
 }
 
 describe("ProcessTerminal", () => {
+  it("enhancedKeys: false 不写增强键盘序列；环境变量 AMA_KEYBOARD_PROTOCOL=off 同效", () => {
+    for (const mode of ["option", "env"] as const) {
+      const stdin = new FakeStdin();
+      const stdout = new FakeStdout();
+      const saved = process.env["AMA_KEYBOARD_PROTOCOL"];
+      if (mode === "env") process.env["AMA_KEYBOARD_PROTOCOL"] = "off";
+      try {
+        const terminal = new ProcessTerminal({
+          stdin: stdin as unknown as NodeJS.ReadStream,
+          stdout: stdout as unknown as NodeJS.WriteStream,
+          ...(mode === "option" ? { enhancedKeys: false } : {}),
+        });
+        terminal.start(
+          () => undefined,
+          () => undefined,
+        );
+        terminal.stop();
+      } finally {
+        if (saved === undefined) delete process.env["AMA_KEYBOARD_PROTOCOL"];
+        else process.env["AMA_KEYBOARD_PROTOCOL"] = saved;
+      }
+      expect(stdout.written.join("")).not.toContain("\x1b[>1u");
+      expect(stdout.written.join("")).not.toContain("\x1b[<u");
+    }
+  });
+
   it("raw 模式、括号粘贴开关、输入切分、resize、停止恢复", () => {
     const stdin = new FakeStdin();
     const stdout = new FakeStdout();
@@ -48,6 +76,7 @@ describe("ProcessTerminal", () => {
       stdin: stdin as unknown as NodeJS.ReadStream,
       stdout: stdout as unknown as NodeJS.WriteStream,
       escTimeoutMs: 5,
+      enhancedKeys: true,
     });
     const inputs: string[] = [];
     let resized = 0;
@@ -57,7 +86,7 @@ describe("ProcessTerminal", () => {
     );
     expect(stdin.isRaw).toBe(true);
     expect(stdin.paused).toBe(false);
-    expect(stdout.written).toEqual([BRACKETED_PASTE_ON]);
+    expect(stdout.written).toEqual([BRACKETED_PASTE_ON + KEYBOARD_ENHANCE_ON]);
     expect(terminal.columns).toBe(90);
     expect(terminal.rows).toBe(30);
 
@@ -71,6 +100,7 @@ describe("ProcessTerminal", () => {
     expect(stdin.isRaw).toBe(false);
     expect(stdin.paused).toBe(true);
     expect(stdout.written.at(-1)).toContain(BRACKETED_PASTE_OFF);
+    expect(stdout.written.at(-1)).toContain(KEYBOARD_ENHANCE_OFF);
     expect(stdout.written.join("")).not.toContain("\x1b[2J");
     stdin.emit("data", "late");
     expect(inputs).toHaveLength(3);

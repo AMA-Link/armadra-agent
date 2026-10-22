@@ -2,7 +2,7 @@
  * 终端抽象（设计 §12.2、§12.3、§12.8）。[B4]
  *
  * - `Terminal`：TUI 只依赖这个接口——尺寸、写入、输入回调、尺寸变化回调。
- * - `ProcessTerminal`：真实 TTY。raw 模式、括号粘贴 `?2004`、stdout `resize`（SIGWINCH）；
+ * - `ProcessTerminal`：真实 TTY。raw 模式、括号粘贴 `?2004`、增强键盘上报（Ctrl+Enter 可区分）、stdout `resize`（SIGWINCH）；
  *   输入经 `StdinBuffer` 切分，括号粘贴以 `ESC[200~正文ESC[201~` 一次交给 onInput。
  *   停止时关括号粘贴、显示光标、恢复 cooked 模式；**不清屏**（回滚保留对话）。
  * - `MemoryTerminal`：测试用。记录每次写入，并用 `VirtualScreen` 还原屏幕与回滚。
@@ -24,6 +24,13 @@ export interface Terminal {
 
 export const BRACKETED_PASTE_ON = "\x1b[?2004h";
 export const BRACKETED_PASTE_OFF = "\x1b[?2004l";
+/**
+ * 增强键盘上报（只写不查，没有回包）：kitty 键盘协议 disambiguate 标志（入栈 `CSI > 1 u`，出栈 `CSI < u`）与 xterm
+ * modifyOtherKeys 级别 1（`CSI > 4;1 m`，复位 `CSI > 4 m`）。用来让终端把 Ctrl+Enter 发成 `ESC[13;5u` /
+ * `ESC[27;5;13~`，不然它和 Enter 同为 `\r`。不支持的终端忽略这两条；tmux 只在 `extended-keys` 开着时转发。
+ */
+export const KEYBOARD_ENHANCE_ON = "\x1b[>1u\x1b[>4;1m";
+export const KEYBOARD_ENHANCE_OFF = "\x1b[<u\x1b[>4m";
 export const SHOW_CURSOR = "\x1b[?25h";
 export const HIDE_CURSOR = "\x1b[?25l";
 
@@ -31,12 +38,15 @@ export interface ProcessTerminalOptions {
   stdin?: NodeJS.ReadStream;
   stdout?: NodeJS.WriteStream;
   escTimeoutMs?: number;
+  /** 开增强键盘上报；缺省开，环境变量 `AMA_KEYBOARD_PROTOCOL=off` 关。 */
+  enhancedKeys?: boolean;
 }
 
 export class ProcessTerminal implements Terminal {
   private readonly stdin: NodeJS.ReadStream;
   private readonly stdout: NodeJS.WriteStream;
   private readonly escTimeoutMs: number | undefined;
+  private readonly enhancedKeys: boolean;
   private buffer: StdinBuffer | null = null;
   private wasRaw = false;
   private dataListener: ((chunk: Buffer | string) => void) | null = null;
@@ -46,6 +56,8 @@ export class ProcessTerminal implements Terminal {
     this.stdin = options.stdin ?? process.stdin;
     this.stdout = options.stdout ?? process.stdout;
     this.escTimeoutMs = options.escTimeoutMs;
+    this.enhancedKeys =
+      options.enhancedKeys ?? process.env["AMA_KEYBOARD_PROTOCOL"]?.toLowerCase() !== "off";
   }
 
   get columns(): number {
@@ -77,7 +89,7 @@ export class ProcessTerminal implements Terminal {
     this.stdin.resume();
     this.resizeListener = onResize;
     this.stdout.on("resize", this.resizeListener);
-    this.write(BRACKETED_PASTE_ON);
+    this.write(BRACKETED_PASTE_ON + (this.enhancedKeys ? KEYBOARD_ENHANCE_ON : ""));
   }
 
   stop(): void {
@@ -85,7 +97,7 @@ export class ProcessTerminal implements Terminal {
     this.buffer.flush();
     this.buffer.destroy();
     this.buffer = null;
-    this.write(BRACKETED_PASTE_OFF + SHOW_CURSOR);
+    this.write((this.enhancedKeys ? KEYBOARD_ENHANCE_OFF : "") + BRACKETED_PASTE_OFF + SHOW_CURSOR);
     if (this.dataListener) this.stdin.off("data", this.dataListener);
     if (this.resizeListener) this.stdout.off("resize", this.resizeListener);
     this.dataListener = null;
