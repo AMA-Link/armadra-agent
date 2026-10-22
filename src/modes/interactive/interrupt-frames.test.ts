@@ -1,6 +1,6 @@
 /**
- * 打断并立即发送的整屏帧（zh + en）：运行中输入框有字时运行提示行带「Enter 排队 · Ctrl+X 打断并发送」，
- * 有排队插话时队列末行带「Ctrl+X 立即发送」；按 Ctrl+X 后旧回合中止、新回合立刻以「插话 + 本条」开始。
+ * 打断并立即发送的整屏帧（zh + en）：运行中输入框有字时运行提示行带「Enter 排队 · Ctrl+Enter 打断并发送」，
+ * 有排队插话时队列末行带「Ctrl+Enter 立即发送」；按 Ctrl+Enter 后旧回合中止、新回合立刻以「插话 + 本条」开始。
  * 更新：`AMA_UPDATE_GOLDEN=1 pnpm vitest run src/modes/interactive`。
  */
 
@@ -13,11 +13,12 @@ afterEach(async () => {
   await cleanupStarted();
 });
 
-const CTRL_X = "\x18";
+/** Ctrl+Enter（kitty 键盘协议上报）；回退键 Ctrl+Enter 在 interrupt-keys.test.ts 覆盖。 */
+const CTRL_ENTER = "\x1b[13;5u";
 
 for (const locale of ["zh", "en"] as const) {
   describe(`打断并发送（${locale}）`, () => {
-    it("提示行 → Ctrl+X → 新回合收到「插话 + 本条」", async () => {
+    it("提示行 → Ctrl+Enter → 新回合收到「插话 + 本条」", async () => {
       setLocale(locale);
       const s = await start(
         [
@@ -34,7 +35,11 @@ for (const locale of ["zh", "en"] as const) {
       s.terminal.sendInput("\r");
       s.type("do Y instead");
       const frames: string[] = [];
-      await waitScreen(s, (screen) => /Ctrl\+X (打断并发送|interrupt & send)/.test(screen), "hint");
+      await waitScreen(
+        s,
+        (screen) => /Ctrl\+Enter (打断并发送|interrupt & send)/.test(screen),
+        "hint",
+      );
       frames.push(snapshot(s.terminal, "draft while running"));
       const settled = s.until(
         (e) =>
@@ -42,11 +47,11 @@ for (const locale of ["zh", "en"] as const) {
           e.message.role === "assistant" &&
           e.message.stopReason !== "aborted",
       );
-      s.terminal.sendInput(CTRL_X);
+      s.terminal.sendInput(CTRL_ENTER);
       await settled;
       await s.handle.session().waitForIdle();
       s.frame();
-      frames.push(snapshot(s.terminal, "after Ctrl+X"));
+      frames.push(snapshot(s.terminal, "after Ctrl+Enter"));
       const users = s.handle
         .session()
         .messages.filter((m) => m.role === "user")

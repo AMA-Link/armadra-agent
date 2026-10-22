@@ -6,8 +6,8 @@
 |Working on it
 |
 |  ↳ steer  also this
-|    Alt+↑ take back · Ctrl+X send now · Esc refill and interrupt
-|⠋ Replying · 0s · ↓≈4 · Esc to interrupt · Enter queue · Ctrl+X interrupt & send
+|    Alt+↑ take back · Ctrl+Enter send now · Esc refill and interrupt
+|⠋ Replying · 0s · ↓≈4 · Esc to interrupt · Enter queue · Ctrl+Enter interrupt & send
 |────────────────────────────────────────────────────────────────────────────────────────────────────
 |› do Y instead
 |────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@
 |
 |
 
-# after Ctrl+X · viewport 100x24 cursor=15,2
+# after Ctrl+Enter · viewport 100x24 cursor=15,2
 |✻ ama <version> · fake/echo · Manual · /help
 |
 |› first

@@ -1,5 +1,5 @@
 /**
- * 打断并立即发送（交互模式）：运行中按 `app.message.interrupt`（缺省 `Ctrl+X`；`ui.enterWhileRunning:
+ * 打断并立即发送（交互模式）：运行中按 `app.message.interrupt`（缺省 `Ctrl+Enter`，回退 `Ctrl+X`；`ui.enterWhileRunning:
  * "interrupt"` 时是 Enter）→ `prompt(text, { interrupt: true })`：取走排队的插话、中止当前回合（工具按
  * abort 收尾），以「插话… + 本条」开新回合（会话里 origin `interrupt`）。不走「中断即撤回」。
  */
