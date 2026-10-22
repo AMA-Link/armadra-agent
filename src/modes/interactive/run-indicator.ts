@@ -14,11 +14,11 @@
  * [W7-C] 有阻塞中的前台任务时可丢弃项前面加 `Ctrl+B 转后台`；有停靠的审批时 `↓ Agent 栏` 换成
  * `↓ 处理审批`。顺序 `Esc 中断 · Ctrl+B 转后台 · ↓ Agent 栏`，窄屏从后往前丢。
  *
- * [打断并发送] 输入框有字时可丢弃项最前面加 `Enter 排队 · Ctrl+X 打断并发送`（`ui.enterWhileRunning:
- * "interrupt"` 时语义互换），顺序 `Esc 中断 · Enter 排队 · Ctrl+X 打断并发送 · Ctrl+B 转后台 · ↓ Agent 栏`。
+ * [打断并发送] 输入框有字时可丢弃项最前面加 `Enter 排队 · Ctrl+Enter 打断并发送`（`ui.enterWhileRunning:
+ * "interrupt"` 时语义互换），顺序 `Esc 中断 · Enter 排队 · Ctrl+Enter 打断并发送 · Ctrl+B 转后台 · ↓ Agent 栏`。
  *
  * 排队消息：缩进 2 列（挂在当前回合下），`↳ 插话 / 之后  文本` 整体 muted、标签 dim；超过 3 条首行
- * `… 另 N 条`；末行 `Alt+↑ 取回 · Esc 回填并中断`，有插话时中间加 `Ctrl+X 立即发送`（interrupt 模式是 Enter）。
+ * `… 另 N 条`；末行 `Alt+↑ 取回 · Esc 回填并中断`，有插话时中间加 `Ctrl+Enter 立即发送`（interrupt 模式是 Enter）。
  */
 
 import { msg } from "../../i18n/index.js";
@@ -40,7 +40,7 @@ export interface RunIndicatorDeps {
   render(): void;
   /** [W7-C] `app.tasks.background` 的按键标签（`Ctrl+B`）；没有绑定时不提示。 */
   backgroundKey?: string;
-  /** `app.message.interrupt` 的按键标签（`Ctrl+X`）；没有绑定时不提示。 */
+  /** `app.message.interrupt` 的按键标签（`Ctrl+Enter`）；没有绑定时不提示。 */
   interruptKey?: string;
 }
 

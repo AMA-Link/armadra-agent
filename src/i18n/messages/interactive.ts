@@ -23,7 +23,7 @@ export const en = {
     keyHints: [
       "Enter send (while running = steer)  Alt+Enter queue after this turn  Shift+Enter / Ctrl+J newline",
       "Esc interrupt (queued messages go back to the editor)  Alt+↑ take back the last queued message",
-      "Ctrl+X (while running) interrupt the current turn and send the input now, queued steers first; ui.enterWhileRunning: interrupt swaps it with Enter",
+      "Ctrl+Enter (while running; Ctrl+X where the terminal cannot tell it from Enter) interrupt the current turn and send the input now, queued steers first; ui.enterWhileRunning: interrupt swaps it with Enter",
       "Idle Esc Esc: empty input = rewind (/rewind), with text = clear (↑ to restore)",
       "Shift+Tab / Tab (empty input) cycle permission mode (confirm before Bypass)  Ctrl+L model  Ctrl+T thinking level  Ctrl+O expand tool output and thinking",
       "Approval: 1–3 or ↑↓ Enter to choose, y allow  a allow for this session  n / Esc deny  v full input",
@@ -177,7 +177,7 @@ export const zh = {
     keyHints: [
       "Enter 发送（运行中 = 插话）  Alt+Enter 排到本轮之后  Shift+Enter / Ctrl+J 换行",
       "Esc 中断（排队消息回填编辑器）  Alt+↑ 取回最后一条排队消息",
-      "Ctrl+X（运行中）打断当前回合并立即发送输入（排队的插话在前）；ui.enterWhileRunning: interrupt 时与 Enter 互换",
+      "Ctrl+Enter（运行中；终端分不出它与 Enter 时用 Ctrl+X）打断当前回合并立即发送输入（排队的插话在前）；ui.enterWhileRunning: interrupt 时与 Enter 互换",
       "空闲时 Esc Esc：输入框为空 = 回滚（/rewind），有字 = 清空（↑ 取回）",
       "Shift+Tab / Tab（输入为空时）切换权限模式（进入 Bypass 前确认）  Ctrl+L 模型  Ctrl+T 思考级别  Ctrl+O 展开工具输出与思考",
       "审批：1–3 或 ↑↓ Enter 选择，y 允许  a 本会话允许同类  n / Esc 拒绝  v 完整输入",

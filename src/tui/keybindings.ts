@@ -43,11 +43,12 @@ export const DEFAULT_KEYBINDINGS = {
   "app.message.dequeue": ["alt+up"],
   /**
    * 运行中打断当前回合并立即发送输入框的文字（连同排队的插话）；`ui.enterWhileRunning: "interrupt"` 时与
-   * Enter 互换（它变成排队）。缺省 `Ctrl+X`：各终端（macOS Terminal、iTerm2、tmux、Windows Terminal）都原样
-   * 送达 0x18，且没有别的绑定；`Ctrl+Enter` 不开 kitty 键盘协议时与 Enter 无法区分，`Ctrl+S` 可能被 XOFF
-   * 流控吃掉，`Alt+Enter` 已是 followUp，`Alt+<字母>` 在 macOS 缺省不送 Meta，`Ctrl+]` 在非美式键盘难按。
+   * Enter 互换（它变成排队）。缺省 `Ctrl+Enter`（提示与帮助显示第一项）+ 回退 `Ctrl+X`：`ProcessTerminal` 启动时
+   * 开增强键盘上报，支持的终端把 Ctrl+Enter 发成 `ESC[13;5u` / `ESC[27;5;13~`；不支持的终端（macOS Terminal、
+   * Windows Terminal 稳定版等）里 Ctrl+Enter 与 Enter 同为 `\r`（或变成 `\n` = Ctrl+J 换行），这时用 `Ctrl+X`
+   * （各终端原样送达 0x18，且没有别的绑定）。`Alt+Enter` 已是 followUp，`Shift+Enter` / `Ctrl+J` 是换行，不占用。
    */
-  "app.message.interrupt": ["ctrl+x"],
+  "app.message.interrupt": ["ctrl+enter", "ctrl+x"],
   "app.permission.cycle": ["shift+tab", "tab"],
   "app.tools.expand": ["ctrl+o"],
   "app.model.select": ["ctrl+l"],

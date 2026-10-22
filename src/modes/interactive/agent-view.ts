@@ -18,7 +18,7 @@
  * 所查看的任务在等审批时标题显示「等待审批」，审批框照常以覆盖层弹在视图上面。
  * [W7-C] `Ctrl+B`（`app.tasks.background`）转后台正在看的任务（只对前台任务有效，否则落回编辑器）；
  * 视图里另认 `/tasks bg [id]`。
- * [打断并发送] `Ctrl+X`（`app.message.interrupt`）= 打断该子 Agent 当前回合并立即发送（`registry.message` 的
+ * [打断并发送] `Ctrl+Enter`（`app.message.interrupt`，回退 `Ctrl+X`）= 打断该子 Agent 当前回合并立即发送（`registry.message` 的
  * interrupt）；外部 Agent 的驱动不能中断回合时退回排队并提示。`ui.enterWhileRunning: "interrupt"` 时与 Enter 互换。
  */
 

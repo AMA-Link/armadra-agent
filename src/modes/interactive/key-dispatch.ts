@@ -16,7 +16,7 @@
  * [W7-C] `app.tasks.background`（缺省 `Ctrl+B`）：有阻塞中的前台任务时全部转后台（不看输入框），底部提示
  * 「已转后台：t2 …」；没有时落回编辑器（光标左移），不吞键。Esc 中断只连带前台任务，仍在运行的后台任务
  * 写进中断提示。
- * [打断并发送] 运行中 Enter 缺省排队（steer）；`app.message.interrupt`（缺省 `Ctrl+X`）= 打断当前回合并立即
+ * [打断并发送] 运行中 Enter 缺省排队（steer）；`app.message.interrupt`（缺省 `Ctrl+Enter`，回退 `Ctrl+X`）= 打断当前回合并立即
  * 以输入框的文字（连同排队的插话）开新回合（`prompt{interrupt:true}`）。`ui.enterWhileRunning: "interrupt"`
  * 时两者互换。补全打开、有覆盖层（审批 / 选择器）时不触发；斜杠命令照常当命令；空闲时专用键等同 Enter。
  */

@@ -33,6 +33,18 @@ describe("键位表", () => {
     expect(keys.matches("\x03", "app.clear")).toBe(true);
   });
 
+  it("打断并发送缺省 Ctrl+Enter（kitty / modifyOtherKeys 两种上报），回退 Ctrl+X，不占用 Enter 与换行键", () => {
+    const keys = new Keybindings();
+    expect(keys.keys("app.message.interrupt")).toEqual(["ctrl+enter", "ctrl+x"]);
+    for (const seq of ["\x1b[13;5u", "\x1b[27;5;13~", "\x18"])
+      expect(keys.matches(seq, "app.message.interrupt")).toBe(true);
+    for (const seq of ["\r", "\n", "\x1b[13;2u", "\x1b\r"])
+      expect(keys.matches(seq, "app.message.interrupt")).toBe(false);
+    expect(keys.matches("\x1b[13;5u", "tui.editor.submit")).toBe(false);
+    expect(keys.matches("\x1b[13;5u", "tui.editor.newLine")).toBe(false);
+    expect(keys.matches("\x1b[13;5u", "app.message.followUp")).toBe(false);
+  });
+
   it("从文件加载：不存在为空覆盖，坏 JSON 记警告", () => {
     const dir = mkdtempSync(join(tmpdir(), "ama-kb-"));
     expect(loadKeybindingsFile(join(dir, "missing.json"))).toEqual({ overrides: {}, warnings: [] });
