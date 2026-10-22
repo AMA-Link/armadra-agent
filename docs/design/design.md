@@ -1177,7 +1177,7 @@ export interface Theme { fg(name: SemanticColor, s: string): string; bg(...): st
 ### §12.3 输入
 
 - `StdinBuffer`：攒完整转义序列；括号粘贴 `ESC[200~ … ESC[201~` 跨 data 块累积为一次 `paste` 事件；孤立 ESC 判定超时 `AMA_TUI_ESC_TIMEOUT`（SSH / tmux 100 ms，本地 10 ms）。
-- `keys.ts`：解析 CSI / SS3、修饰键参数、Alt 前缀、`\r` / `\n`、Shift+Enter 的常见变体（`\x1b[13;2u`、`\x1b[27;2;13~`）、Ctrl 组合；**不查询 Kitty 协议**（tmux 下回包会污染输入）。
+- `keys.ts`：解析 CSI / SS3、修饰键参数、Alt 前缀、`\r` / `\n`、Shift+Enter 的常见变体（`\x1b[13;2u`、`\x1b[27;2;13~`）、Ctrl 组合；**不查询 Kitty 协议**（tmux 下回包会污染输入；只写开启序列，见 `terminal.ts`）。
 - 键位（固定表 + `keybindings.json` 覆盖）：`Enter` 提交；`Shift+Enter` / `Ctrl+J` 换行；`Esc` 中断（clear_queue → abort，队列文本回填）；`Ctrl+C` 清输入，再按退出；`Ctrl+D` 空输入退出；`Alt+Enter` 以 followUp 提交；`Alt+Up` 取回队列末条；`Shift+Tab` 循环权限模式；`Ctrl+O` 展开 / 折叠工具输出与思考块；`Ctrl+L` 模型选择；`Ctrl+T` 思考级别；`Up/Down` 历史（单行时）/ 行移动；`Tab` 接受补全；`Ctrl+U/K/W` 行编辑。
 
 ### §12.4 编辑器（`components/editor*.ts`）
@@ -1209,15 +1209,15 @@ export interface Theme { fg(name: SemanticColor, s: string): string; bg(...): st
 
 ### §12.8 在 Armadra 终端节点（tmux）里的可用性保证
 
-| 问题              | 对策                                                                                                |
-| ----------------- | --------------------------------------------------------------------------------------------------- |
-| 括号粘贴透传      | 启动时发 `\x1b[?2004h`；tmux 会把外层粘贴转成内层序列；状态机只认 `ESC[200~ / ESC[201~`；e2e 里实测 |
-| `\r` 提交         | 粘贴结束后 `\r` 走普通键路径 = 提交；粘贴内部的 `\n` 是数据                                         |
-| 回滚              | 主屏模式，不用备用屏；对话历史滚进 tmux 回滚，Armadra 的 `context_terminal` 读得到                  |
-| 同步输出          | tmux ≥ 3.4 透传 `?2026`；旧版忽略无害                                                               |
-| 宽度变化          | SIGWINCH → 全量重绘；编辑器按新宽重排                                                               |
-| 无 Kitty / 无鼠标 | 不查询、不启用；避免回包                                                                            |
-| 自动降级          | `TERM=dumb`、非 TTY、`--no-tui` → line 模式（同一套命令与审批 `y/n/a` 问答）                        |
+| 问题                   | 对策                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| 括号粘贴透传           | 启动时发 `\x1b[?2004h`；tmux 会把外层粘贴转成内层序列；状态机只认 `ESC[200~ / ESC[201~`；e2e 里实测 |
+| `\r` 提交              | 粘贴结束后 `\r` 走普通键路径 = 提交；粘贴内部的 `\n` 是数据                                         |
+| 回滚                   | 主屏模式，不用备用屏；对话历史滚进 tmux 回滚，Armadra 的 `context_terminal` 读得到                  |
+| 同步输出               | tmux ≥ 3.4 透传 `?2026`；旧版忽略无害                                                               |
+| 宽度变化               | SIGWINCH → 全量重绘；编辑器按新宽重排                                                               |
+| 无 Kitty 查询 / 无鼠标 | 不查询、不开鼠标；只写 Kitty / modifyOtherKeys 的开启序列（Ctrl+Enter 可区分），没有回包            |
+| 自动降级               | `TERM=dumb`、非 TTY、`--no-tui` → line 模式（同一套命令与审批 `y/n/a` 问答）                        |
 
 ### §12.9 砍掉清单
 

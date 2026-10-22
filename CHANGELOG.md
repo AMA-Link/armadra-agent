@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### TUI
+
+- **Interrupt-and-send moves to `Ctrl+Enter`, `Ctrl+X` stays as the fallback**: `app.message.interrupt` now defaults to `["ctrl+enter", "ctrl+x"]`; the hint line, `/help` and the `/interrupt` description show `Ctrl+Enter`. To make `Ctrl+Enter` distinguishable from Enter, the real terminal now writes the kitty keyboard protocol disambiguate flag and xterm modifyOtherKeys level 1 at start (enable sequences only, no query, so no replies mix into input) and restores them when it stops; `AMA_KEYBOARD_PROTOCOL=off` disables it. kitty, Ghostty and iTerm2 work out of the box; macOS Terminal, Windows Terminal and the xterm.js terminal node cannot tell it from Enter, so use `Ctrl+X` there. Custom `app.message.interrupt` bindings keep working. Docs: docs/guides/tui.md (#221).
+
 ## 0.9.1 (2026-10-21)
 
 ### ACP

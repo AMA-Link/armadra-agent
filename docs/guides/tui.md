@@ -114,7 +114,7 @@ Accept edits | shift+tab 切换    claude-opus-5-5 medium | Ctx 3.0% 8.2k/272k a
 | 按键                 | 作用                                                                                                                                                                                                                                           |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Enter                | 发送；运行中 = steer（排队，等下一个投递点：本次模型回复结束或本批工具结束）                                                                                                                                                                   |
-| Ctrl+X               | 运行中打断并立即发送：中止当前回合（模型流与正在跑的工具，工具记「aborted by user」），立刻以输入框的文字开新回合，排队的插话拼在前面；输入为空时只把排队的插话立即送出。空闲时等同 Enter。`ui.enterWhileRunning: "interrupt"` 时与 Enter 互换 |
+| Ctrl+Enter / Ctrl+X  | 运行中打断并立即发送：中止当前回合（模型流与正在跑的工具，工具记「aborted by user」），立刻以输入框的文字开新回合，排队的插话拼在前面；输入为空时只把排队的插话立即送出。空闲时等同 Enter。`ui.enterWhileRunning: "interrupt"` 时与 Enter 互换 |
 | Alt+Enter            | 运行中排到本轮之后（followUp）；空闲时等同 Enter                                                                                                                                                                                               |
 | Shift+Enter / Ctrl+J | 换行                                                                                                                                                                                                                                           |
 | Esc                  | 中断：排队的消息回填到输入框，然后停止当前运行（连带前台子 Agent 任务；后台任务不受影响，提示里写明）；补全打开时先关补全                                                                                                                      |
@@ -136,7 +136,7 @@ Accept edits | shift+tab 切换    claude-opus-5-5 medium | Ctx 3.0% 8.2k/272k a
 
 ### 打断并立即发送
 
-运行中按 Enter 缺省是**排队**（steer）：消息等下一个投递点才送达——模型在长篇输出、或工具在跑一个 5 分钟的命令时要等很久。要立刻改方向，在输入框写好后按 **`Ctrl+X`**（动作 `app.message.interrupt`）：
+运行中按 Enter 缺省是**排队**（steer）：消息等下一个投递点才送达——模型在长篇输出、或工具在跑一个 5 分钟的命令时要等很久。要立刻改方向，在输入框写好后按 **`Ctrl+Enter`**（动作 `app.message.interrupt`；终端分不出它与 Enter 时按回退键 `Ctrl+X`）：
 
 - 当前回合立即中止：模型流断开，正在执行的工具按中断收尾（每个工具调用恰有一个结果，记「aborted by user」），被打断的回复按中断规则留在会话里；随后**不用再按 Enter**，这段文字直接作为新回合的用户消息发出（会话里 `origin: "interrupt"`，消息区标 `↳ 打断`）。
 - 已排队的插话一起带上：按入队顺序拼在这段文字前面（空行分隔）；排到本轮之后的（Alt+Enter）留在队列，新回合结束后照常送达。
@@ -144,9 +144,23 @@ Accept edits | shift+tab 切换    claude-opus-5-5 medium | Ctx 3.0% 8.2k/272k a
 - 补全打开、审批框或选择器打开时不触发；斜杠命令照常当命令执行；输入为空时只把排队的插话立即送出（没有可发的内容时提示一行）。
 - 中断的请求前缀不变：新回合的请求以被打断那次请求的全部消息为前缀，缓存照常命中。
 - Esc 不变：仍是中断并把排队消息回填输入框（中断即撤回见下文），不会自动发送。
-- 想让 Enter 直接打断：`/config` 里把 `ui.enterWhileRunning` 设为 `interrupt`（立即生效），这时 Enter 打断并发送、`Ctrl+X` 排队。
+- 想让 Enter 直接打断：`/config` 里把 `ui.enterWhileRunning` 设为 `interrupt`（立即生效），这时 Enter 打断并发送、`Ctrl+Enter`（和 `Ctrl+X`）排队。
 
-缺省键选 `Ctrl+X` 的原因：macOS Terminal、iTerm2、tmux、Windows Terminal 都原样送达，且没有别的绑定；`Ctrl+Enter` 不开 kitty 键盘协议时与 Enter 无法区分，`Ctrl+S` 可能被 XOFF 流控吃掉，`Alt+Enter` 已是 followUp，`Alt+字母` 在 macOS 缺省不送 Meta，`Ctrl+]` 在非美式键盘上难按。可在 `keybindings.json` 改。
+缺省键选 `Ctrl+Enter`、回退 `Ctrl+X` 的原因：要「一个修饰键 + 回车」，而 `Alt+Enter` 已是 followUp、`Shift+Enter` / `Ctrl+J` 是换行，`Ctrl+Enter` 是剩下唯一不冲突的组合。多数终端默认把它和 Enter 发成同一个 `\r`，所以 ama 启动时向终端写入（不查询、没有回包）kitty 键盘协议的 disambiguate 标志（`CSI > 1 u`）和 xterm modifyOtherKeys 级别 1（`CSI > 4;1 m`），终端停止（退出）时恢复；不支持的终端直接忽略。支持的终端把 Ctrl+Enter 发成 `ESC[13;5u` 或 `ESC[27;5;13~`，ama 早就能解析。分不出的终端里 Ctrl+Enter 仍是 Enter（或被当作 Ctrl+J 换行），这时用 `Ctrl+X`：各终端原样送达 0x18，且没有别的绑定。两个键都在缺省绑定里，不用切换；提示行与帮助显示第一个键（`Ctrl+Enter`）。想关掉增强上报：环境变量 `AMA_KEYBOARD_PROTOCOL=off`。自己改 `keybindings.json` 里的 `app.message.interrupt` 后以你的为准（写 `["ctrl+x"]` 即恢复旧行为）。
+
+兼容表（按各终端文档的协议支持整理，未在每个终端逐一实测）：
+
+| 终端                                 | 增强键盘协议                                                  | Ctrl+Enter                        | 用 Ctrl+X |
+| ------------------------------------ | ------------------------------------------------------------- | --------------------------------- | --------- |
+| kitty                                | kitty 键盘协议                                                | 可用                              | 不需要    |
+| Ghostty                              | kitty 键盘协议                                                | 可用                              | 不需要    |
+| iTerm2（3.5+）                       | kitty 键盘协议、modifyOtherKeys                               | 可用                              | 不需要    |
+| WezTerm                              | kitty 键盘协议，缺省关（`enable_kitty_keyboard = true` 打开） | 缺省不可用，打开后可用            | 缺省需要  |
+| VS Code 终端                         | 取决于版本与设置                                              | 不保证                            | 需要      |
+| macOS Terminal                       | 无                                                            | 不可用（同 Enter）                | 需要      |
+| Windows Terminal                     | 稳定版无                                                      | 不可用（送 LF，等于 Ctrl+J 换行） | 需要      |
+| Armadra 画布终端节点（xterm.js 6.0） | 无 kitty / modifyOtherKeys                                    | 不可用                            | 需要      |
+| tmux                                 | 外层终端支持且 `extended-keys on` 时转发                      | 视外层与配置                      | 否则需要  |
 
 line 模式（`--no-tui`）运行中输入 `/interrupt <文本>` 效果相同（空闲时就是普通提示）；交互界面里也认这条命令。RPC 是 `prompt` / `steer` 的 `interrupt: true`，见 [rpc.md](../reference/rpc.md)。
 
@@ -410,7 +424,7 @@ t2 explore · 运行中 1m05s · 3 轮 · ↑12k ↓3.4k · Esc 返回 · /tasks
 - 正文实时跟随：ama 子 Agent 显示子会话的全部消息与工具调用（与消息区同样的渲染）；子会话句柄已被释放（保留上限 16 个）或会话是 resume 进来的，就只读加载子会话文件，任务再次运行时接上实时事件。外部 Agent（claude / codex / ACP）显示本进程内存里的实时输出（文本、思考、工具起止、回合、提示；最多 2000 条 / 1 MB，不落盘）；ama 重启后只剩一行说明「用原 CLI resume <会话 id> 查看全文」。
 - 输入框为空时：`↑` / PgUp 上翻（暂停跟随，底部提示「已暂停跟随 · End 继续」），`↓` / PgDn 下翻，End（暂停时也可按 `f`）回到跟随；`←` `→` 切到上一个 / 下一个任务；Esc 返回主界面。输入框有字时 Esc 先清空。
 - Enter 把输入发给这个子 Agent（会话里记为 `origin: "direct"` 的 user 消息，见 [session-format.md](../reference/session-format.md)）：ama 子 Agent 运行中 → 排到它本轮结束时送达；外部 Agent 运行中或任务还在排队 → 等本次运行结束后续聊；已结束 → 后台续聊（同 `task_ctl send`，完成后主会话照常收到 `<task-notification>`）。底部一行提示发送结果。父会话的模型不知道你直接和子 Agent 说过话，结果经结束通知自然带回。
-- `Ctrl+X` 打断并发送给这个子 Agent：ama 子 Agent 运行中 → 中止它当前这一轮（工具按中断收尾）并立即以这条消息开新一轮，任务照常完成、照常通知主会话；外部 Agent 的驱动能中断单个回合（ACP `session/cancel`、Claude stream-json interrupt、Codex `turn/interrupt`）→ 中断后立即以它（连同之前排着的消息）开下一回合；不能（oneshot、宿主驱动）或任务还在并发池排队 → 退回排队并提示「不支持打断，已排队」；已结束 → 同 Enter 的后台续聊。`ui.enterWhileRunning: "interrupt"` 时与 Enter 互换。主会话不受影响。
+- `Ctrl+Enter`（回退 `Ctrl+X`）打断并发送给这个子 Agent：ama 子 Agent 运行中 → 中止它当前这一轮（工具按中断收尾）并立即以这条消息开新一轮，任务照常完成、照常通知主会话；外部 Agent 的驱动能中断单个回合（ACP `session/cancel`、Claude stream-json interrupt、Codex `turn/interrupt`）→ 中断后立即以它（连同之前排着的消息）开下一回合；不能（oneshot、宿主驱动）或任务还在并发池排队 → 退回排队并提示「不支持打断，已排队」；已结束 → 同 Enter 的后台续聊。`ui.enterWhileRunning: "interrupt"` 时与 Enter 互换。主会话不受影响。
 - 视图里 Esc 不中断任何东西：Esc 只是返回。停止子任务用 `/tasks stop <id>`，转后台用 `Ctrl+B` 或 `/tasks bg [id]`——在视图输入框里也能用（视图里只认这两条命令）。
 - 正在看的任务等审批时标题显示「等待审批」，审批框照常弹在视图上面（带 `[task:<类型>]` 来源）；它的审批停靠在栏里时，打开视图即弹出。
 
@@ -515,7 +529,7 @@ t2 explore · 运行中 1m05s · 3 轮 · ↑12k ↓3.4k · Esc 返回 · /tasks
 ## 在 tmux / Armadra 终端节点里
 
 - 括号粘贴：启动时开启；粘贴的多行内容整体进入输入框（超过 10 行或 1 000 字符折叠为 `[粘贴 #N · M 行]`），粘贴后紧跟的回车直接发送，适合由外部程序写入。
-- 除程序状态检测（见上一节，tmux 里不检测）外不查询终端能力、不开鼠标与 Kitty 键盘协议，避免回包混进输入；tmux ≥ 3.4 透传同步输出，旧版本也能正常显示。
+- 除程序状态检测（见上一节，tmux 里不检测）外不查询终端能力、不开鼠标，避免回包混进输入；Kitty 键盘协议与 modifyOtherKeys 只写开启序列、不查询（让 Ctrl+Enter 可区分，`AMA_KEYBOARD_PROTOCOL=off` 关闭）；tmux ≥ 3.4 透传同步输出，旧版本也能正常显示。
 - tmux 的缺省前缀 `C-b` 会被 tmux 客户端吃掉：转后台按 `C-b C-b`（`send-prefix` 透传），或 `↓` 进 Agent 栏按 `b`；进栏用 `↓`，不受前缀影响。
 - 窗口尺寸变化时整屏重画最后一屏，回滚里的历史不受影响。
 - 自动降级：非 TTY、`TERM=dumb`、`--no-tui` 或终端初始化失败时使用行式界面，命令与审批问答相同。

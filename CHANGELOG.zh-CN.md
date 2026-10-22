@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### TUI
+
+- **打断并发送改为 `Ctrl+Enter`，`Ctrl+X` 作回退**：`app.message.interrupt` 缺省 `["ctrl+enter", "ctrl+x"]`；提示行、`/help` 与 `/interrupt` 说明显示 `Ctrl+Enter`。为让终端把 `Ctrl+Enter` 与 Enter 分开，真实终端启动时写入 kitty 键盘协议 disambiguate 标志与 xterm modifyOtherKeys 级别 1（只写开启序列、不查询，没有回包混进输入），停止时恢复；`AMA_KEYBOARD_PROTOCOL=off` 可关。kitty、Ghostty、iTerm2 开箱可用；macOS Terminal、Windows Terminal、xterm.js 终端节点分不出它与 Enter，用 `Ctrl+X`。自定义的 `app.message.interrupt` 继续生效。文档：docs/guides/tui.md（#221）。
+
 ## 0.9.1（2026-10-21）
 
 ### ACP
