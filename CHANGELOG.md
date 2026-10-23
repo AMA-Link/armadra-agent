@@ -5,6 +5,10 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## 0.10.0 (2026-10-23)
+
+Version aligned with Armadra and armadra-cloud (all three ship 0.10.0); protocol constants unchanged. Nothing else was merged after 0.9.3.
+
 ## 0.9.3 (2026-10-22)
 
 Version aligned with Armadra and armadra-cloud (all three ship 0.9.3); protocol constants unchanged. Nothing else was merged after 0.9.2.

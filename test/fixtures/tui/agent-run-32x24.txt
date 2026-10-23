@@ -1,5 +1,5 @@
 # 前台 task 运行中 · viewport 32x24
-|✻ ama <version> · fake/echo · Bypas…
+|✻ ama <version> · fake/echo · Bypa…
 |
 |› scan it
 |
