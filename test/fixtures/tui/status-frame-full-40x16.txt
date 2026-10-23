@@ -1,5 +1,5 @@
 # status full · viewport 40x16 cursor=3,2
-|✻ ama <version> · fake/echo · Manual · /help
+|✻ ama <version> · fake/echo · Manual · /he…
 |
 |────────────────────────────────────────
 |› 输入消息，/ 命令，@ 文件，Shift+Enter…

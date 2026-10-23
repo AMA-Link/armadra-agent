@@ -1,5 +1,5 @@
 # startup · viewport 40x24 cursor=3,2
-|✻ ama <version> · fake/echo · Manual · /help
+|✻ ama <version> · fake/echo · Manual · /he…
 |
 |────────────────────────────────────────
 |› 输入消息，/ 命令，@ 文件，Shift+Enter…
@@ -25,7 +25,7 @@
 |
 
 # typed · viewport 40x24 cursor=3,27
-|✻ ama <version> · fake/echo · Manual · /help
+|✻ ama <version> · fake/echo · Manual · /he…
 |
 |────────────────────────────────────────
 |› 读一下 README，说说是什么
@@ -51,7 +51,7 @@
 |
 
 # tool running · viewport 40x24 cursor=13,2
-|✻ ama <version> · fake/echo · Manual · /help
+|✻ ama <version> · fake/echo · Manual · /he…
 |
 |› 读一下 README，说说是什么
 |
@@ -77,7 +77,7 @@
 |
 
 # settled · viewport 40x24 cursor=19,2
-|✻ ama <version> · fake/echo · Manual · /help
+|✻ ama <version> · fake/echo · Manual · /he…
 |
 |› 读一下 README，说说是什么
 |
