@@ -15,7 +15,8 @@
       },
       "modalities": {
         "input": [
-          "text"
+          "text",
+          "pdf"
         ]
       },
       "name": "Codestral 25.08",
@@ -36,7 +37,8 @@
       },
       "modalities": {
         "input": [
-          "text"
+          "text",
+          "pdf"
         ]
       },
       "name": "Codestral (latest)",
@@ -58,7 +60,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Ministral 3 14B",
@@ -80,7 +83,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Ministral 3 3B",
@@ -89,8 +93,9 @@
     },
     "ministral-3b-latest": {
       "cost": {
-        "input": 0.04,
-        "output": 0.04
+        "cache_read": 0.01,
+        "input": 0.1,
+        "output": 0.1
       },
       "family": "ministral",
       "knowledge": "2024-10",
@@ -101,7 +106,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Ministral 3B (latest)",
@@ -123,7 +129,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Ministral 3 8B",
@@ -132,8 +139,9 @@
     },
     "ministral-8b-latest": {
       "cost": {
-        "input": 0.1,
-        "output": 0.1
+        "cache_read": 0.015,
+        "input": 0.15,
+        "output": 0.15
       },
       "family": "ministral",
       "knowledge": "2024-10",
@@ -144,7 +152,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Ministral 8B (latest)",
@@ -166,7 +175,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Mistral Large 3",
@@ -176,9 +186,9 @@
     "mistral-large-4": {
       "canonical_model_id": "mistral/mistral-large-4",
       "cost": {
-        "cache_read": 0.07,
-        "input": 0.68,
-        "output": 2.09
+        "cache_read": 0.14,
+        "input": 1.36,
+        "output": 4.18
       },
       "family": "mistral-large",
       "limit": {
@@ -188,7 +198,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Mistral Large 4",
@@ -211,7 +222,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Mistral Large (latest)",
@@ -232,7 +244,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Mistral Medium 3.5",
@@ -254,7 +267,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Mistral Medium (latest)",
@@ -276,7 +290,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Mistral Small 4",
@@ -298,7 +313,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "pdf"
         ]
       },
       "name": "Mistral Small (latest)",
@@ -318,7 +334,8 @@
       "modalities": {
         "input": [
           "text",
-          "audio"
+          "audio",
+          "pdf"
         ]
       },
       "name": "Voxtral Small",
@@ -328,7 +345,7 @@
     "voxtral-small-latest": {
       "cost": {
         "input": 0.1,
-        "output": 0.3
+        "output": 0.4
       },
       "family": "voxtral",
       "limit": {
@@ -338,7 +355,8 @@
       "modalities": {
         "input": [
           "text",
-          "audio"
+          "audio",
+          "pdf"
         ]
       },
       "name": "Voxtral Small (latest)",
@@ -365,6 +383,30 @@
       "name": "GLM-5.3",
       "reasoning": true,
       "release_date": "2026-08-14"
+    },
+    "zai-glm-5-3-flash": {
+      "canonical_model_id": "zhipuai/glm-5.3-flash",
+      "cost": {
+        "cache_read": 0.03,
+        "input": 0.15,
+        "output": 0.5
+      },
+      "family": "glm-flash",
+      "limit": {
+        "context": 1048576,
+        "output": 131072
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ]
+      },
+      "name": "GLM-5.3-Flash",
+      "reasoning": true,
+      "release_date": "2026-08-26"
     }
   },
   "name": "Mistral"

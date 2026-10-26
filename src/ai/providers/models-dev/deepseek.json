@@ -3,7 +3,7 @@
   "id": "deepseek",
   "models": {
     "deepseek-flash": {
-      "canonical_model_id": "deepseek/deepseek-v4.1-flash",
+      "canonical_model_id": "deepseek/deepseek-v4.1-flash-1017",
       "cost": {
         "cache_read": 0.003,
         "input": 0.15,
@@ -15,7 +15,7 @@
       },
       "knowledge": "2025-05",
       "limit": {
-        "context": 1000000,
+        "context": 1048576,
         "output": 393216
       },
       "modalities": {
@@ -24,9 +24,9 @@
           "image"
         ]
       },
-      "name": "DeepSeek V4.1 Flash",
+      "name": "DeepSeek V4.1 Flash 1017",
       "reasoning": true,
-      "release_date": "2026-09-10"
+      "release_date": "2026-10-17"
     },
     "deepseek-v4-pro": {
       "canonical_model_id": "deepseek/deepseek-v4-pro-0813",
@@ -40,7 +40,7 @@
         "field": "reasoning_content"
       },
       "limit": {
-        "context": 1000000,
+        "context": 1048576,
         "output": 393216
       },
       "modalities": {
@@ -50,7 +50,7 @@
       },
       "name": "DeepSeek V4 Pro",
       "reasoning": true,
-      "release_date": "2026-08-12"
+      "release_date": "2026-08-13"
     }
   },
   "name": "DeepSeek"
