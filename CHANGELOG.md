@@ -14,6 +14,14 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 - **Hooks**: matcher `web_fetch(...)` matches against the `url`.
 - **Prompt budgets**: `default` grows by about 120 tokens (≈ 1 600 with codemode); the `codemode-only` limit rises from 1 775 to 1 900 (measured 1 835, the `web_fetch` declaration is inlined) and `default` + task gets its own 2 150 limit (measured 2 116). Sessions resumed from an older version miss the cache once.
 
+### Host adapter
+
+- **Runner done event (host-api 1.1)**: `HostApi.runners.onDone(handler)` is called with a `RunnerDoneEvent` (`runner`, `taskId?`, `sessionId`, `round`, `status`, `isError`, `text?` / `error?`, `startedAt`, `endedAt`, `durationMs`) whenever a round of a host-injected runner ends, so hosts no longer need to poll for task completion; handlers only observe and a throw is just logged. Adds the minor version `HOST_API_MINOR = 1` and `api.minor`; `HOST_API_VERSION` stays 1, existing hosts are unaffected, and hosts detect the feature with `typeof api.runners?.onDone === "function"`. Docs: docs/reference/host-api.md "Versioning" and "Runner done event" (#226).
+
+### Docs
+
+- docs/guides/hooks.md gains "Scope" (task sub-sessions do not fire SessionStart / SessionEnd; calls inside external agents bypass hooks) and "Hooking up each capability" (which event and matcher `web_fetch`, sub-agent start / end, background tasks, external agents and codemode orchestration use, with a hooks.json and two script examples); docs/guides/agents.md "Configuration" gains a three-line per-role model example (#227).
+
 ## 0.10.0 (2026-10-23)
 
 Version aligned with Armadra and armadra-cloud (all three ship 0.10.0); protocol constants unchanged. Nothing else was merged after 0.9.3.

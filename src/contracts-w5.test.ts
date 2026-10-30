@@ -32,7 +32,7 @@ import type {
   ToolContext,
 } from "./tools/types.js";
 import type { ApprovalRequestContext } from "./permissions/types.js";
-import type { AgentEvents, HostApi, HostRunner } from "./host/types.js";
+import type { AgentEvents, HostApi, HostRunner, RunnerDoneEvent } from "./host/types.js";
 import type { HookEvent, HookInput } from "./hooks/types.js";
 import { HOOK_EVENTS } from "./hooks/types.js";
 import { blockingDecision } from "./hooks/protocol.js";
@@ -308,7 +308,12 @@ describe("第五波 ④：runner / 驱动 / 定义文件、审批来源、宿主
 
   it("HostApi.runners 为可选面；AgentEvents 加子 Agent 与计划事件", () => {
     expectTypeOf<HostApi["runners"]>().toEqualTypeOf<
-      { provide(runner: HostRunner): () => void } | undefined
+      | {
+          provide(runner: HostRunner): () => void;
+          // [#226] host-api 1.1 的可选成员
+          onDone?(handler: (event: RunnerDoneEvent) => void | Promise<void>): () => void;
+        }
+      | undefined
     >();
     expectTypeOf<HostRunner["description"]>().toEqualTypeOf<string>();
     expectTypeOf<"subagent_start" | "subagent_end" | "plan_proposed" | "plan_resolved">().toExtend<

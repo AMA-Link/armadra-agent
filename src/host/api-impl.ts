@@ -9,9 +9,12 @@
  * [W5-EG] `runners.provide`（docs/history/wave5-plan.md §5.5，D17）：宿主注入的 runner 进本适配器的
  * {@link HostRunnerRegistry}（跨会话共享），每个主会话的外部 Agent 入口（agents/external.ts）经
  * {@link hostRunnersOf} 取到它；有宿主时 ama 不自 spawn 外部 CLI，只认这里注入的。
+ *
+ * [#226] `runners.onDone` 与 `minor`（host-api 1.1）：每轮结束的事件由 registry 的观察包装发出，
+ * 处理器异常走本适配器的 `log`。
  */
 
-import { HostRunnerRegistry } from "../drivers/host-runners.js";
+import { HostRunnerRegistry, type RunnerDoneHandler } from "../drivers/host-runners.js";
 import { AmaError } from "../errors.js";
 import { AMA_VERSION } from "../version.js";
 import type {
@@ -25,7 +28,7 @@ import type {
   HostRunner,
   InstructionSource,
 } from "./types.js";
-import { HOST_API_VERSION } from "./types.js";
+import { HOST_API_MINOR, HOST_API_VERSION } from "./types.js";
 import type { ToolDefinition, ToolRegistryApi } from "../tools/types.js";
 import type { WarmingDecisionHandler } from "../ai/cache/types.js";
 import { msg } from "../i18n/index.js";
@@ -153,16 +156,17 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
   let broker: ApprovalBroker | undefined;
   const warmingHandlers: WarmingDecisionHandler[] = [];
   let notify: HostNotify | undefined = deps.notify;
-  const runners = new HostRunnerRegistry();
   const writeErr = deps.stderr ?? ((text: string) => void process.stderr.write(text));
   const log: HostLogger =
     deps.log ??
     ((level, message) => {
       if (level === "warn" || level === "error") writeErr(`ama: [host] ${message}\n`);
     });
+  const runners = new HostRunnerRegistry({ log: (message, error) => log("error", message, error) });
 
   const api: HostApi = Object.freeze({
     version: HOST_API_VERSION,
+    minor: HOST_API_MINOR,
     agent: Object.freeze({ name: "ama" as const, version: AMA_VERSION }),
     env: Object.freeze({ ...(deps.env ?? process.env) }),
     mode: deps.mode,
@@ -242,6 +246,7 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
     }),
     runners: Object.freeze({
       provide: (runner: HostRunner) => runners.provide(runner),
+      onDone: (handler: RunnerDoneHandler) => runners.onDone(handler),
     }),
   });
   hostRunnerRegistries.set(api, runners);

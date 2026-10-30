@@ -54,6 +54,12 @@
 
 每个事件只接受上表的决策；`deny` 与 `block` 在两类事件间互换（`UserPromptSubmit` 返回 `deny` 视为 `block`，`PreToolUse` 返回 `block` 视为 `deny`），其它不接受的决策忽略并记 warning。
 
+**范围**：
+
+- `task` 子会话（`depth: 1`）以自己的 `sessionId` / `sessionFile` 跑 Hook：它内部的每次工具调用照常触发 PreToolUse / PostToolUse，将要结束时触发 `SubagentStop`（不是 `Stop`）；它**不触发** `SessionStart` / `SessionEnd`——子会话的开始与结束由父会话的 `PreToolUse(task)` 与子会话的 `SubagentStop` 表达。
+- 外部 Agent（`task(agent="claude")` 等）内部的工具调用在外部 CLI 自己的策略下运行，**不经 ama 的 Hook**；ama 这边只有父会话的 `PreToolUse(task)` / `PostToolUse(task)`，外部 Agent 也不触发 `SubagentStop`。
+- codemode 脚本里的每次内层调用逐个触发（见下文「输入」的 codemode 段）。
+
 任何事件的 stdout 都可以带 `"continue": false`：请求结束当前运行（reason 显示给用户）。`"suppressOutput": true` 被接受并合并，但当前界面本来就不显示 Hook 的 stdout，暂无可见效果。
 
 ## 输入（stdin）
@@ -171,6 +177,77 @@ Hook 在权限管线之前，是因为它是用户策略（可以改输入、可
 ## 事件观察
 
 每条 Hook 结束后发 `hook_executed{event, command, exitCode, durationMs}`（RPC 事件与宿主事件都有），超时或被信号杀死时 `exitCode` 为 null。
+
+## 按能力接入
+
+各项能力都用上面的事件接入，没有专门的事件。下表是对应关系，再往下是一份把各行放在一起的 hooks.json。
+
+| 能力                  | 事件与 matcher                                                                                                               | 能做什么                                                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `web_fetch`           | `PreToolUse` / `PostToolUse`，matcher `web_fetch` 或 `web_fetch(*docs.example.org*)`（括号内对 `toolInput.url` 文本做 glob） | PreToolUse 拒绝、改为询问或用 `updatedInput` 改 URL；PostToolUse 用 `additionalContext` 给抓回的正文加备注，`decision: "block"` 整页拒收 |
+| 子 Agent 开始         | `PreToolUse`，matcher `task`；按类型筛用 `task(*"agent":"explore"*)`（括号内是输入的 JSON 文本）                             | 输入含 `agent`、`prompt`、`model`、`background`：可以 deny，也可以用 `updatedInput` 改 prompt 或换 agent                                 |
+| 子 Agent 结束         | `SubagentStop`（输入带 `lastAssistantText`）                                                                                 | `decision: "block"` + `reason`（或退出码 2）让子会话带着 reason 再跑一轮                                                                 |
+| 子 Agent 内部的调用   | 照常的 `PreToolUse` / `PostToolUse`，输入 `depth: 1`                                                                         | 与主会话相同；脚本按 `depth` 区分主会话与子会话                                                                                          |
+| 后台任务完成          | `SubagentStop`（后台的 ama 子会话结束时同样触发）                                                                            | 桌面通知、记日志；没有单独的「后台任务完成」通知种类                                                                                     |
+| 外部 Agent            | `PreToolUse` / `PostToolUse`，matcher `task(*"agent":"claude"*)`                                                             | 拦截或改写委派本身；外部 Agent 内部的调用不经 Hook（见「范围」）                                                                         |
+| codemode 编排子 Agent | 脚本里每个 `tools.task(...)` 都是一对 `PreToolUse(task)` / `PostToolUse(task)`，输入带 `viaCodemode` 与 `parentToolCallId`   | 与模型直接调用 `task` 相同；按 `parentToolCallId` 把同一个脚本发起的任务归到一起                                                         |
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "web_fetch",
+        "hooks": [{ "type": "command", "command": "./.ama/fetch-guard.sh" }]
+      },
+      {
+        "matcher": "task(*\"agent\":\"claude\"*)",
+        "hooks": [{ "type": "command", "command": "./.ama/log-delegation.sh" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "web_fetch(*docs.example.org*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\":\"docs.example.org 的页面对应最新版本，旧版本另查\"}'"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "./.ama/subagent-tests.sh" }] }]
+  }
+}
+```
+
+`web_fetch` 行随 `web_fetch` 工具一起提供（matcher 括号内取 `url` 的改动在同一批里）。它的 matcher 只认 URL 文本上的 `*` / `?` glob；权限规则 `web_fetch(<glob>)` 是另一套写法（对 `host/path` 匹配，裸域名含子域），见 [permissions.md](permissions.md)。只想放行少数站点时优先用权限规则或 `allowlist` 模式，Hook 适合需要脚本判断的情形。
+
+只允许抓取文档站（`.ama/fetch-guard.sh`，配在上面的 `PreToolUse` `web_fetch` 下）：
+
+```sh
+#!/bin/sh
+url=$(node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).toolInput.url))')
+case "$url" in
+  https://docs.example.org/*|https://registry.npmjs.org/*) exit 0 ;;
+esac
+echo "只允许抓取文档站：$url" >&2
+exit 2
+```
+
+子任务结束时跑测试，失败就让它接着修（`.ama/subagent-tests.sh`，配在 `SubagentStop` 下）：
+
+```sh
+#!/bin/sh
+input=$(cat)
+# 已经被本 Hook 续跑过一次：放行，避免循环
+case "$input" in *'"stopHookActive":true'*) exit 0 ;; esac
+out=$(npm test --silent 2>&1) && exit 0
+echo "Tests failed; fix them before reporting back:" >&2
+printf '%s\n' "$out" | tail -n 20 >&2
+exit 2
+```
 
 ## 示例
 
