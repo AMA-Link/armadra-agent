@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Tools and permissions
+
+- **`env` / `printenv` are no longer auto-safe**: the bash subprocess inherits the whole process environment (provider API keys included), so in Auto mode a bare `env`, `printenv`, `env FOO=1` or `env | grep …` now goes to the classifier / approval instead of being allowed statically; `env FOO=1 cmd` is still judged as `cmd`. The read-only list for Plan already excluded them, so both lists now agree (#240).
+
 ## 0.11.0 (2026-10-30)
 
 ### Tools and permissions
