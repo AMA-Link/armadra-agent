@@ -3,8 +3,8 @@
  *
  * 语法：缺省 / 空串 / `*` 匹配全部；`bash` 精确；`write|edit` 多选；`canvas_*` glob；
  * `bash(git push*)` 先匹配工具名，再对参数文本做 glob；`/regex/flags` 对工具名做正则。
- * 括号内的文本：bash → `input.command`；文件类工具 → `input.path`（或 `file_path`）；
- * 其它工具 → 输入 JSON 文本。`|` 只在括号外分隔候选。只在 Pre/PostToolUse 生效。
+ * 括号内的文本：bash → `input.command`；文件类工具 → `input.path`（或 `file_path` / `pattern`）；
+ * web_fetch → `input.url`（整个 URL，与权限规则的 `host/path` 语义不同）；其它工具 → 输入 JSON 文本。`|` 只在括号外分隔候选。只在 Pre/PostToolUse 生效。
  */
 
 export type ToolMatcher = (toolName: string, input: unknown) => boolean;
@@ -44,7 +44,7 @@ export function argumentText(toolName: string, input: unknown): string {
   if (typeof input === "object" && input !== null) {
     const record = input as Record<string, unknown>;
     if (toolName === "bash" && typeof record["command"] === "string") return record["command"];
-    for (const key of ["path", "file_path", "pattern"]) {
+    for (const key of ["path", "file_path", "pattern", "url"]) {
       const value = record[key];
       if (typeof value === "string") return value;
     }

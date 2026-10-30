@@ -170,7 +170,7 @@ describe("权限真值表（6 模式 × 读 / 写 / bash × Hook 三值 + 无决
   }
 
   it("modeDecision 与表的无 Hook 一列一致（auto 的 write / execute 在这一步是 ask）", () => {
-    const permOf: Record<Exclude<ToolPermission, "memory">, CallKind> = {
+    const permOf: Record<Exclude<ToolPermission, "memory" | "network">, CallKind> = {
       read: "read",
       write: "writeIn",
       execute: "bashUnknown",

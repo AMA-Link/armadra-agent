@@ -7,6 +7,13 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+### Tools and permissions
+
+- **`web_fetch`**: a new built-in tool in the `default` preset that GETs one public http(s) URL and returns its main content as Markdown (HTML, zero-dependency converter), pretty JSON or plain text; binaries are not parsed. Output is cut at `maxChars` (50 000 by default) with `offset` to continue, the full text goes to `outputs/`, and the first line marks the content as untrusted. Same-host redirects are followed (≤ 5, re-checked per hop), cross-host ones are reported. 30 s total / 15 s first byte / 5 MB body. Search is not included (#232).
+- **Permission class `network`**: `web_fetch` asks in Manual / Accept edits (the second option becomes "allow `<host>` for this session"), asks in Plan, is denied under `-p` unless an allow rule matches, goes to the classifier in Auto and is allowed in Bypass. Rules `web_fetch(<pattern>)` match `host/path`; a bare domain covers its subdomains. Whatever the mode, local host names, private, link-local and cloud-metadata addresses (every resolved address, IPv4-mapped forms included) are refused and the connection is pinned to the checked address. No new config keys: turn it off with `tools.disabled: ["web_fetch"]`, `tools.default: ["-web_fetch"]` or `permission.deny`. The exported `ToolPermission` type gains `"network"`; protocol constants are unchanged.
+- **Hooks**: matcher `web_fetch(...)` matches against the `url`.
+- **Prompt budgets**: `default` grows by about 120 tokens (≈ 1 600 with codemode); the `codemode-only` limit rises from 1 775 to 1 900 (measured 1 835, the `web_fetch` declaration is inlined) and `default` + task gets its own 2 150 limit (measured 2 116). Sessions resumed from an older version miss the cache once.
+
 ### Host adapter
 
 - **Runner done event (host-api 1.1)**: `HostApi.runners.onDone(handler)` is called with a `RunnerDoneEvent` (`runner`, `taskId?`, `sessionId`, `round`, `status`, `isError`, `text?` / `error?`, `startedAt`, `endedAt`, `durationMs`) whenever a round of a host-injected runner ends, so hosts no longer need to poll for task completion; handlers only observe and a throw is just logged. Adds the minor version `HOST_API_MINOR = 1` and `api.minor`; `HOST_API_VERSION` stays 1, existing hosts are unaffected, and hosts detect the feature with `typeof api.runners?.onDone === "function"`. Docs: docs/reference/host-api.md "Versioning" and "Runner done event" (#226).

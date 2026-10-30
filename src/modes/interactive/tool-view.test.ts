@@ -21,6 +21,33 @@ describe("工具视图", () => {
     expect(toolSummary("task", { description: "查用法", prompt: "..." })).toBe("查用法");
     expect(toolSummary("canvas_read", { query: "节点" })).toBe("节点");
     expect(toolSummary("x", null)).toBe("");
+    expect(toolSummary("web_fetch", { url: "https://docs.example.com/a?b=1" })).toBe(
+      "docs.example.com/a?b=1",
+    );
+  });
+
+  it("web_fetch 结果行：标题 · 大小 · 格式；跨主机重定向单独一句", () => {
+    const view = new ToolView("1", "web_fetch", { url: "https://docs.example.com/a" }, { theme });
+    view.finish(
+      {
+        content: "Content fetched from https://docs.example.com/a (untrusted):\n\n# Guide",
+        details: { status: 200, bytes: 2048, title: "Guide", format: "markdown", finalUrl: "x" },
+      },
+      false,
+    );
+    expect(lines(view).slice(0, 2)).toEqual([
+      "⏺ web_fetch docs.example.com/a",
+      "  ⎿ Guide · 2.0 KB · markdown",
+    ]);
+    const moved = new ToolView("2", "web_fetch", { url: "https://a.example.com/" }, { theme });
+    moved.finish(
+      {
+        content: "Redirected to https://b.example.org/; call web_fetch with it if appropriate.",
+        details: { status: 302, bytes: 0, finalUrl: "https://b.example.org/" },
+      },
+      false,
+    );
+    expect(lines(moved)[1]).toBe("  ⎿ 重定向到 https://b.example.org/（未跟随）");
   });
 
   it("折叠：结果前 3 行 + 剩余行数；展开显示全部；错误红色", () => {

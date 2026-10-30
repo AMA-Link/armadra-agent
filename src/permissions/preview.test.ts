@@ -185,6 +185,17 @@ describe("write / edit / 其它", () => {
     expect(previewDisplayLines(many, 3)).toEqual(["1", "2", "… 另 2 行"]);
   });
 
+  it("web_fetch：一行 GET <url>（去空白、限长）", () => {
+    const p = previewAction(req("web_fetch", { url: "https://docs.example.com/a?b=1" }), {
+      cwd: root,
+    });
+    expect(p).toEqual({
+      kind: "other",
+      lines: ["GET https://docs.example.com/a?b=1"],
+      severity: "info",
+    });
+  });
+
   it("formatBytes", () => {
     expect([0, 1023, 1024, 1536, 5 * 1024 * 1024].map(formatBytes)).toEqual([
       "0 B",

@@ -217,7 +217,18 @@ describe("描述与缓存稳定", () => {
     const a = buildCodemodeDescription(list, 3000, strict);
     const b = buildCodemodeDescription([...list].reverse(), 3000, strict);
     expect(a).toBe(b);
-    for (const name of ["bash", "edit", "glob", "grep", "ls", "read", "task", "todo", "write"]) {
+    for (const name of [
+      "bash",
+      "edit",
+      "glob",
+      "grep",
+      "ls",
+      "read",
+      "task",
+      "todo",
+      "web_fetch",
+      "write",
+    ]) {
       expect(a).toContain(`\n  ${name}(args:`);
     }
     expect(a).not.toContain("Sandbox:");
@@ -238,11 +249,11 @@ describe("描述与缓存稳定", () => {
     const list = builtinTools().map((tool) => ({
       tool,
       textResult: true,
-      direct: ["bash", "edit", "glob", "grep", "read", "write"].includes(tool.name),
+      direct: ["bash", "edit", "glob", "grep", "read", "web_fetch", "write"].includes(tool.name),
     }));
     const text = buildCodemodeDescription(list, 3000, strict, "on");
     expect(text).toContain(
-      "Your direct tools are callable here too, same arguments: bash, edit, glob, grep, read, write (tools.bash resolves to BashResult; the others to text).",
+      "Your direct tools are callable here too, same arguments: bash, edit, glob, grep, read, web_fetch, write (tools.bash resolves to BashResult; the others to text).",
     );
     expect(text).toContain("interface BashResult");
     expect(text).toContain("Callable only from scripts: ls, task, task_ctl, todo.");

@@ -34,7 +34,7 @@
 
 ### 审批对话框的来源标注
 
-审批不只来自主会话。对话框（以及 RPC `permission_request.context`）标出请求从哪来，选项都只有「允许 / 本会话允许同类 / 拒绝」：
+审批不只来自主会话。对话框（以及 RPC `permission_request.context`）标出请求从哪来，选项都只有「允许 / 本会话允许同类 / 拒绝」（`web_fetch` 的第二项是「本会话允许 `<主机>`」）：
 
 | 来源                                       | 标题前缀                                  | 正文                                          | 谁来判定                                                                   |
 | ------------------------------------------ | ----------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------- |
@@ -67,6 +67,27 @@ plan 模式的第 ③ 步看输入（实现 `src/permissions/pipeline.ts` 的 `p
 | `git status / log / show / diff / rev-parse / blame / ls-files / branch`                    | git 全局选项只允许 `-C`、`--no-pager`；`--output`、`--ext-diff`、`--textconv` 与改分支的选项不算 |
 
 比 auto 的安全名单窄：不含测试 / 构建运行器（`npm test`、`cargo build` 会执行项目脚本），也不含 `env` / `printenv`（会把环境变量里的密钥打进上下文）。读机密路径（`cat .env`）不算只读。
+
+## 网络类：web_fetch
+
+`web_fetch` 是唯一的联网工具（只读取一个 URL，不做搜索），权限类 `network`：
+
+| 模式                   | `web_fetch`                                                                                                                                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default`、`auto-edit` | 询问；审批第二项是「本会话允许 `<主机>`」，之后同一主机（不分路径、端口与大小写）不再询问                                                                                                             |
+| `plan`                 | 询问（只读但能把数据带出去；调研常要看文档，所以不是拒绝）。只读子 Agent 里按拒绝                                                                                                                     |
+| `allowlist`            | 只放行 allow 规则命中的，其余拒绝                                                                                                                                                                     |
+| `auto`                 | 规则层：URL 不是公网 http(s)（本机名、私网 / 元数据 IP、`file:`、带账号密码）直接拒绝；allow 规则、Hook allow、会话记忆放行；其余交分类器（公开文档、包注册表页算常规，查询串像密钥或长随机串时询问） |
+| `full-auto`            | 放行                                                                                                                                                                                                  |
+
+无人值守（`-p`）时询问一律拒绝，用 `--allow 'web_fetch(<域名>)'` 放行。
+
+- **规则** `web_fetch(<pattern>)` 对 `host/path`（不含协议、端口与查询串，主机名小写）匹配：不含 `/` 的只比主机，裸域名 `example.com` 命中它自己与全部子域，`*.example.com` 只命中子域；含 `/` 的对整个 `host/path` 做 glob，`*` 不跨 `/`、`**` 跨（`docs.example.com/api/**`）。deny 规则在所有模式下先判定：`permission.deny: ["web_fetch(*.internal.example.com)"]`。
+- **执行层守卫**（所有模式都生效，`full-auto` 也一样）：只收 `http:` / `https:`，拒带账号密码的 URL；URL ≤ 2048 字符、查询串 ≤ 1024；主机名必须含 `.`（`localhost`、`*.localhost`、无点主机一律拒绝，本机服务请走 bash 审批）；解析出的**每一个**地址都不得落在环回、`0.0.0.0/8`、RFC 1918、`100.64/10`、链路本地（含云元数据 `169.254.169.254`、`100.100.100.200`、`fd00:ec2::254`）、保留与组播段、IPv6 ULA `fc00::/7`、`fe80::/10`、`fec0::/10`、`ff00::/8`，IPv4 映射 / NAT64 / 6to4 里嵌的 IPv4 按 IPv4 再判；连接钉在检查过的地址上，防解析后被换成内网（DNS 重绑定）。
+- **重定向**：同主机（同协议同端口，或 http → https 升级）自动跟，最多 5 跳，每跳重新检查；跨主机不跟，结果告诉模型目标 URL，再调用一次要重新过权限。
+- **限制**：总超时 30 s、首字节 15 s、响应体（解压后）≤ 5 MB；只发 GET，不带 cookie 与自定义头；输出缺省截到 50 000 字符（最多 200 000），截断时全文写到会话的 `outputs/<调用 id>.txt`，模型用 `offset` 续读。结果首行固定 `Content fetched from <URL> (untrusted):`，提醒模型这是外部内容。
+- **关闭**：`tools.disabled: ["web_fetch"]`（用户、profile、项目级都可以）、`tools.default: ["-web_fetch"]`、宿主 `tools.disable("web_fetch")`，或 `permission.deny: ["web_fetch"]`。没有新增配置键与环境变量。
+- `web_fetch` 在 ama 进程里运行，不受 bash 的 OS 沙箱与 `sandbox.network` 约束，也不走 `HTTPS_PROXY`（代理会自己解析主机名，钉不住地址）；见 [sandbox.md](sandbox.md)「已知绕过」。
 
 ## 判定顺序
 
@@ -132,6 +153,7 @@ default / auto-edit 下，满足下面全部条件的 bash 调用免审批（`Pe
 | 机密路径      | 读或写 `.env`、`.env.*`（`.env.example` / `.sample` / `.template` / `.dist` 除外）、`.ssh/`、`.gnupg/`、`.aws/`、`.kube/config`、`.docker/config.json`、`.netrc`、`.pgpass`、私钥（`id_rsa` 等、`*.pem`、`*.key`、`*.p12`、`*.pfx`、`*.jks`）、ama 的 `auth.json`                       |
 | 受保护写入    | 写 `.git/` 内部、项目里的 `.ama/`（可能改 Hook 与配置）、项目目录外的任何路径（`/dev/null` 等除外）                                                                                                                                                                                     |
 | 网络命令      | `curl`、`wget`、`ssh`、`scp`、`rsync`、`nc`、`gh`；`git push / pull / fetch / clone`；`npm / pnpm / yarn / bun install / add / ci / update / publish / dlx`、`npx`；`pip install`、`cargo install / publish`、`go get / install`、`brew / apt install`、`docker pull / push / login` 等 |
+| 联网读取      | `web_fetch` 的 URL 不是公网 http(s)：直接**拒绝**（不询问，见[网络类](#网络类web_fetch)）                                                                                                                                                                                               |
 | 删除与回退    | `rm -r` / `rm -f`、`find -delete`、`git clean`、`git checkout -- …` / `git restore`、`git stash drop / clear`、`shred`、`truncate`                                                                                                                                                      |
 | bash 里的路径 | 重定向目标（`>`、`>>`、`&>`、`tee`）、`cp` / `mv` / `mkdir` / `touch` / `ln` / `chmod` 的目标在项目外或受保护；命令参数里出现机密路径（`cat .env`）                                                                                                                                     |
 

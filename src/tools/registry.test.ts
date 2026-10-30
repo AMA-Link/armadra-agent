@@ -37,6 +37,7 @@ describe("ToolRegistry", () => {
       "task",
       "task_ctl",
       "todo",
+      "web_fetch",
       "write",
     ]);
     const modes = Object.fromEntries(reg.active().map((t) => [t.name, executionModeOf(t)]));
@@ -50,10 +51,11 @@ describe("ToolRegistry", () => {
       task: "parallel", // [W5-G] 同轮多个 task 并行（D23）
       task_ctl: "parallel",
       todo: "parallel",
+      web_fetch: "parallel",
       write: "sequential",
     });
     expect(builtinTools().map((t) => t.name)).not.toContain("skill");
-    expect(builtinTools().length).toBe(10);
+    expect(builtinTools().length).toBe(11);
     expect(executionModeOf({ permission: "execute" })).toBe("sequential");
   });
 

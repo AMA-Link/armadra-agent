@@ -1,6 +1,8 @@
 # 检索与网络搜索设计
 
 > **决定（2026-10-03，用户）**：本波只实施 **S-A 本地检索增强**；`web_fetch`、`web_search`（外部与原生）、引用呈现（S-B 至 S-F）**暂不做**，本文保留为将来参考。
+>
+> **追加（2026-10）**：`web_fetch` 按缩小版实施（只抓取一个公网 URL，权限类 `network`，零新增配置键，无会话缓存；见 [permissions.md](../guides/permissions.md)「网络类」）；`web_search` 仍不做。
 
 > 状态：设计稿（2026-10-03），待用户看过「效果演示」（§8）后决定实施范围。基线：`main` = `1094ad7`（0.6.3 已发布）。
 > 设计依据：`docs/design/design.md`（§5.2 工具规格、§5.6 预设、§7 权限、§9.1 缓存保证、§10 配置）、`docs/guides/permissions.md`、`docs/guides/sandbox.md`、`docs/guides/providers.md`、`docs/history/gap-audit-2026-10.md`（2026-10-02 曾决定「不做内置 WebFetch / WebSearch；P2 做供应商原生 web search 透传」，本文按新的用户反馈与实测重新评估并推翻该项）。各家供应商的接口形状来自官方文档与本机对中转站的实测（§1.3、§2）；同类产品只学行为，不复制代码。

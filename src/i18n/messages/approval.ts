@@ -45,6 +45,8 @@ export const en = {
   option: {
     allow: "Allow",
     allowSession: "Allow for this session",
+    /** web_fetch：本会话记住的是主机。 */
+    allowSessionHost: (host: string) => `Allow ${host} for this session`,
     deny: "Deny",
   },
   hint: (arrows: string) => `${arrows} select · Enter confirm · v full input`,
@@ -53,6 +55,8 @@ export const en = {
   outcome: {
     allow: (what: string) => `Allowed ${what}`,
     allowSession: (what: string) => `Allowed ${what} (similar calls won't ask again this session)`,
+    allowSessionHost: (what: string, host: string) =>
+      `Allowed ${what} (${host} won't ask again this session)`,
     deny: (what: string) => `Denied ${what}`,
     cancelled: (what: string) => `Approval cancelled (timeout or interrupt): ${what}`,
   },
@@ -93,6 +97,7 @@ export const zh = {
   option: {
     allow: "允许",
     allowSession: "本会话允许同类",
+    allowSessionHost: (host) => `本会话允许 ${host}`,
     deny: "拒绝",
   },
   hint: (arrows) => `${arrows} 选择 · Enter 确认 · v 完整输入`,
@@ -100,6 +105,7 @@ export const zh = {
   outcome: {
     allow: (what) => `已允许 ${what}`,
     allowSession: (what) => `已允许 ${what}（本会话同类不再询问）`,
+    allowSessionHost: (what, host) => `已允许 ${what}（本会话 ${host} 不再询问）`,
     deny: (what) => `已拒绝 ${what}`,
     cancelled: (what) => `审批已取消（超时或中断）：${what}`,
   },

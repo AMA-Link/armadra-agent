@@ -43,6 +43,7 @@ describe("工具预设", () => {
       "glob",
       "grep",
       "read",
+      "web_fetch",
       "write",
     ]);
     expect(
@@ -117,6 +118,7 @@ describe("工具预设", () => {
       "glob",
       "grep",
       "read",
+      "web_fetch",
       "write",
     ]);
     const missing = resolvePreset({ config: cfg({}), available: available(), strict: true });
@@ -138,7 +140,7 @@ describe("工具预设", () => {
   it('[W5-Z] tools.default: ["+todo"] 把 todo 加回 default', () => {
     expect(
       resolvePreset({ config: cfg({ default: ["+todo"] }), available: available() }).builtin,
-    ).toEqual(["bash", "edit", "glob", "grep", "read", "todo", "write"]);
+    ).toEqual(["bash", "edit", "glob", "grep", "read", "todo", "web_fetch", "write"]);
   });
 
   it("tools.default：+ / - 微调、纯名字整组替换、未知名 warning", () => {

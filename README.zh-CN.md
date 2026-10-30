@@ -190,6 +190,10 @@ await session.dispose();
 Linux（bubblewrap）上有操作系统级沙箱隔离 codemode，bash 可选接入；Windows 没有。见[权限](docs/guides/permissions.md)与
 [沙箱](docs/guides/sandbox.md)。
 
+- **联网读取**：内置 `web_fetch` 把一个公网 http(s) 页面读成 Markdown（不做搜索）。它单独一类权限 `network`：Manual 下
+  询问（可选「本会话允许该主机」），`-p` 下拒绝，用 `--allow 'web_fetch(example.com)'` 按域名放行；本机、私网与云元数据
+  地址在任何模式下都被拒绝。不需要时 `tools.disabled: ["web_fetch"]`。见[权限](docs/guides/permissions.md)「网络类」。
+
 界面有中文与英文两种（`--lang`、`AMA_LANG` 或 `ui.language`）；发给模型的文本始终是英文，两种界面语言下请求逐字节相同。
 
 ## 文档

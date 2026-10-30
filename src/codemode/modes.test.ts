@@ -54,6 +54,7 @@ describe("codemode 模式", () => {
       "glob",
       "grep",
       "read",
+      "web_fetch",
       "write",
     ]);
     expect(registry.get("read")?.description).not.toContain("codemode");

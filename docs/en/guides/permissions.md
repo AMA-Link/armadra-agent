@@ -39,7 +39,7 @@ Read-only commands are a static list (next section) shared by `plan` and `allowl
 
 ### Origin labels in the approval dialog
 
-Approvals do not only come from the main session. The dialog (and RPC `permission_request.context`) shows where a request comes from; the options are always just "allow / allow this kind for the session / deny":
+Approvals do not only come from the main session. The dialog (and RPC `permission_request.context`) shows where a request comes from; the options are always just "allow / allow this kind for the session / deny" (for `web_fetch` the second one is "allow `<host>` for this session"):
 
 | Origin                                                          | Title prefix                                         | Body                                                                          | Who decides                                                                                                 |
 | --------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -72,6 +72,27 @@ Read-only commands (`src/permissions/readonly-bash.ts`): first they pass auto's 
 | `git status / log / show / diff / rev-parse / blame / ls-files / branch`                    | Only the git global options `-C` and `--no-pager` are allowed; `--output`, `--ext-diff`, `--textconv` and branch-changing options do not count |
 
 This is narrower than auto's safe list: no test / build runners (`npm test` and `cargo build` run project scripts), and no `env` / `printenv` (they would print secrets in environment variables into the context). Reading secret paths (`cat .env`) is not read-only.
+
+## Network class: web_fetch
+
+`web_fetch` is the only network tool (it reads one URL; there is no search), with permission class `network`:
+
+| Mode                   | `web_fetch`                                                                                                                                                                                                                                                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default`, `auto-edit` | Ask; the second option is "allow `<host>` for this session", after which the same host (any path, port or letter case) no longer asks                                                                                                                                                                                       |
+| `plan`                 | Ask (read-only, but it can carry data out; research often needs docs, so it is not denied). Denied inside read-only sub-agents                                                                                                                                                                                              |
+| `allowlist`            | Only calls matched by an allow rule; everything else is denied                                                                                                                                                                                                                                                              |
+| `auto`                 | Rule tier: a URL that is not public http(s) (local names, private / metadata IPs, `file:`, credentials) is denied; allow rules, hook allow and session grants allow; the rest goes to the classifier (public docs and package-registry pages are routine; a query string that looks like a key or a long random token asks) |
+| `full-auto`            | Allow                                                                                                                                                                                                                                                                                                                       |
+
+Unattended (`-p`), every ask becomes a deny; use `--allow 'web_fetch(<domain>)'` to let it through.
+
+- **Rules** `web_fetch(<pattern>)` match `host/path` (no scheme, port or query string; lower-case host). A pattern without `/` compares the host only: a bare domain `example.com` matches itself and all subdomains, `*.example.com` only subdomains. A pattern with `/` is a glob over the whole `host/path`, where `*` does not cross `/` and `**` does (`docs.example.com/api/**`). Deny rules are checked first in every mode: `permission.deny: ["web_fetch(*.internal.example.com)"]`.
+- **Execution guard** (every mode, `full-auto` included): only `http:` / `https:`, no URLs with credentials; URL ≤ 2048 characters, query string ≤ 1024; the host name must contain a `.` (`localhost`, `*.localhost` and dotless hosts are refused; reach local services through an approved bash call). **Every** resolved address must be outside loopback, `0.0.0.0/8`, RFC 1918, `100.64/10`, link-local (including the cloud metadata addresses `169.254.169.254`, `100.100.100.200`, `fd00:ec2::254`), reserved and multicast ranges, IPv6 ULA `fc00::/7`, `fe80::/10`, `fec0::/10`, `ff00::/8`; IPv4 embedded in mapped / NAT64 / 6to4 addresses is checked as IPv4. The connection is pinned to the checked addresses so a re-resolution cannot swap in an internal one (DNS rebinding).
+- **Redirects**: same host (same scheme and port, or an http → https upgrade) is followed up to 5 hops, re-checked at each hop; a cross-host redirect is not followed — the result tells the model the target URL, and calling it again goes through permissions again.
+- **Limits**: 30 s total, 15 s to the first byte, response body (after decompression) ≤ 5 MB; GET only, no cookies or custom headers. Output is cut at 50 000 characters by default (200 000 at most); when cut, the full text goes to the session's `outputs/<call id>.txt` and the model continues with `offset`. The first line is always `Content fetched from <URL> (untrusted):` to mark external content.
+- **Turning it off**: `tools.disabled: ["web_fetch"]` (user, profile or project config), `tools.default: ["-web_fetch"]`, host `tools.disable("web_fetch")`, or `permission.deny: ["web_fetch"]`. No new config keys or environment variables.
+- `web_fetch` runs inside the ama process: the bash OS sandbox and `sandbox.network` do not apply, and it does not use `HTTPS_PROXY` (a proxy resolves host names itself, so the address could not be pinned); see [sandbox.md](../../guides/sandbox.md) "Known bypasses" (Chinese).
 
 ## Decision order
 
@@ -133,6 +154,7 @@ No model call; a match asks (denied when unattended):
 | Secret paths          | Reading or writing `.env`, `.env.*` (except `.env.example` / `.sample` / `.template` / `.dist`), `.ssh/`, `.gnupg/`, `.aws/`, `.kube/config`, `.docker/config.json`, `.netrc`, `.pgpass`, private keys (`id_rsa` etc., `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`), ama's `auth.json`         |
 | Protected writes      | Writing inside `.git/`, the project's `.ama/` (could change hooks and config), or any path outside the project directory (except `/dev/null` and the like)                                                                                                                                     |
 | Network commands      | `curl`, `wget`, `ssh`, `scp`, `rsync`, `nc`, `gh`; `git push / pull / fetch / clone`; `npm / pnpm / yarn / bun install / add / ci / update / publish / dlx`, `npx`; `pip install`, `cargo install / publish`, `go get / install`, `brew / apt install`, `docker pull / push / login` and so on |
+| Web fetch             | A `web_fetch` URL that is not public http(s) is **denied** outright (no prompt; see [Network class](#network-class-web_fetch))                                                                                                                                                                 |
 | Deletion and rollback | `rm -r` / `rm -f`, `find -delete`, `git clean`, `git checkout -- …` / `git restore`, `git stash drop / clear`, `shred`, `truncate`                                                                                                                                                             |
 | Paths in bash         | Redirect targets (`>`, `>>`, `&>`, `tee`), and targets of `cp` / `mv` / `mkdir` / `touch` / `ln` / `chmod` outside the project or protected; secret paths among command arguments (`cat .env`)                                                                                                 |
 

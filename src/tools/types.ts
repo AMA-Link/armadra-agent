@@ -30,7 +30,10 @@ export type { JsonSchema } from "../ai/types.js";
 /**
  * [W6-C0] `memory`：记忆工具专用（`permissions/memory-class.ts`）——`view` 按 read、写命令按 execute 判定。
  */
-export type ToolPermission = "read" | "write" | "execute" | "memory";
+/**
+ * `network`：联网读取（`web_fetch`，`permissions/network-class.ts`）——按 execute 判定，plan 下询问。
+ */
+export type ToolPermission = "read" | "write" | "execute" | "memory" | "network";
 export type ToolExecutionMode = "sequential" | "parallel";
 
 export interface ToolAnnotations {

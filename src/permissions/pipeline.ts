@@ -50,6 +50,11 @@ import type {
 import type { ToolPermission } from "../tools/types.js";
 import { memoryEffectivePermission } from "./memory-class.js";
 import {
+  networkBlockReason,
+  networkEffectivePermission,
+  networkGrantHost,
+} from "./network-class.js";
+import {
   findAllowRule,
   findDenyRule,
   inputCommand,
@@ -143,7 +148,7 @@ function auditSummary(toolName: string, input: unknown): string {
   const raw =
     command ??
     (typeof input === "object" && input !== null
-      ? (input as Record<string, unknown>)["path"]
+      ? ((input as Record<string, unknown>)["path"] ?? (input as Record<string, unknown>)["url"])
       : undefined);
   const text = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : toolName;
   return text.length > 80 ? `${text.slice(0, 79)}…` : text;
@@ -151,12 +156,14 @@ function auditSummary(toolName: string, input: unknown): string {
 
 interface SessionGrant {
   toolName: string;
-  kind: "command" | "dir" | "any";
+  kind: "command" | "dir" | "host" | "any";
   prefix: string;
 }
 
 export function sessionGrantFor(toolName: string, input: unknown, cwd: string): SessionGrant {
   if (toolName === "memory") return { toolName, kind: "any", prefix: "" }; // [W6-M] 本会话允许全部写命令
+  const host = networkGrantHost(input); // web_fetch：本会话允许该主机
+  if (host !== undefined) return { toolName, kind: "host", prefix: host };
   const command = inputCommand(input);
   if (command !== undefined) {
     const words = normalizeCommand(command).split(" ").slice(0, 2);
@@ -170,6 +177,7 @@ export function sessionGrantFor(toolName: string, input: unknown, cwd: string): 
 function grantCovers(grant: SessionGrant, toolName: string, input: unknown, cwd: string): boolean {
   if (grant.toolName !== toolName) return false;
   if (grant.kind === "any") return true;
+  if (grant.kind === "host") return networkGrantHost(input) === grant.prefix;
   if (grant.kind === "command") {
     const command = inputCommand(input);
     if (command === undefined || /\$\(|`/.test(command)) return false;
@@ -283,10 +291,14 @@ export class PermissionPipeline implements PermissionPipelineApi {
 
   private evaluate(raw: PermissionCheckInput): PermissionVerdict {
     // [W6-C0] 权限类 memory 按命令折成 read / execute（memory-class.ts）
+    // network（web_fetch）按 execute 判，plan 例外为询问、auto 规则层先做 URL 静态校验（network-class.ts）
+    const network = raw.permission === "network";
     const input: PermissionCheckInput =
       raw.permission === "memory"
         ? { ...raw, permission: memoryEffectivePermission(raw.input) }
-        : raw;
+        : network
+          ? { ...raw, permission: networkEffectivePermission() }
+          : raw;
     const { toolName, permission } = input;
     // ① deny
     const layers = layeredInputs(toolName, input.input);
@@ -329,13 +341,15 @@ export class PermissionPipeline implements PermissionPipelineApi {
       }
       return verdict;
     }
-    if (this.currentMode === "auto") return this.evaluateAuto(input, layers, command);
+    if (this.currentMode === "auto") return this.evaluateAuto(input, layers, command, network);
     if (this.currentMode === "allowlist") return this.evaluateAllowlist(input, layers);
     // ③ 模式（plan 细化见 planDecision）
     const plan =
-      this.currentMode === "plan"
-        ? planDecision(input, this.planBashMode, this.cwd, this.projectRoot)
-        : undefined;
+      this.currentMode !== "plan"
+        ? undefined
+        : network
+          ? { decision: "ask" as const }
+          : planDecision(input, this.planBashMode, this.cwd, this.projectRoot);
     const byMode = plan?.decision ?? modeDecision(this.currentMode, permission);
     if (byMode === "deny") {
       return {
@@ -471,12 +485,18 @@ export class PermissionPipeline implements PermissionPipelineApi {
     input: PermissionCheckInput,
     layers: { inputs: unknown[]; tooDeep: boolean },
     command: string | undefined,
+    network = false,
   ): PermissionVerdict {
     const rule = (decision: Decision, reason: string): AutoDecision => ({
       layer: "rule",
       decision,
       reason,
     });
+    const blocked = network ? networkBlockReason(input.input) : undefined;
+    if (blocked !== undefined) {
+      const message = `Auto mode refuses this fetch: ${blocked}`;
+      return { decision: "deny", step: "auto-rule", message, auto: rule("deny", blocked) };
+    }
     const checked = this.autoRuleReason(input, command);
     if (checked.ask !== undefined) {
       return {

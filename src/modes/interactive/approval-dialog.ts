@@ -40,7 +40,7 @@ import {
   type OverlayHandle,
   type Theme,
 } from "../../tui.js";
-import { displayPath, flat } from "./tool-summary.js";
+import { displayPath, fetchHost, flat } from "./tool-summary.js";
 import { toolSummary } from "./tool-view.js";
 
 const COMMAND_LINES = 8;
@@ -190,6 +190,11 @@ export function describeRequest(
   } else if (request.toolName === "bash" && typeof input["command"] === "string") {
     const { shown, hidden } = lines(input["command"], COMMAND_LINES);
     out.push(...shown.map((l, i) => theme.fg("code", (i === 0 ? "$ " : "  ") + l)));
+    if (hidden > 0) out.push(more(hidden));
+  } else if (request.toolName === "web_fetch" && typeof input["url"] === "string") {
+    // 完整 URL（含协议与查询串），按 72 列折行，不截断
+    const { shown, hidden } = lines(input["url"].replace(/(.{72})/g, "$1\n"), COMMAND_LINES);
+    out.push(...shown.map((l) => theme.fg("code", l)));
     if (hidden > 0) out.push(more(hidden));
   } else if (request.toolName === "write" && typeof input["content"] === "string") {
     const count = lines(input["content"], Number.MAX_SAFE_INTEGER).shown.length;
@@ -351,10 +356,15 @@ class ApprovalDialog implements Component, Focusable {
     const { theme } = this.host;
     const g = theme.glyphs;
     const keyWidth = compact ? 1 : Math.max(...APPROVAL_OPTIONS.map((o) => o.keys.length));
+    const host = fetchHost(this.request.toolName, this.request.input);
     return APPROVAL_OPTIONS.map((option, i) => {
       const selected = i === this.selected;
       const keys = compact ? option.keys.slice(0, 1) : option.keys;
-      const left = `${selected ? g.prompt : " "} ${i + 1}. ${option.label}`;
+      const text =
+        option.decision === "allow_session" && host !== undefined
+          ? msg().approval.option.allowSessionHost(host)
+          : option.label;
+      const left = `${selected ? g.prompt : " "} ${i + 1}. ${text}`;
       const right = keys.padEnd(keyWidth);
       const room = Math.max(1, width - visibleWidth(right) - 1);
       const label = selected ? theme.fg("accent", theme.bold(left)) : left;
@@ -426,8 +436,10 @@ export function approvalOutcomeText(
   switch (outcome) {
     case "allow":
       return m.allow(what);
-    case "allow_session":
-      return m.allowSession(what);
+    case "allow_session": {
+      const host = fetchHost(request.toolName, request.input);
+      return host === undefined ? m.allowSession(what) : m.allowSessionHost(what, host);
+    }
     case "deny":
       return m.deny(what);
     case "cancelled":

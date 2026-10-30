@@ -6,6 +6,7 @@
  * - 带 `path` 的工具（read / write / edit / ls / grep / glob 及宿主工具）：对路径做 glob（`**`）。
  *   相对模式匹配 cwd 内的相对路径；以 `**` 开头的模式也匹配绝对路径（例如 .ssh 目录规则命中 ~/.ssh 下的文件）；
  *   绝对模式（`/…`、`~/…`）匹配绝对路径。缺 path 的调用以 cwd 为路径。
+ * - 带 `url` 的工具（web_fetch）：对 `host/path` 匹配，裸域名含子域（network-class.ts）；
  * - 其它工具带 pattern 的规则不匹配（无可比对的对象）。
  *
  * bash 复合命令：deny 规则命中整条或**任一**段即生效；allow 规则要求**每一**段都被某条 allow 覆盖，
@@ -21,6 +22,7 @@ import { PERMISSION_MODES_STRICT_FIRST } from "./types.js";
 import { globBody } from "../tools/glob.js";
 import { expandHome, resolvePath, toPosix } from "../tools/paths.js";
 import { memoryRuleMatches } from "./memory-class.js";
+import { networkRuleMatches } from "./network-class.js";
 
 /** 内置缺省 deny 表（用户可经 `builtinDeny` 选项移除）。 */
 export const BUILTIN_DENY_RULES: readonly string[] = [
@@ -158,7 +160,8 @@ function matchesSubject(
   if (toolName === "memory") return memoryRuleMatches(rule.pattern, input); // [W6-M] 逻辑路径 / 命令名
   if (command !== undefined) return wildcardToRegExp(rule.pattern).test(command);
   const abs = inputPath(toolName, input, cwd);
-  return abs !== undefined && pathMatches(rule.pattern, abs, cwd);
+  if (abs !== undefined) return pathMatches(rule.pattern, abs, cwd);
+  return networkRuleMatches(rule.pattern, input);
 }
 
 /** 第一条命中的 deny 规则。 */

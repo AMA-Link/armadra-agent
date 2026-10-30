@@ -6,6 +6,13 @@
 
 ## 未发布
 
+### 工具与权限
+
+- **`web_fetch`**：`default` 预设新增的内置工具，GET 一个公网 http(s) URL，HTML 取正文转 Markdown（零依赖转换器）、JSON 美化、文本原样，二进制不解析。输出缺省截到 `maxChars`（50 000），用 `offset` 续读，全文落 `outputs/`，首行标注内容不可信。同主机重定向自动跟（≤ 5 跳、逐跳重检），跨主机只报告。总超时 30 s、首字节 15 s、正文 ≤ 5 MB。不含搜索（#232）。
+- **权限类 `network`**：`web_fetch` 在 Manual / Accept edits 下询问（第二项变成「本会话允许 `<主机>`」），Plan 下询问，`-p` 下除非命中 allow 规则一律拒绝，Auto 交分类器，Bypass 放行。规则 `web_fetch(<pattern>)` 对 `host/path` 匹配，裸域名含子域。无论哪种模式，本机名、私网、链路本地与云元数据地址（解析出的每个地址，含 IPv4 映射形式）都被拒绝，连接钉在检查过的地址上。不新增配置键：用 `tools.disabled: ["web_fetch"]`、`tools.default: ["-web_fetch"]` 或 `permission.deny` 关闭。导出的 `ToolPermission` 类型多 `"network"`；协议常量不变。
+- **Hook**：matcher `web_fetch(...)` 对 `url` 匹配。
+- **提示预算**：`default` 增加约 120 token（含 codemode 约 1 600）；`codemode-only` 上限由 1 775 放宽到 1 900（实测 1 835，内联了 `web_fetch` 声明），`default` + task 单列上限 2 150（实测 2 116）。从旧版本续接的会话首个请求缓存未命中一次。
+
 ### 宿主适配器
 
 - **runner 完成事件（host-api 1.1）**：`HostApi.runners.onDone(handler)` 在宿主注入的 runner 每轮结束时以 `RunnerDoneEvent`（`runner`、`taskId?`、`sessionId`、`round`、`status`、`isError`、`text?` / `error?`、`startedAt`、`endedAt`、`durationMs`）回调，宿主不必再轮询任务是否结束；处理器只观察，抛错只记日志。新增小版本 `HOST_API_MINOR = 1` 与 `api.minor`；`HOST_API_VERSION` 仍为 1，旧宿主不受影响，按 `typeof api.runners?.onDone === "function"` 探测。文档：docs/reference/host-api.md「版本」「runner 完成事件」（#226）。
