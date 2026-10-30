@@ -63,6 +63,7 @@ describe("buildDeclarationBlock", () => {
       "task",
       "task_ctl",
       "todo",
+      "web_fetch",
       "write",
     ]);
     expect(block.text.startsWith(BASH_RESULT_DECLARATION)).toBe(true);

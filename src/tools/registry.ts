@@ -25,6 +25,7 @@ import { createLsTool } from "./ls.js";
 import { createTodoTool } from "./todo.js";
 import { createTaskTool, type TaskToolOptions } from "./task.js";
 import { TASK_CTL_TOOL, createTaskCtlTool } from "./task-ctl.js";
+import { createWebFetchTool, type WebFetchOptions } from "./web/fetch.js";
 
 /** [W5-C0] 主工具 → 随它出现 / 消失的伴随工具。 */
 export const TOOL_COMPANIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
@@ -138,9 +139,10 @@ export interface BuiltinToolOptions {
   read?: ReadToolOptions;
   bash?: BashToolOptions;
   task?: TaskToolOptions;
+  webFetch?: WebFetchOptions;
 }
 
-/** 全部内置工具（read / write / edit / bash / grep / glob / ls / todo / task / task_ctl）。 */
+/** 全部内置工具（read / write / edit / bash / grep / glob / ls / todo / task / task_ctl / web_fetch）。 */
 export function builtinTools(options: BuiltinToolOptions = {}): ToolDefinition[] {
   const tools = [
     createReadTool(options.read),
@@ -153,6 +155,7 @@ export function builtinTools(options: BuiltinToolOptions = {}): ToolDefinition[]
     createTodoTool(),
     createTaskTool(options.task),
     createTaskCtlTool(),
+    createWebFetchTool(options.webFetch),
   ] as ToolDefinition[];
   return tools;
 }

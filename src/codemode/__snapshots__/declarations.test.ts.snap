@@ -105,6 +105,14 @@ declare const tools: {
       planStep?: string;
     }[];
   }): Promise<string>;
+  /** Fetch a public http(s) URL as Markdown (HTML) or text, cut at maxChars (default 50000); continue with offset. Cross-host redirects are reported, not followed. */
+  web_fetch(args: {
+    url: string;
+    maxChars?: number;
+    offset?: number;
+    /** Skip HTML conversion */
+    raw?: boolean;
+  }): Promise<string>;
   /** Write a file, replacing its entire content; parent directories are created. An existing file must be read first. Prefer the edit tool for partial changes. */
   write(args: {
     /** File path, absolute or relative to cwd */

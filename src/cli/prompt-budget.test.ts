@@ -28,8 +28,16 @@ const signal = new AbortController().signal;
 /** Node ≥ 25（沙箱 strict）：default 预设带 codemode，是最长的一档。 */
 const STRICT = detectSandboxCapability("25.0.0", new Set(["--permission"]));
 
-/** 上限（token，字符 / 4）。codemode-only 取实测当前值 +15%。 */
-const PROMPT_BUDGETS = { default: 2000, minimal: 800, "codemode-only": 1775 } as const;
+/**
+ * 上限（token，字符 / 4）。codemode-only 原为 1775（实测 1752）；web_fetch 进内置工具后 `only` 模式要内联
+ * 它的声明（+83，实测 1835），放宽到 1900（docs/design/design.md §9.1）。
+ */
+const PROMPT_BUDGETS = { default: 2000, minimal: 800, "codemode-only": 1900 } as const;
+/**
+ * default + task（`tools.default: ["+task"]`，按需打开）：task 描述带子 Agent 类型清单，加上 web_fetch 后
+ * 实测 -p 2099 / 交互 2116（原 1980 / 1997，紧贴 2000），单列一档，与 default+memory 同理。
+ */
+const TASK_BUDGET = 2150;
 /** [W6-M] 记忆开启时 default 预设的上限（docs/history/wave6-plan.md §3.6、§10）。 */
 const MEMORY_BUDGET = 2350;
 
@@ -164,7 +172,7 @@ describe("提示长度预算（字符 / 4 估算）", () => {
     expect(off.tokens).toBe(base.tokens);
   });
 
-  it("[W7-B1] default + task：交互（line）用后台版描述、-p 用前台版，两者都在 default 预算内", async () => {
+  it(`[W7-B1] default + task：交互（line）用后台版描述、-p 用前台版，两者都 ≤ ${TASK_BUDGET} tok`, async () => {
     // task 不在 default 预设里：按用户配置加上（`tools.default: ["+task"]`）再量
     const withTask = (harness: ComposeHarness) =>
       harness.home.write("home/.config/ama/config.json", {
@@ -178,8 +186,8 @@ describe("提示长度预算（字符 / 4 估算）", () => {
     h?.cleanup();
     const print = await measurePreset("default", {}, ["-p"], withTask);
     expect(taskOf(print.tools)?.description).toContain("Returns its final report.");
-    expect(print.tokens).toBeLessThanOrEqual(PROMPT_BUDGETS.default);
-    expect(line.tokens).toBeLessThanOrEqual(PROMPT_BUDGETS.default);
+    expect(print.tokens).toBeLessThanOrEqual(TASK_BUDGET);
+    expect(line.tokens).toBeLessThanOrEqual(TASK_BUDGET);
   });
 
   it("[W7-B1] 缓存前缀：同一会话前后两次请求的 system + tools 逐字节相同", async () => {

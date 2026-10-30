@@ -3,7 +3,7 @@
  *
  * | 预设          | 模型直接看到                              |
  * | ------------- | ----------------------------------------- |
- * | `default`     | read、edit、write、bash、grep、glob       |
+ * | `default`     | read、edit、write、bash、grep、glob、web_fetch |
  * | `minimal`     | read、edit、write、bash                   |
  * | `codemode-only` | 只有 codemode（其余工具在脚本里调用）   |
  * | `coordinator` | read + 宿主注册的工具                     |
@@ -44,7 +44,7 @@ export const CODEMODE_TOOL = "codemode";
 /** 各预设下模型直接看到的内置工具（codemode-only 预设见 `resolvePreset`）。 */
 export const PRESET_TOOLS: Readonly<Record<ToolsPreset, readonly string[]>> = Object.freeze({
   // D20：todo 不在 default（W5-Z 复测未过门，见文件头）
-  default: ["bash", "edit", "glob", "grep", "read", "write"],
+  default: ["bash", "edit", "glob", "grep", "read", "web_fetch", "write"],
   minimal: ["bash", "edit", "read", "write"],
   "codemode-only": [CODEMODE_TOOL],
   coordinator: ["read"],
