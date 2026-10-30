@@ -299,7 +299,11 @@ describe("ExternalAgents", () => {
     expect(() => agents.resolve("claude")).toThrow(/come from the host/);
     const runner = { id: "claude", description: "canvas node", start: async () => ({}) as never };
     const off = agents.hostRunners.provide(runner);
-    expect(agents.resolve("claude")).toBe(runner);
+    // [#226] 任务入口拿到的是发 onDone 的观察包装：成员原样转发，同一 runner 包装复用
+    const resolved = agents.resolve("claude");
+    expect(resolved).toMatchObject({ id: "claude", description: "canvas node" });
+    expect(agents.resolve("claude")).toBe(resolved);
+    expect(agents.hostRunners.get("claude")).toBe(runner);
     off();
     // [W6-I3] 进 task 结果（模型可见）的错误固定英文
     expect(() => agents.resolve("claude")).toThrow(/come from the host/);

@@ -1,6 +1,6 @@
 # 宿主适配器 API（@armadra/agent/host）
 
-宿主适配器是一个本地 JS 模块，ama 启动时加载它并交给它一个 `HostApi`：它可以注册工具、追加系统提示、观察事件、回答审批、注入用户消息、在界面上显示通知与状态。Armadra 画布就是以宿主适配器的形式接入的（画布工具 `canvas_*` / `context_*` 都由适配器注册）。类型定义在 `src/host/types.ts`，从 `@armadra/agent/host` 导出，`HOST_API_VERSION = 1`。设计依据见 [design.md](../design/design.md) §6.2、§6.3、§11.1 第 13 步。
+宿主适配器是一个本地 JS 模块，ama 启动时加载它并交给它一个 `HostApi`：它可以注册工具、追加系统提示、观察事件、回答审批、注入用户消息、在界面上显示通知与状态。Armadra 画布就是以宿主适配器的形式接入的（画布工具 `canvas_*` / `context_*` 都由适配器注册）。类型定义在 `src/host/types.ts`，从 `@armadra/agent/host` 导出，`HOST_API_VERSION = 1`、`HOST_API_MINOR = 1`（host-api 1.1，见「版本」）。设计依据见 [design.md](../design/design.md) §6.2、§6.3、§11.1 第 13 步。
 
 ## 模块形状
 
@@ -46,26 +46,40 @@ export function create(api) {
 | `create()` 抛错或 10 秒内未返回               | 6      |
 | 返回的适配器缺 `id`                           | 6      |
 
+## 版本
+
+- **主版本** `HOST_API_VERSION`（`api.version`）：宿主导出的 `hostApi` 必须与它严格相等，只在破坏性变化（删改已有成员或语义）时递增，并要求 ama 破坏性版本升级（`pnpm release:check`）。
+- **小版本** `HOST_API_MINOR`（`api.minor`）：只加不改的可选成员每加一批递增一次，旧宿主不受影响，不改主版本。旧运行时没有 `api.minor`，按 0 算。
+- 宿主按成员是否存在做特性探测（如 `typeof api.runners?.onDone === "function"`），比按 `api.agent.version` 比较更可靠。
+
+| 小版本 | ama 起始版本 | 新增                                                              |
+| ------ | ------------ | ----------------------------------------------------------------- |
+| 0      | —            | 现有全部成员（`cache?`、`runners?.provide` 等可选面同样要先判断） |
+| 1      | 未发布       | `minor`、`runners?.onDone`（见「runner 完成事件」）               |
+
 ## HostApi
 
-| 成员                                            | 说明                                                                                                                                          |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`                                       | `HOST_API_VERSION`                                                                                                                            |
-| `agent`                                         | `{ name: "ama", version }`                                                                                                                    |
-| `env`                                           | 启动时环境变量的冻结副本                                                                                                                      |
-| `mode`                                          | `interactive` / `line` / `print` / `rpc`                                                                                                      |
-| `session.id()` / `file()` / `cwd()` / `model()` | 当前会话（换会话后跟随新会话）；`file()` 在首次请求落盘前为 `undefined`                                                                       |
-| `tools.register(tool)`                          | 注册工具（形状见下）；名字须匹配 `^[a-z][a-z0-9_]{1,63}$`，同名已存在抛 `tool_exists`。建议加前缀（`canvas_*`）                               |
-| `tools.disable(name)`                           | 隐藏内置工具（如 Armadra 禁用 `task`），系统提示的工具节随之不再列它                                                                          |
-| `tools.list()`                                  | 当前全部工具名                                                                                                                                |
-| `instructions.add(source)`                      | 追加到系统提示最后的 `host` 节；`{ kind: "file", path }` 或 `{ kind: "text", text, name? }`                                                   |
-| `events.on(name, handler)`                      | 观察事件（下表），返回注销函数                                                                                                                |
-| `approvals.setBroker(broker)`                   | 设置审批回答者（见「审批」）                                                                                                                  |
-| `messages.sendUser(text, origin?)`              | 以 user 消息注入：空闲时开始一次运行（`"started"`），运行中按 steer 入队（`"queued"`）；`origin` 缺省 `"host"`，落盘在消息上，界面标 `↳ host` |
-| `ui.notify(message, level?)`                    | 交互 / line 模式进消息区；rpc 模式变成 `notification` 事件（stderr 另有一份）；print 模式写 stderr                                            |
-| `ui.setStatus(key, text?)`                      | 状态栏的宿主项；`text` 为空或缺省则移除该键                                                                                                   |
-| `log(level, message, detail?)`                  | 日志；`warn` / `error` 写 stderr                                                                                                              |
-| `cache?.onWarmingDecision(handler)`             | 缓存保温的否决钩子（见「缓存保温」）；可选面，旧版本运行时没有它，用前判断 `api.cache !== undefined`                                          |
+| 成员                                            | 说明                                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`                                       | `HOST_API_VERSION`                                                                                                                                |
+| `agent`                                         | `{ name: "ama", version }`                                                                                                                        |
+| `env`                                           | 启动时环境变量的冻结副本                                                                                                                          |
+| `mode`                                          | `interactive` / `line` / `print` / `rpc`                                                                                                          |
+| `session.id()` / `file()` / `cwd()` / `model()` | 当前会话（换会话后跟随新会话）；`file()` 在首次请求落盘前为 `undefined`                                                                           |
+| `tools.register(tool)`                          | 注册工具（形状见下）；名字须匹配 `^[a-z][a-z0-9_]{1,63}$`，同名已存在抛 `tool_exists`。建议加前缀（`canvas_*`）                                   |
+| `tools.disable(name)`                           | 隐藏内置工具（如 Armadra 禁用 `task`），系统提示的工具节随之不再列它                                                                              |
+| `tools.list()`                                  | 当前全部工具名                                                                                                                                    |
+| `instructions.add(source)`                      | 追加到系统提示最后的 `host` 节；`{ kind: "file", path }` 或 `{ kind: "text", text, name? }`                                                       |
+| `events.on(name, handler)`                      | 观察事件（下表），返回注销函数                                                                                                                    |
+| `approvals.setBroker(broker)`                   | 设置审批回答者（见「审批」）                                                                                                                      |
+| `messages.sendUser(text, origin?)`              | 以 user 消息注入：空闲时开始一次运行（`"started"`），运行中按 steer 入队（`"queued"`）；`origin` 缺省 `"host"`，落盘在消息上，界面标 `↳ host`     |
+| `ui.notify(message, level?)`                    | 交互 / line 模式进消息区；rpc 模式变成 `notification` 事件（stderr 另有一份）；print 模式写 stderr                                                |
+| `ui.setStatus(key, text?)`                      | 状态栏的宿主项；`text` 为空或缺省则移除该键                                                                                                       |
+| `log(level, message, detail?)`                  | 日志；`warn` / `error` 写 stderr                                                                                                                  |
+| `cache?.onWarmingDecision(handler)`             | 缓存保温的否决钩子（见「缓存保温」）；可选面，旧版本运行时没有它，用前判断 `api.cache !== undefined`                                              |
+| `runners?.provide(runner)`                      | 注入子 Agent runner：`id` 即 `task(agent=<id>)` 的名字，`description` 进 task 工具描述；有宿主时 ama 不自起外部 CLI，只认这里注入的；返回注销函数 |
+| `runners?.onDone(handler)`                      | 宿主 runner 每轮结束时回调（见「runner 完成事件」），返回注销函数；host-api 1.1 起，用前判断 `typeof api.runners?.onDone === "function"`          |
+| `minor?`                                        | `HOST_API_MINOR`（见「版本」）；旧运行时缺省                                                                                                      |
 
 `create()` 期间会话还没组装完：`session.*` 返回启动时确定的值，`sendUser` 会以 `busy` 拒绝——要在启动时发消息，等 `session_start` 事件之后再调用。
 
@@ -151,6 +165,32 @@ interface WarmDecision {
 ```
 
 返回 `"warm"` / `"stop"`（可以是 Promise）。返回 `"stop"` 即不发并停止本轮保温（内置决策本是 warm 时，停止原因记为 `declined`）；返回 `"warm"` 可以覆盖内置的 stop。处理器出错回落内置决策。注册多个时最后注册且未注销的那个生效；返回值是注销函数。保温机制本身见 [providers.md](../guides/providers.md)「缓存」。
+
+## runner 完成事件
+
+`api.runners.onDone(handler)`（host-api 1.1）：经 `runners.provide` 注入的 runner 每跑完一轮，以下面的载荷调用一次 `handler`。一轮 = `start()` 之后的第一轮，或 `send` / `interrupt` 之后的下一轮；以 ama 对该轮 `wait()` 的落定为准（返回、抛错、或任务被中断）。
+
+```ts
+interface RunnerDoneEvent {
+  runner: string; // 宿主 runner 的 id（即 task(agent=<id>)）
+  taskId?: string; // ama 的任务 id（SubagentRunRequest.taskId）；直接调用 runner 时缺省
+  sessionId: string; // runner 自己的会话 id（RunnerHandle.id）
+  round: number; // 第几轮，从 1 起
+  status: "completed" | "failed" | "aborted" | "max_turns" | "interrupted";
+  isError: boolean; // status 为 failed 或 aborted
+  text?: string; // wait() 返回的结果文本
+  error?: string; // wait() 抛出的错误信息
+  startedAt: number; // 这一轮开始（start / send / interrupt 的时刻），epoch 毫秒
+  endedAt: number; // 落定时刻
+  durationMs: number;
+}
+```
+
+- `status` 与任务注册表一致：任务的 `signal` 已 abort 或调过 `stop()` → `aborted`；否则取结果自报的终态（`max_turns` / `interrupted` 等）；再按 `isError` 分 `failed` / `completed`。`wait()` 抛错且未中断 → `failed`，带 `error`。
+- 只观察：处理器不被 await，抛错（含 Promise 拒绝）只经 `log` 记一条 error，不影响 `wait()` 的结果与其它处理器。
+- 同一轮里 ama 可能多次调用 `wait()`（任务入口与注册表各一次），事件只发一次；该轮落定后、没有新的 `send` / `interrupt` 时再调用 `wait()` 不再发。运行中的 `interrupt` 由当前这一轮跟到结束，不另起一轮。
+- 只覆盖宿主注入的 runner；ama 自己的子会话（`general` / `explore` / `plan`）仍看 `subagent_start` / `subagent_end` 事件。
+- 用途：宿主不必轮询「协调者是否还在等这个任务」——收到事件即知道 ama 这一侧的任务结束了。
 
 ## 退出
 

@@ -14,12 +14,15 @@
  *   以 `task(agent=…)` 入口出现；有宿主时内置外部 runner 一律不可用，实现归 W5-E / W5-G）；
  *   `AgentEvents` 加 `subagent_start / subagent_end / plan_proposed / plan_resolved`。
  *   HOST_API_VERSION 不变。
+ * - （#226）host-api 1.1：可选面 `HostApi.runners.onDone`（宿主 runner 每轮结束的 {@link RunnerDoneEvent}）
+ *   与 `HostApi.minor`。主版本 `HOST_API_VERSION` 要求宿主严格相等，只在破坏性变化时改；只加不改的
+ *   增量递增 {@link HOST_API_MINOR}，宿主按成员是否存在做特性探测。
  */
 
 import type { CacheMiss, WarmingDecisionHandler } from "../ai/cache/types.js";
 import type { HookEvent } from "../hooks/types.js";
 import type { ApprovalBroker, ApprovalDecision } from "../permissions/types.js";
-import type { SubagentRunner, ToolDefinition } from "../tools/types.js";
+import type { SubagentRunner, SubagentStatus, ToolDefinition } from "../tools/types.js";
 import type { QuotaUpdateEvent } from "../agent/types-w6.js";
 import type {
   PlanProposedEvent,
@@ -54,6 +57,8 @@ export type { CacheMiss, WarmDecision, WarmingDecisionHandler } from "../ai/cach
 
 export const HOST_API_VERSION = 1 as const;
 export type HostApiVersion = typeof HOST_API_VERSION;
+/** host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`）；旧运行时没有 `api.minor`，按 0 算。 */
+export const HOST_API_MINOR = 1 as const;
 
 export type HostMode = "interactive" | "line" | "print" | "rpc";
 
@@ -117,10 +122,37 @@ export interface AgentEvents {
 /** [W5-C0] 宿主注入的 runner：`id` 即 `task(agent=<id>)` 的名字，`description` 进 task 工具描述。 */
 export type HostRunner = SubagentRunner & { readonly description: string };
 
+/**
+ * [#226] 宿主 runner 的一轮结束（`runners.onDone`）：`start()` 之后第一轮、每次续聊（`send` / `interrupt`）
+ * 之后的下一轮各一次。`wait()` 返回时带 `text`，抛错时带 `error`；中断（任务的 signal abort 或 `stop()`）
+ * 时 `status` 为 `aborted`。时间都是 epoch 毫秒。
+ */
+export interface RunnerDoneEvent {
+  /** 宿主 runner 的 id（即 `task(agent=<id>)`）。 */
+  runner: string;
+  /** ama 的任务 id（`SubagentRunRequest.taskId`）；直接调用 runner 时缺省。 */
+  taskId?: string;
+  /** runner 自己的会话 id（`RunnerHandle.id`）。 */
+  sessionId: string;
+  /** 第几轮，从 1 起。 */
+  round: number;
+  status: SubagentStatus;
+  isError: boolean;
+  /** `wait()` 返回的结果文本。 */
+  text?: string;
+  /** `wait()` 抛出的错误信息。 */
+  error?: string;
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+}
+
 export type AgentEventName = keyof AgentEvents;
 
 export interface HostApi {
   readonly version: HostApiVersion;
+  /** [#226] host-api 小版本（{@link HOST_API_MINOR}）；旧版本运行时没有它，按 0 算。 */
+  readonly minor?: number;
   readonly agent: { readonly name: "ama"; readonly version: string };
   readonly env: Readonly<NodeJS.ProcessEnv>;
   readonly mode: HostMode;
@@ -171,6 +203,11 @@ export interface HostApi {
    */
   readonly runners?: {
     provide(runner: HostRunner): () => void;
+    /**
+     * [#226] 宿主 runner 每轮结束时调用（只观察：抛错只记日志，不影响 `wait()` 的结果）；返回值用于注销。
+     * 可选面（host-api 1.1）：旧版本运行时没有它，用前判断 `typeof api.runners?.onDone === "function"`。
+     */
+    onDone?(handler: (event: RunnerDoneEvent) => void | Promise<void>): () => void;
   };
 }
 

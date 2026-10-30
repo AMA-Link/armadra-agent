@@ -7,6 +7,10 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+### Host adapter
+
+- **Runner done event (host-api 1.1)**: `HostApi.runners.onDone(handler)` is called with a `RunnerDoneEvent` (`runner`, `taskId?`, `sessionId`, `round`, `status`, `isError`, `text?` / `error?`, `startedAt`, `endedAt`, `durationMs`) whenever a round of a host-injected runner ends, so hosts no longer need to poll for task completion; handlers only observe and a throw is just logged. Adds the minor version `HOST_API_MINOR = 1` and `api.minor`; `HOST_API_VERSION` stays 1, existing hosts are unaffected, and hosts detect the feature with `typeof api.runners?.onDone === "function"`. Docs: docs/reference/host-api.md "Versioning" and "Runner done event" (#226).
+
 ### Docs
 
 - docs/guides/hooks.md gains "Scope" (task sub-sessions do not fire SessionStart / SessionEnd; calls inside external agents bypass hooks) and "Hooking up each capability" (which event and matcher `web_fetch`, sub-agent start / end, background tasks, external agents and codemode orchestration use, with a hooks.json and two script examples); docs/guides/agents.md "Configuration" gains a three-line per-role model example (#227).

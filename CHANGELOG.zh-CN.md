@@ -6,6 +6,10 @@
 
 ## 未发布
 
+### 宿主适配器
+
+- **runner 完成事件（host-api 1.1）**：`HostApi.runners.onDone(handler)` 在宿主注入的 runner 每轮结束时以 `RunnerDoneEvent`（`runner`、`taskId?`、`sessionId`、`round`、`status`、`isError`、`text?` / `error?`、`startedAt`、`endedAt`、`durationMs`）回调，宿主不必再轮询任务是否结束；处理器只观察，抛错只记日志。新增小版本 `HOST_API_MINOR = 1` 与 `api.minor`；`HOST_API_VERSION` 仍为 1，旧宿主不受影响，按 `typeof api.runners?.onDone === "function"` 探测。文档：docs/reference/host-api.md「版本」「runner 完成事件」（#226）。
+
 ### 文档
 
 - docs/guides/hooks.md 加「范围」（task 子会话不触发 SessionStart / SessionEnd、外部 Agent 内部调用不经 Hook）与「按能力接入」（`web_fetch`、子 Agent 开始 / 结束、后台任务、外部 Agent、codemode 编排各自用哪个事件与 matcher，附 hooks.json 与两个脚本示例）；docs/guides/agents.md「配置」加按角色选模型的三行示例（#227）。

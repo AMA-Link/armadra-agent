@@ -8,7 +8,7 @@
 // 值
 export { AMA_VERSION } from "./version.js";
 export { AmaError, StartupError, isAmaError } from "./errors.js";
-export { HOST_API_VERSION } from "./host/types.js";
+export { HOST_API_MINOR, HOST_API_VERSION } from "./host/types.js";
 export { RPC_PROTOCOL_VERSION } from "./rpc.js";
 export { SESSION_FORMAT_VERSION } from "./session/types.js";
 export { HOOK_EVENTS } from "./hooks/types.js";
