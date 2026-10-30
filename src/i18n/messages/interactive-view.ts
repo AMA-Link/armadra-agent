@@ -85,6 +85,10 @@ export const en = {
       `${plural(calls, "inner call")} · script printed ${plural(lines, "line")}`,
     done: "done",
     outputLines: (n: number) => `${plural(n, "line")} of output`,
+    /** web_fetch：`<标题> · <大小> · markdown|text|json|binary`。 */
+    fetched: (title: string | undefined, size: string, format: string) =>
+      [title, size, format].filter((p) => p !== undefined && p !== "").join(" · "),
+    fetchRedirect: (url: string) => `redirected to ${url} (not followed)`,
     awaiting: (glyph: string) => `${glyph} awaiting approval`,
     subagentRunning: (elapsed: string) => `subagent · running ${elapsed}`,
     running: (elapsed: string) => `running · ${elapsed}`,
@@ -158,6 +162,9 @@ export const zh = {
     codemode: (calls, lines) => `${calls} 个内层调用 · 脚本输出 ${lines} 行`,
     done: "完成",
     outputLines: (n) => `${n} 行输出`,
+    fetched: (title, size, format) =>
+      [title, size, format].filter((p) => p !== undefined && p !== "").join(" · "),
+    fetchRedirect: (url) => `重定向到 ${url}（未跟随）`,
     awaiting: (glyph) => `${glyph} 等待确认`,
     subagentRunning: (elapsed) => `子 Agent · 运行中 ${elapsed}`,
     running: (elapsed) => `运行中 · ${elapsed}`,

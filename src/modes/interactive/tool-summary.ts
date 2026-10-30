@@ -14,6 +14,7 @@ import { isAbsolute, relative } from "node:path";
 import type { ToolResult } from "../../tools/types.js";
 import { stripAnsi, type Theme } from "../../tui.js";
 import { formatTokens } from "./status-bar.js";
+import { formatSize } from "../../tools/truncate.js";
 
 /** 工具输出 → 可安全显示的行。 */
 export function cleanLines(text: string): string[] {
@@ -64,6 +65,8 @@ export function toolSummary(name: string, args: unknown, cwd?: string): string {
     }
     case "task":
       return flat(str("description") ?? str("prompt") ?? "");
+    case "web_fetch":
+      return flat((str("url") ?? "").replace(/^https?:\/\//i, ""));
     default:
       if (path !== undefined) return displayPath(path, cwd);
       for (const key of [
@@ -237,7 +240,31 @@ export function resultSummary(input: SummaryInput, theme: Theme): string {
           : [];
       return muted([m.done, duration, ...tokens].join(" · "));
     }
+    case "web_fetch": {
+      const finalUrl = details["finalUrl"];
+      if (
+        num(details["bytes"]) === 0 &&
+        typeof finalUrl === "string" &&
+        lines[0]?.startsWith("Redirected")
+      )
+        return muted(m.fetchRedirect(finalUrl));
+      const title = typeof details["title"] === "string" ? flat(details["title"], 60) : undefined;
+      const format = typeof details["format"] === "string" ? details["format"] : "";
+      return muted(m.fetched(title, formatSize(num(details["bytes"]) ?? 0), format));
+    }
     default:
       return muted(count === 0 ? m.done : m.outputLines(count));
+  }
+}
+
+/** web_fetch 请求的主机名（审批「本会话允许该主机」用）；不是 web_fetch 或 URL 不合法返回 undefined。 */
+export function fetchHost(toolName: string, input: unknown): string | undefined {
+  if (toolName !== "web_fetch") return undefined;
+  const raw = record(input)["url"];
+  if (typeof raw !== "string") return undefined;
+  try {
+    return new URL(raw.trim()).hostname.replace(/^\[|\]$/g, "").toLowerCase() || undefined;
+  } catch {
+    return undefined;
   }
 }

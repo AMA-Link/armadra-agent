@@ -437,6 +437,8 @@ export function previewAction(request: ApprovalRequest, options: PreviewOptions)
       previewWrite(input, request, c);
     } else if (kind === "edit" && typeof input["path"] === "string") {
       previewEdit(input, request, c);
+    } else if (request.toolName === "web_fetch" && typeof input["url"] === "string") {
+      c.lines.push(`GET ${input["url"].replace(/\s+/g, "").slice(0, 2048)}`);
     } else if (kind === "other") {
       const key = SUMMARY_KEYS.find((k) => typeof input[k] === "string" && input[k] !== "");
       if (key !== undefined)

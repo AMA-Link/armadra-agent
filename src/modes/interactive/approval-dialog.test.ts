@@ -230,6 +230,36 @@ describe("审批对话框", () => {
     expect(approvalOutcomeText(r, "allow_session")).toContain("本会话同类不再询问");
     expect(approvalOutcomeText(r, "deny")).toBe("已拒绝 [task] bash");
   });
+
+  it("web_fetch：完整 URL、GET 预览不重复、第三项是「本会话允许该主机」", async () => {
+    const { terminal, broker, events, screen } = setup();
+    const url = "https://Docs.Example.com/guide?q=1";
+    const request = req({ toolName: "web_fetch", input: { url } });
+    const answer = broker.ask(
+      { ...request, preview: previewAction(request, { cwd: "/w" }) },
+      new AbortController().signal,
+    );
+    const shown = screen();
+    expect(shown).toContain("web_fetch");
+    expect(shown).toContain(url);
+    expect(shown).not.toContain("GET ");
+    expect(shown).toMatch(/2\. 本会话允许 docs\.example\.com +a/);
+    terminal.sendInput("a");
+    expect(await answer).toBe("allow_session");
+    expect(events).toContain(`已允许 web_fetch（本会话 docs.example.com 不再询问）`);
+    setLocale("en");
+    try {
+      expect(approvalOutcomeText(request, "allow_session")).toBe(
+        "Allowed web_fetch (docs.example.com won't ask again this session)",
+      );
+      const again = broker.ask(request, new AbortController().signal);
+      expect(screen()).toMatch(/2\. Allow docs\.example\.com for this session/);
+      terminal.sendInput("n");
+      expect(await again).toBe("deny");
+    } finally {
+      setLocale("zh");
+    }
+  });
 });
 
 const FIXTURES = join(
