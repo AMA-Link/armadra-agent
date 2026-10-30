@@ -445,6 +445,27 @@ describe("宿主注入的 ama runner", () => {
     expect(ext.runner(catalog.get("general")!)).toBeUndefined();
   });
 
+  it("[#226] 经 task 入口启动的宿主 runner 每轮只发一次 onDone（入口自己也会 wait）", async () => {
+    const hostRunners = new HostRunnerRegistry();
+    hostRunners.provide({
+      id: "ama",
+      description: "Another ama node",
+      start: async () => handle as never,
+    });
+    const done: unknown[] = [];
+    hostRunners.onDone((event) => void done.push(event));
+    const catalog = new AgentCatalog();
+    registerExternalAgents(catalog, wiring({ hosted: true, hostRunners }));
+    const { core } = fakeCore({ mode: "full-auto" });
+    const ext = new SessionExternalAgents(core, wiring({ hosted: true, hostRunners }), catalog);
+    const started = await ext.runner(catalog.get("ama")!)!.start(request("default"));
+    await expect(started.wait()).resolves.toMatchObject({ text: "ok" });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(done).toEqual([
+      expect.objectContaining({ runner: "ama", taskId: "t1", sessionId: "node-ama-2", round: 1 }),
+    ]);
+  });
+
   it("宿主注销后报不可用，不退回自起；没注入时 ama 不是外部 Agent", async () => {
     const hostRunners = new HostRunnerRegistry();
     const off = hostRunners.provide({

@@ -80,6 +80,7 @@ export const en = {
     brokerNeedsAsk: "approvals.setBroker: broker needs ask()",
     warmingNeedsFunction: "cache.onWarmingDecision: needs a function",
     runnerNeedsIdStart: "runners.provide: needs a runner with id and start",
+    runnerDoneNeedsFunction: "runners.onDone: needs a function",
     notAdapter: (label: string) =>
       `${label}: not a host adapter module (missing hostApi / create export)`,
     versionMismatch: (label: string, found: string, needed: number) =>
@@ -149,6 +150,7 @@ export const zh = {
     brokerNeedsAsk: "approvals.setBroker：broker 需要 ask()",
     warmingNeedsFunction: "cache.onWarmingDecision：需要函数",
     runnerNeedsIdStart: "runners.provide：需要带 id 与 start 的 runner",
+    runnerDoneNeedsFunction: "runners.onDone：需要函数",
     notAdapter: (label) => `${label}: 不是宿主适配器模块（缺少 hostApi / create 导出）`,
     versionMismatch: (label, found, needed) =>
       `${label}: 宿主适配器 hostApi=${found}，ama 需要 ${needed}`,
