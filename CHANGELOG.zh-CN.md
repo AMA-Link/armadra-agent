@@ -14,6 +14,14 @@
 - **命令表跟随能力**：`/memory` 只在记忆开启时、`/tasks` 只在能调用 task（直接或经 codemode）时出现在 `/help`、补全与 RPC `get_commands` 里；直接输入时回应照旧。新增契约测试 `src/cli/capability-off.test.ts`：关掉 memory、codemode、task、todo 或 `web_fetch` 后，工具表、系统提示的节与规则句、codemode `ALL_TOOLS`、命令表、子会话活动集里都不再有它，且请求前缀与没有该能力时逐字节相同（#232）。
 - **提示预算**：`default` 增加约 120 token（含 codemode 约 1 600）；`codemode-only` 上限由 1 775 放宽到 1 900（实测 1 835，内联了 `web_fetch` 声明），`default` + task 单列上限 2 150（实测 2 116）。从旧版本续接的会话首个请求缓存未命中一次。
 
+### 宿主适配器
+
+- **runner 完成事件（host-api 1.1）**：`HostApi.runners.onDone(handler)` 在宿主注入的 runner 每轮结束时以 `RunnerDoneEvent`（`runner`、`taskId?`、`sessionId`、`round`、`status`、`isError`、`text?` / `error?`、`startedAt`、`endedAt`、`durationMs`）回调，宿主不必再轮询任务是否结束；处理器只观察，抛错只记日志。新增小版本 `HOST_API_MINOR = 1` 与 `api.minor`；`HOST_API_VERSION` 仍为 1，旧宿主不受影响，按 `typeof api.runners?.onDone === "function"` 探测。文档：docs/reference/host-api.md「版本」「runner 完成事件」（#226）。
+
+### 文档
+
+- docs/guides/hooks.md 加「范围」（task 子会话不触发 SessionStart / SessionEnd、外部 Agent 内部调用不经 Hook）与「按能力接入」（`web_fetch`、子 Agent 开始 / 结束、后台任务、外部 Agent、codemode 编排各自用哪个事件与 matcher，附 hooks.json 与两个脚本示例）；docs/guides/agents.md「配置」加按角色选模型的三行示例（#227）。
+
 ## 0.10.0（2026-10-23）
 
 版本号与 Armadra、armadra-cloud 对齐（三个产品统一为 0.10.0），协议常量无变化。0.9.3 之后没有其他合入。

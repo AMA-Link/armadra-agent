@@ -123,7 +123,7 @@ export class ExternalAgents {
 
   /** `task(agent=<spec>)` 的 runner；不可用时抛 AmaError（`agent_host_only` / `agent_unknown`）。 */
   resolve(spec: string): SubagentRunner {
-    const hosted = this.hostRunners.get(spec);
+    const hosted = this.hostRunners.resolve(spec);
     if (hosted !== undefined) return hosted;
     if (this.options.hosted)
       throw new AmaError(

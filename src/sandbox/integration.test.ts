@@ -5,18 +5,29 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { osSandboxStatus } from "./detect.js";
+import { osSandboxStatus, type OsSandboxStatus } from "./detect.js";
 import { wrapCommand } from "./wrap.js";
 
 const status = osSandboxStatus("auto");
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "ama-os-sandbox-")));
 const allowed = join(tmp, "allowed");
 mkdirSync(allowed);
+/** 探针越界写的目标（临时目录根，不在允许目录里）。 */
+const outside = join(tmp, "outside.txt");
+
+/**
+ * 越界写被拒时各沙箱给的错误码（#230）：`sandbox-exec` 由策略拒绝 → EPERM；bwrap 把根 `--ro-bind` 只读挂载、
+ * 只 `--bind` 允许目录 → 内核回 EROFS。按种类精确断言，不放宽成「任何错误」；新种类要在这里登记。
+ */
+const DENIED_WRITE: Partial<Record<OsSandboxStatus["kind"], string>> = {
+  "sandbox-exec": "EPERM",
+  bwrap: "EROFS",
+};
 let server: Server;
 let port = 0;
 let accepted = 0;
@@ -43,7 +54,7 @@ function probeScript(): string {
 const out = {};
 const attempt = (key, fn) => { try { fn(); out[key] = "allowed"; } catch (e) { out[key] = e.code || e.message; } };
 attempt("writeAllowed", () => fs.writeFileSync(${JSON.stringify(join(allowed, "ok.txt"))}, "x"));
-attempt("writeOutside", () => fs.writeFileSync(${JSON.stringify(join(tmp, "outside.txt"))}, "x"));
+attempt("writeOutside", () => fs.writeFileSync(${JSON.stringify(outside)}, "x"));
 const socket = require("node:net").connect({ host: "127.0.0.1", port: ${port} });
 socket.on("connect", () => { out.net = "allowed"; socket.destroy(); dns(); });
 socket.on("error", (e) => { out.net = e.code || e.message; dns(); });
@@ -88,12 +99,17 @@ describe.skipIf(status.kind === "none")(`OS 沙箱真机（${status.kind}）`, (
       writable: [allowed],
     });
     expect(wrapped.sandboxed).toBe(true);
+    // 对照组写过这个文件：先删掉，才能断言沙箱里的写确实没落盘
+    rmSync(outside, { force: true });
     const out = await run(wrapped.command, wrapped.args);
     expect(out["net"]).not.toBe("allowed");
     expect(out["dns"]).not.toBe("allowed");
     expect(accepted).toBe(before);
     expect(out["writeAllowed"]).toBe("allowed");
-    if (status.restrictsWrites) expect(out["writeOutside"]).toBe("EPERM");
+    if (status.restrictsWrites) {
+      expect(out["writeOutside"]).toBe(DENIED_WRITE[status.kind]);
+      expect(existsSync(outside)).toBe(false);
+    }
   });
 
   it.skipIf(!status.restrictsWrites)("network: allow 时仍限制写入", async () => {
@@ -101,10 +117,12 @@ describe.skipIf(status.kind === "none")(`OS 沙箱真机（${status.kind}）`, (
       network: "allow",
       writable: [],
     });
+    rmSync(outside, { force: true });
     const out = await run(wrapped.command, wrapped.args);
     expect(out["net"]).toBe("allowed");
-    expect(out["writeAllowed"]).not.toBe("allowed");
-    expect(out["writeOutside"]).not.toBe("allowed");
+    expect(out["writeAllowed"]).toBe(DENIED_WRITE[status.kind]);
+    expect(out["writeOutside"]).toBe(DENIED_WRITE[status.kind]);
+    expect(existsSync(outside)).toBe(false);
   });
 });
 
