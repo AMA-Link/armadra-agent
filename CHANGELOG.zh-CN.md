@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 文档
+
+- docs/guides/hooks.md 加「范围」（task 子会话不触发 SessionStart / SessionEnd、外部 Agent 内部调用不经 Hook）与「按能力接入」（`web_fetch`、子 Agent 开始 / 结束、后台任务、外部 Agent、codemode 编排各自用哪个事件与 matcher，附 hooks.json 与两个脚本示例）；docs/guides/agents.md「配置」加按角色选模型的三行示例（#227）。
+
 ## 0.10.0（2026-10-23）
 
 版本号与 Armadra、armadra-cloud 对齐（三个产品统一为 0.10.0），协议常量无变化。0.9.3 之后没有其他合入。

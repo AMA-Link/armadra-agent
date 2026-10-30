@@ -208,6 +208,20 @@ RPC `get_tasks` / `get_agents` 返回任务快照与可用类型（来源、定�
 | `agents.<类型>.model`             | 某个类型的模型（如让 `explore` 用便宜模型）                                      |
 | `models.aliases.fast` / `.strong` | 定义文件里 `model: fast / strong` 的映射                                         |
 
+按角色选模型只要三行配置（`config.json`）：别名 `fast` 指向便宜模型，`explore` 类型用它，外部 Agent `claude` 用它自己的模型名（原样交给该 CLI）：
+
+```json
+{
+  "models": { "aliases": { "fast": "<provider>/<cheap-model>" } },
+  "agents": {
+    "explore": { "model": "fast" },
+    "claude": { "model": "sonnet" }
+  }
+}
+```
+
+内置类型不带缺省的便宜模型；不配置时按上面的顺序回落，最终继承父会话的模型。
+
 ### 限制
 
 - 子 Agent 不能再委派（深度 1）；协调多个 Agent 的场景交给宿主（如 Armadra 画布）。
