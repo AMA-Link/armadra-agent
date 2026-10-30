@@ -32,6 +32,7 @@ import type { SessionEntry } from "../../session/types.js";
 import type { Component, SelectItem, Theme } from "../../tui.js";
 import {
   BUILTIN_COMMANDS,
+  availableCommands,
   parseSlash,
   runSlashCommand,
   type CommandInfo,
@@ -66,6 +67,14 @@ export const INTERACTIVE_COMMANDS: readonly CommandInfo[] = [
 
 /** 补全与 /help 用的完整命令表。 */
 export const ALL_COMMANDS: readonly CommandInfo[] = [...BUILTIN_COMMANDS, ...INTERACTIVE_COMMANDS];
+
+/** 补全用：完整命令表去掉能力关闭的（`availableCommands`）。 */
+export function completionCommands(
+  runtime: Pick<Runtime, "tools">,
+  session: Pick<AgentSession, "getTools">,
+): CommandInfo[] {
+  return availableCommands(runtime, session, ALL_COMMANDS);
+}
 
 /** `/help` 末尾的按键说明（多行）。 */
 export function keyHints(): string {

@@ -38,7 +38,7 @@ import type {
   RpcCommandType,
   RpcModelInfo,
 } from "../../rpc.js";
-import { BUILTIN_COMMANDS } from "../commands-core.js";
+import { availableCommands } from "../commands-core.js";
 import { msg } from "../../i18n/index.js";
 import { sessionTrace } from "../../trace/query-session.js";
 
@@ -189,9 +189,9 @@ async function availableModels(runtime: Runtime): Promise<RpcModelInfo[]> {
   return out;
 }
 
-function commands(runtime: Runtime): RpcCommandInfo[] {
+function commands(runtime: Runtime, session: AgentSession): RpcCommandInfo[] {
   return [
-    ...BUILTIN_COMMANDS.map((c) => ({
+    ...availableCommands(runtime, session).map((c) => ({
       name: c.name,
       description: c.description,
       source: "builtin" as const,
@@ -369,7 +369,7 @@ export const handlers: RpcHandlers = {
     ctx.session().setPermissionMode(p.mode);
     return { mode: p.mode };
   },
-  get_commands: async (_p, ctx) => ({ commands: commands(ctx.runtime) }),
+  get_commands: async (_p, ctx) => ({ commands: commands(ctx.runtime, ctx.session()) }),
   get_skills: async (_p, ctx) => ({ skills: ctx.runtime.resources.skills }),
   // [W5-F] 计划 / 任务命令（docs/history/wave5-plan.md §6.5、§7.5）
   plan_response: async (p, ctx) => {
