@@ -43,6 +43,7 @@ import { join } from "node:path";
 import { AUTH_FILE } from "../config/paths.js";
 import { PresetToolRegistry, resolvePreset } from "../tools/presets.js";
 import { builtinTools } from "../tools/registry.js";
+import type { WebFetchOptions } from "../tools/web/fetch.js";
 import type { MemoryRuntime } from "../memory/runtime.js";
 import { MEMORY_TOOL, createMemoryTool } from "../memory/tool.js";
 import type { ToolDefinition, ToolRegistryApi } from "../tools/types.js";
@@ -87,6 +88,8 @@ export interface ComposeOptions {
   apis?: ApiRegistry;
   /** SDK 追加的工具（来源 sdk，总在活动集里）。 */
   extraTools?: ToolDefinition[];
+  /** 测试注入：web_fetch 的解析与请求（不出网）。 */
+  webFetch?: WebFetchOptions;
   /** 缺省 DEFAULT_TOOL_FACTORIES。 */
   toolFactories?: readonly ToolFactory[];
   /**
@@ -165,6 +168,7 @@ export function createTools(
   };
   const builtins = builtinTools({
     bash,
+    ...(options.webFetch !== undefined ? { webFetch: options.webFetch } : {}),
     read: {
       supportsImages: (ctx) => modelAcceptsImages(state, ctx.model),
       imageOptions: (ctx) => imageFitOptionsFor(state.providers, ctx.model, input.config.images),
