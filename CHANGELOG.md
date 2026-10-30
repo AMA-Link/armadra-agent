@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Docs
+
+- docs/guides/hooks.md gains "Scope" (task sub-sessions do not fire SessionStart / SessionEnd; calls inside external agents bypass hooks) and "Hooking up each capability" (which event and matcher `web_fetch`, sub-agent start / end, background tasks, external agents and codemode orchestration use, with a hooks.json and two script examples); docs/guides/agents.md "Configuration" gains a three-line per-role model example (#227).
+
 ## 0.10.0 (2026-10-23)
 
 Version aligned with Armadra and armadra-cloud (all three ship 0.10.0); protocol constants unchanged. Nothing else was merged after 0.9.3.
