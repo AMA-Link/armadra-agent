@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Host adapter
+
+- **Runner done event (host-api 1.1)**: `HostApi.runners.onDone(handler)` is called with a `RunnerDoneEvent` (`runner`, `taskId?`, `sessionId`, `round`, `status`, `isError`, `text?` / `error?`, `startedAt`, `endedAt`, `durationMs`) whenever a round of a host-injected runner ends, so hosts no longer need to poll for task completion; handlers only observe and a throw is just logged. Adds the minor version `HOST_API_MINOR = 1` and `api.minor`; `HOST_API_VERSION` stays 1, existing hosts are unaffected, and hosts detect the feature with `typeof api.runners?.onDone === "function"`. Docs: docs/reference/host-api.md "Versioning" and "Runner done event" (#226).
+
 ## 0.10.0 (2026-10-23)
 
 Version aligned with Armadra and armadra-cloud (all three ship 0.10.0); protocol constants unchanged. Nothing else was merged after 0.9.3.

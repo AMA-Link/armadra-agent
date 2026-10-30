@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 宿主适配器
+
+- **runner 完成事件（host-api 1.1）**：`HostApi.runners.onDone(handler)` 在宿主注入的 runner 每轮结束时以 `RunnerDoneEvent`（`runner`、`taskId?`、`sessionId`、`round`、`status`、`isError`、`text?` / `error?`、`startedAt`、`endedAt`、`durationMs`）回调，宿主不必再轮询任务是否结束；处理器只观察，抛错只记日志。新增小版本 `HOST_API_MINOR = 1` 与 `api.minor`；`HOST_API_VERSION` 仍为 1，旧宿主不受影响，按 `typeof api.runners?.onDone === "function"` 探测。文档：docs/reference/host-api.md「版本」「runner 完成事件」（#226）。
+
 ## 0.10.0（2026-10-23）
 
 版本号与 Armadra、armadra-cloud 对齐（三个产品统一为 0.10.0），协议常量无变化。0.9.3 之后没有其他合入。

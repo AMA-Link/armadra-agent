@@ -5,7 +5,7 @@ English · [简体中文](../../reference/host-api.md)
 > Translated from the Chinese [docs/reference/host-api.md](../../reference/host-api.md) as of commit `979608b`. When the two differ, the Chinese
 > version is authoritative.
 
-A host adapter is a local JS module that ama loads at startup and hands a `HostApi`. With it the adapter can register tools, append to the system prompt, observe events, answer approvals, inject user messages and show notifications and status in the interface. The Armadra canvas plugs in as a host adapter (the canvas tools `canvas_*` / `context_*` are all registered by the adapter). The types are defined in `src/host/types.ts` and exported from `@armadra/agent/host`; `HOST_API_VERSION = 1`. The design rationale is in [design.md](../../design/design.md) §6.2, §6.3 and §11.1 step 13 (Chinese).
+A host adapter is a local JS module that ama loads at startup and hands a `HostApi`. With it the adapter can register tools, append to the system prompt, observe events, answer approvals, inject user messages and show notifications and status in the interface. The Armadra canvas plugs in as a host adapter (the canvas tools `canvas_*` / `context_*` are all registered by the adapter). The types are defined in `src/host/types.ts` and exported from `@armadra/agent/host`; `HOST_API_VERSION = 1`, `HOST_API_MINOR = 1` (host-api 1.1, see "Versioning"). The design rationale is in [design.md](../../design/design.md) §6.2, §6.3 and §11.1 step 13 (Chinese).
 
 ## Module shape
 
@@ -51,26 +51,40 @@ export function create(api) {
 | `create()` throws or does not return within 10 seconds     | 6         |
 | The returned adapter has no `id`                           | 6         |
 
+## Versioning
+
+- **Major** `HOST_API_VERSION` (`api.version`): the host's exported `hostApi` must equal it exactly. It changes only for breaking changes (removing or changing existing members or semantics) and then requires a breaking ama release (`pnpm release:check`).
+- **Minor** `HOST_API_MINOR` (`api.minor`): bumped once per batch of additive optional members; existing hosts are unaffected and the major version stays. Older runtimes have no `api.minor`, which reads as 0.
+- Hosts feature-detect by member presence (for example `typeof api.runners?.onDone === "function"`), which is more reliable than comparing `api.agent.version`.
+
+| Minor | First ama version | Added                                                                                              |
+| ----- | ----------------- | -------------------------------------------------------------------------------------------------- |
+| 0     | —                 | Every existing member (optional facets such as `cache?` and `runners?.provide` still need a check) |
+| 1     | Unreleased        | `minor`, `runners?.onDone` (see "Runner done event")                                               |
+
 ## HostApi
 
-| Member                                          | Description                                                                                                                                                                                          |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`                                       | `HOST_API_VERSION`                                                                                                                                                                                   |
-| `agent`                                         | `{ name: "ama", version }`                                                                                                                                                                           |
-| `env`                                           | A frozen copy of the environment variables at startup                                                                                                                                                |
-| `mode`                                          | `interactive` / `line` / `print` / `rpc`                                                                                                                                                             |
-| `session.id()` / `file()` / `cwd()` / `model()` | The current session (follows the new session after a switch); `file()` is `undefined` until the first request is written to disk                                                                     |
-| `tools.register(tool)`                          | Register a tool (shape below); the name must match `^[a-z][a-z0-9_]{1,63}$`, and an existing name throws `tool_exists`. A prefix is recommended (`canvas_*`)                                         |
-| `tools.disable(name)`                           | Hide a built-in tool (Armadra disables `task`, for example); the tools section of the system prompt stops listing it                                                                                 |
-| `tools.list()`                                  | All current tool names                                                                                                                                                                               |
-| `instructions.add(source)`                      | Append to the final `host` section of the system prompt; `{ kind: "file", path }` or `{ kind: "text", text, name? }`                                                                                 |
-| `events.on(name, handler)`                      | Observe events (table below); returns an unsubscribe function                                                                                                                                        |
-| `approvals.setBroker(broker)`                   | Set the approval answerer (see "Approvals")                                                                                                                                                          |
-| `messages.sendUser(text, origin?)`              | Inject a user message: when idle it starts a run (`"started"`), while running it is queued as a steer (`"queued"`); `origin` defaults to `"host"`, is persisted on the message and shown as `↳ host` |
-| `ui.notify(message, level?)`                    | Goes to the message area in interactive / line mode; becomes a `notification` event in rpc mode (with a copy on stderr); written to stderr in print mode                                             |
-| `ui.setStatus(key, text?)`                      | A host item in the status bar; an empty or missing `text` removes the key                                                                                                                            |
-| `log(level, message, detail?)`                  | Logging; `warn` / `error` go to stderr                                                                                                                                                               |
-| `cache?.onWarmingDecision(handler)`             | Veto hook for cache warming (see "Cache warming"); an optional facet missing in older runtimes, so check `api.cache !== undefined` before use                                                        |
+| Member                                          | Description                                                                                                                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`                                       | `HOST_API_VERSION`                                                                                                                                                                                                                                |
+| `agent`                                         | `{ name: "ama", version }`                                                                                                                                                                                                                        |
+| `env`                                           | A frozen copy of the environment variables at startup                                                                                                                                                                                             |
+| `mode`                                          | `interactive` / `line` / `print` / `rpc`                                                                                                                                                                                                          |
+| `session.id()` / `file()` / `cwd()` / `model()` | The current session (follows the new session after a switch); `file()` is `undefined` until the first request is written to disk                                                                                                                  |
+| `tools.register(tool)`                          | Register a tool (shape below); the name must match `^[a-z][a-z0-9_]{1,63}$`, and an existing name throws `tool_exists`. A prefix is recommended (`canvas_*`)                                                                                      |
+| `tools.disable(name)`                           | Hide a built-in tool (Armadra disables `task`, for example); the tools section of the system prompt stops listing it                                                                                                                              |
+| `tools.list()`                                  | All current tool names                                                                                                                                                                                                                            |
+| `instructions.add(source)`                      | Append to the final `host` section of the system prompt; `{ kind: "file", path }` or `{ kind: "text", text, name? }`                                                                                                                              |
+| `events.on(name, handler)`                      | Observe events (table below); returns an unsubscribe function                                                                                                                                                                                     |
+| `approvals.setBroker(broker)`                   | Set the approval answerer (see "Approvals")                                                                                                                                                                                                       |
+| `messages.sendUser(text, origin?)`              | Inject a user message: when idle it starts a run (`"started"`), while running it is queued as a steer (`"queued"`); `origin` defaults to `"host"`, is persisted on the message and shown as `↳ host`                                              |
+| `ui.notify(message, level?)`                    | Goes to the message area in interactive / line mode; becomes a `notification` event in rpc mode (with a copy on stderr); written to stderr in print mode                                                                                          |
+| `ui.setStatus(key, text?)`                      | A host item in the status bar; an empty or missing `text` removes the key                                                                                                                                                                         |
+| `log(level, message, detail?)`                  | Logging; `warn` / `error` go to stderr                                                                                                                                                                                                            |
+| `cache?.onWarmingDecision(handler)`             | Veto hook for cache warming (see "Cache warming"); an optional facet missing in older runtimes, so check `api.cache !== undefined` before use                                                                                                     |
+| `runners?.provide(runner)`                      | Injects a sub-agent runner: `id` is the name in `task(agent=<id>)` and `description` goes into the task tool description; with a host, ama starts no external CLI of its own and only uses runners injected here; returns an unsubscribe function |
+| `runners?.onDone(handler)`                      | Called whenever a round of a host runner ends (see "Runner done event"); returns an unsubscribe function. Since host-api 1.1, so check `typeof api.runners?.onDone === "function"` before use                                                     |
+| `minor?`                                        | `HOST_API_MINOR` (see "Versioning"); missing in older runtimes                                                                                                                                                                                    |
 
 During `create()` the session is not assembled yet: `session.*` returns the values fixed at startup, and `sendUser` is rejected with `busy`. To send a message at startup, wait for the `session_start` event.
 
@@ -156,6 +170,32 @@ interface WarmDecision {
 ```
 
 Return `"warm"` / `"stop"` (a Promise is fine). `"stop"` skips the request and stops this warming round (when the built-in decision was warm, the stop reason is recorded as `declined`); `"warm"` can override a built-in stop. If the handler fails, the built-in decision applies. With several handlers, the last one registered and not unsubscribed wins; the return value is an unsubscribe function. The warming mechanism itself is described in [providers.md](../guides/providers.md) "Caching".
+
+## Runner done event
+
+`api.runners.onDone(handler)` (host-api 1.1): every time a runner injected through `runners.provide` finishes a round, `handler` is called once with the payload below. A round is the first one after `start()`, or the next one after `send` / `interrupt`; it ends when ama's `wait()` for it settles (returns, throws, or the task is aborted).
+
+```ts
+interface RunnerDoneEvent {
+  runner: string; // host runner id (the name in task(agent=<id>))
+  taskId?: string; // ama task id (SubagentRunRequest.taskId); missing when the runner is called directly
+  sessionId: string; // the runner's own session id (RunnerHandle.id)
+  round: number; // round number, starting at 1
+  status: "completed" | "failed" | "aborted" | "max_turns" | "interrupted";
+  isError: boolean; // status is failed or aborted
+  text?: string; // result text returned by wait()
+  error?: string; // error message thrown by wait()
+  startedAt: number; // when the round began (start / send / interrupt), epoch milliseconds
+  endedAt: number; // when it settled
+  durationMs: number;
+}
+```
+
+- `status` follows the task registry: the task's `signal` aborted or `stop()` called → `aborted`; otherwise the terminal status the result reports (`max_turns`, `interrupted`, …); otherwise `failed` / `completed` by `isError`. A `wait()` that throws without an abort → `failed` with `error`.
+- Observe-only: handlers are not awaited; a throw (including a rejected Promise) is logged once at error level through `log` and affects neither the `wait()` result nor other handlers.
+- ama may call `wait()` several times in one round (the task entry and the registry each once); the event is sent once. Calling `wait()` again after the round settled, without a new `send` / `interrupt`, sends nothing. An `interrupt` while running is followed to the end by the current round instead of starting another.
+- Only host-injected runners are covered; ama's own sub-sessions (`general` / `explore` / `plan`) still report through `subagent_start` / `subagent_end`.
+- Use: the host no longer needs to poll whether the coordinator is still waiting on a task — the event says ama's side of it has ended.
 
 ## Exit
 
