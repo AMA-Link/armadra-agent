@@ -8,6 +8,9 @@
  * - 写入目标：重定向（`>`、`>>`、`&>`）、tee、cp / mv / mkdir / touch / ln / chmod 等的目标在项目外或受保护；
  * - 参数里出现机密路径（`cat .env`、`< ~/.ssh/id_rsa`、`--env-file=.env`）。
  *
+ * `env` / `printenv` 不在安全名单里：子进程继承整个进程环境（供应商 API key 等），打印出来就会进
+ * tool_result 与会话文件。段里只剩环境赋值或包装命令（`env`、`env FOO=1`）同样不放行。
+ *
  * 静态判定（全部满足即放行）：每一段都命中安全名单（{@link AUTO_SAFE_COMMANDS} + 用户追加），整条命令
  * 没有命令替换、参数没有变量展开 `$X`、没有可能匹配点文件的通配、没有超深嵌套。
  *
@@ -56,7 +59,6 @@ export const AUTO_SAFE_COMMANDS: readonly SafeCommandSpec[] = [
     "echo",
     "printf",
     "which",
-    "printenv",
     "true",
     "false",
     "cut",
@@ -480,6 +482,8 @@ export interface BashAutoAnalysis {
 }
 
 interface SegmentInfo {
+  /** 剥任何前缀之前的第一个词（静态判定报原因用）。 */
+  first: string | undefined;
   /** 剥掉环境赋值、包装命令与 sudo 之后的词（规则层用）。 */
   argv: string[];
   /** 保留 sudo / doas（静态判定用：提权命令不算安全）。 */
@@ -490,6 +494,7 @@ interface SegmentInfo {
 function parseSegment(segment: string): SegmentInfo {
   const redirects = extractRedirects(segment);
   return {
+    first: shellWords(redirects.rest.replace(/^[({\s]+/, ""))[0],
     argv: commandWords(redirects.rest),
     withSudo: commandWords(redirects.rest, true),
     redirects,
@@ -515,7 +520,12 @@ function ruleAsk(info: SegmentInfo, options: BashAutoOptions): string | undefine
 
 function safeSegment(info: SegmentInfo, extra: readonly string[]): string | undefined {
   const argv = info.withSudo;
-  if (argv.length === 0) return undefined;
+  // 只剩环境赋值或包装命令：`env` / `env FOO=1` 会打印整个环境（含密钥），不放行。
+  if (argv.length === 0) {
+    return info.first === undefined
+      ? "empty command"
+      : `${base(info.first)} is not in the auto safe list`;
+  }
   for (const word of argv) {
     if (word.includes("$")) return `variable expansion in ${word}`;
     if (GLOB.test(word) && /(^|\/)\.[^./]/.test(word)) return `glob over dotfiles (${word})`;

@@ -33,9 +33,8 @@ describe("安全名单：正例（静态放行）", () => {
     "echo done > build/out.txt",
     "printf '%s\\n' a b",
     "which node",
-    "env",
-    "printenv",
     "FOO=1 echo hi",
+    "env FOO=1 echo hi",
     "find . -name '*.ts'",
     "find src -type f -newer package.json",
     "sort file.txt",
@@ -135,6 +134,13 @@ describe("安全名单：反例（不放行，交给分类器）", () => {
     ["eval ls", "not in the auto safe list"],
     ["ls | xargs cat", "not in the auto safe list"],
     ["sudo ls", "not in the auto safe list"],
+    ["env", "env is not in the auto safe list"],
+    ["env FOO=1", "env is not in the auto safe list"],
+    ["FOO=1", "FOO=1 is not in the auto safe list"],
+    ["printenv", "printenv is not in the auto safe list"],
+    ["printenv ANTHROPIC_API_KEY", "printenv is not in the auto safe list"],
+    ["env | grep KEY", "env is not in the auto safe list"],
+    ["ls && printenv", "printenv is not in the auto safe list"],
   ])("%s → %s", (command, reason) => {
     const result = analyze(command);
     expect(result.ask).toBeUndefined();

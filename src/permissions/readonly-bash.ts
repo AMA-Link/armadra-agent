@@ -3,8 +3,8 @@
  *
  * 判定 = auto 的静态判定（`analyzeBashForAuto`：分词、嵌套展开、规则层的网络 / 删除 / 写入目标 /
  * 机密路径、命令替换、变量展开、点文件通配）**全部通过**，再加四条更窄的限制：
- * - 每段命令都命中 {@link READONLY_BASH}（比 auto 安全名单窄：去掉测试 / 构建运行器、`printenv`
- *   这类会把环境变量里的密钥打进上下文的命令）；
+ * - 每段命令都命中 {@link READONLY_BASH}（比 auto 安全名单窄：去掉测试 / 构建运行器；`env` /
+ *   `printenv` 这类会把环境变量里的密钥打进上下文的命令两边都没有）；
  * - 没有输出重定向（`/dev/null` 等设备除外）；
  * - 没有嵌套 shell（`sh -c`、`eval`、`xargs`、`find -exec`）与进程替换；
  * - 段首没有环境赋值或包装命令（`GIT_EXTERNAL_DIFF=… git diff`、`env …`、`nohup …`）。
