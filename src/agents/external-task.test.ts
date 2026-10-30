@@ -31,6 +31,8 @@ interface Parent {
   h: ComposeHarness;
   runtime: Runtime;
   child: Runtime;
+  /** 子 ama 的 fake 供应商（`callCount` = 子模型调用已开始的次数）。 */
+  childFake: ComposeHarness["fake"];
   asked: ApprovalRequest[];
   events: SessionEvent[];
   spawns: MemoryTransport[];
@@ -67,7 +69,16 @@ async function setup(
   });
   const events: SessionEvent[] = [];
   runtime.session.subscribe((e) => void events.push(e));
-  return { h, runtime, child: c.runtime, asked, events, spawns: c.spawns, wire: c.wire };
+  return {
+    h,
+    runtime,
+    child: c.runtime,
+    childFake: c.harness.fake,
+    asked,
+    events,
+    spawns: c.spawns,
+    wire: c.wire,
+  };
 }
 
 const taskCall = (args: Record<string, unknown>): FakeResponse => ({
@@ -199,7 +210,7 @@ describe("task(agent=acp:ama)：ama 驱动 ama", () => {
     const p = await setup(
       [
         taskCall({ prompt: "slow", agent: "acp:ama", background: true }),
-        // 先等子 ama 的模型调用真正开始（之后再 stop，续聊才拿到脚本的下一条）
+        { text: "started" },
         ctl({ action: "wait", taskId: "t1", timeoutMs: 200 }),
         ctl({ action: "stop", taskId: "t1" }),
         taskCall({ prompt: "resume please", taskId: "t1", background: false }),
@@ -209,6 +220,10 @@ describe("task(agent=acp:ama)：ama 驱动 ama", () => {
       { argv: ["--permission-mode", "full-auto"] },
     );
     await p.runtime.session.prompt("go");
+    // [#234] stop 必须落在子 ama 的模型调用开始之后（否则子回合未取脚本就被取消，续聊拿到 "late"）：
+    // 等这个可观察条件，而不是靠 task_ctl wait 的超时估时
+    await until(() => p.childFake.callCount >= 1, "child model call started");
+    await p.runtime.session.prompt("stop and resume");
     const results = toolResults(p.runtime);
     expect(results[1]).toContain("Task t1 is still running");
     expect(results[2]).toContain("Task t1 aborted");

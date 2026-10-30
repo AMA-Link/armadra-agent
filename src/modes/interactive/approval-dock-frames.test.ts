@@ -77,7 +77,10 @@ describe("后台任务审批停靠", () => {
     expect(screen).toMatch(/⏺ t1 general · 等待审批/);
     expect(screen).toMatch(/↓ 处理审批/);
     golden("approval-docked-80x24", shot(s, "主会话忙：后台任务的审批停靠"));
-    // 父会话回复完、空闲后自动弹出（弹框会盖住回复）
+    // 父会话回复完、空闲后自动弹出（弹框会盖住回复）。[#236] 先等主会话真正空闲（事件），再等弹框：
+    // 弹出由 agent_settled 排下的 poke 触发，waitScreen 的墙钟截止不再跨过父会话回复——跨过时机器一卡顿，
+    // 醒来后先到期的是截止检查而不是 poke
+    await s.handle.session().waitForIdle();
     await waitFor(s, () => s.handle.tui.hasOverlay, "auto popup");
     expect(s.handle.session().state.isStreaming).toBe(false);
     await waitFor(s, (x) => x.includes("[task:general]"), "dialog");
