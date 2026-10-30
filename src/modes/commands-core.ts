@@ -84,6 +84,8 @@ export interface CommandInfo {
   name: string;
   args?: string;
   description: string;
+  /** 只在该能力可用时列出（`/help`、补全、RPC `get_commands`）；输入时照常分派。 */
+  requires?: "memory" | "task";
 }
 
 type CommandKey = keyof Catalog["report"]["commands"];
@@ -125,7 +127,9 @@ export const BUILTIN_COMMANDS: readonly CommandInfo[] = [
   command("cache", "cache", "[warm off|streaming|idle | fingerprint]"),
   command("statusline", "statusline", "[full|compact]"),
   command("plan", "plan", { key: "planArgs" }),
-  command("tasks", "tasks", "[id] | stop <id> | bg [id]"),
+  Object.assign(command("tasks", "tasks", "[id] | stop <id> | bg [id]"), {
+    requires: "task" as const,
+  }),
   command("agents", "agents"),
   command("paste", "paste"),
   command("interrupt", "interrupt", { key: "interruptArgs" }),
@@ -133,8 +137,30 @@ export const BUILTIN_COMMANDS: readonly CommandInfo[] = [
   // [W6-C0] 第六波（W6-S / W6-T1 / W6-M 实现）
   command("config", "config", "[key=value]"),
   command("trace", "trace", { key: "traceArgs" }),
-  command("memory", "memory", { key: "memoryArgs" }),
+  Object.assign(command("memory", "memory", { key: "memoryArgs" }), {
+    requires: "memory" as const,
+  }),
 ];
+
+/**
+ * 能力关闭的命令不列出（capability-off.test.ts 锁定）：memory = 记忆工具已注册（`memory.enabled`）；
+ * task = 模型能直接调 `task`，或能经 codemode 脚本调（`task` 已注册且 codemode 在活动集）。
+ */
+export function availableCommands(
+  runtime: Pick<Runtime, "tools">,
+  session: Pick<AgentSession, "getTools">,
+  list: readonly CommandInfo[] = BUILTIN_COMMANDS,
+): CommandInfo[] {
+  const active = new Set(session.getTools().map((t) => t.name));
+  const registered = new Set(runtime.tools.list());
+  const has = (requires: CommandInfo["requires"]): boolean =>
+    requires === "memory"
+      ? registered.has("memory")
+      : requires === "task"
+        ? active.has("task") || (active.has("codemode") && registered.has("task"))
+        : true;
+  return list.filter((c) => has(c.requires));
+}
 
 const ALIASES: Readonly<Record<string, string>> = { quit: "exit", q: "exit", "?": "help" };
 
@@ -145,8 +171,8 @@ export function parseSlash(line: string): { name: string; args: string } | undef
   return { name: ALIASES[raw] ?? raw, args: (m[2] ?? "").trim() };
 }
 
-function helpText(): string {
-  const lines = BUILTIN_COMMANDS.map(
+function helpText(ctx: CommandContext): string {
+  const lines = availableCommands(ctx.runtime, ctx.session()).map(
     (c) => `/${c.name}${c.args !== undefined ? ` ${c.args}` : ""}  ${c.description}`,
   );
   const m = msg().report.commands;
@@ -205,7 +231,7 @@ export async function runSlashCommand(
   const session = ctx.session();
   switch (name) {
     case "help":
-      return { kind: "handled", message: helpText() };
+      return { kind: "handled", message: helpText(ctx) };
     case "exit":
       return { kind: "exit" };
     case "new": {

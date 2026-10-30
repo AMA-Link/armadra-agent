@@ -55,7 +55,7 @@ import { BYPASS_MODE, createBypassGate } from "../../permissions/bypass.js";
 import { onTerminationSignals } from "../shared.js";
 import { AgentUi, agentCommandHooks } from "./agent-ui.js";
 import { approvalOverlayHooks, createApprovalUi } from "./approval-ui.js";
-import { ALL_COMMANDS, runInteractiveCommand, type CommandUi } from "./commands.js";
+import { completionCommands, runInteractiveCommand, type CommandUi } from "./commands.js";
 import { memoryPanelFor } from "./memory-panel.js";
 import { InteractiveCompletion } from "./completion.js";
 import { confirmBypass } from "./confirm-dialog.js";
@@ -178,7 +178,7 @@ export function runInteractiveMode(
       ? undefined
       : (options.historyFile ?? join(runtime.paths.dataDir, "history"));
   const completion = new InteractiveCompletion({
-    commands: () => ALL_COMMANDS,
+    commands: () => completionCommands(runtime, session),
     prompts: () => runtime.resources.prompts,
     skills: () => runtime.resources.skills,
     cwd: () => session.state.cwd,

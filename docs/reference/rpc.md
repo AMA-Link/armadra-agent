@@ -119,13 +119,13 @@
 
 ### 工具、权限、发现
 
-| 命令                  | 参数                                                                   | `data`                                                                                                              |
-| --------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `get_tools`           | —                                                                      | `{ tools: { name, description, parameters, permission, active }[] }`（注册表全部工具，`active` 表示模型当前能看到） |
-| `set_active_tools`    | `names: string[]`                                                      | `{ names }`（生效后的活动工具名）                                                                                   |
-| `set_permission_mode` | `mode: plan \| allowlist \| default \| auto-edit \| auto \| full-auto` | `{ mode }`（未知模式 → `invalid_arguments`）                                                                        |
-| `get_commands`        | —                                                                      | `{ commands: { name, description?, source: "builtin" \| "template" \| "skill" }[] }`；Skill 名写作 `skill:<名>`     |
-| `get_skills`          | —                                                                      | `{ skills: { name, description, location, … }[] }`（已发现的 Skill；`location` 是 SKILL.md 路径）                   |
+| 命令                  | 参数                                                                   | `data`                                                                                                                                                                                        |
+| --------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_tools`           | —                                                                      | `{ tools: { name, description, parameters, permission, active }[] }`（注册表全部工具，`active` 表示模型当前能看到）                                                                           |
+| `set_active_tools`    | `names: string[]`                                                      | `{ names }`（生效后的活动工具名）                                                                                                                                                             |
+| `set_permission_mode` | `mode: plan \| allowlist \| default \| auto-edit \| auto \| full-auto` | `{ mode }`（未知模式 → `invalid_arguments`）                                                                                                                                                  |
+| `get_commands`        | —                                                                      | `{ commands: { name, description?, source: "builtin" \| "template" \| "skill" }[] }`；Skill 名写作 `skill:<名>`；只列当前可用的内置命令（记忆关闭时没有 `memory`，task 不可调时没有 `tasks`） |
+| `get_skills`          | —                                                                      | `{ skills: { name, description, location, … }[] }`（已发现的 Skill；`location` 是 SKILL.md 路径）                                                                                             |
 
 ### 计划与任务（第五波）
 

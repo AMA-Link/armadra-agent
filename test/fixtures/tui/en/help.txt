@@ -14,14 +14,12 @@ info:/help  List commands
 /cache [warm off|streaming|idle | fingerprint]  Cache stats; switch warming for this session; print the prefix fingerprint
 /statusline [full|compact]  Footer info two lines / one line (Ctrl+G)
 /plan [goal] | approve [mode|fresh] | reject  Show the plan and status; with a goal, enter Plan mode; approve / discard a pending plan
-/tasks [id] | stop <id> | bg [id]  Sub-agent tasks: status, output, stop, background
 /agents  Sub-agent types and external agents (installed, version)
 /paste  Paste an image from the clipboard (Ctrl+V)
 /interrupt <text>  Interrupt the current turn and send this now, queued steers first (Ctrl+Enter)
 /exit  Exit
 /config [key=value]  Settings panel; key=value sets one item directly (user level)
 /trace [task id]  Trace: timing and usage of turns, requests and tools
-/memory [show|edit|rm <name> | on|off | reload]  Cross-session memory (needs memory.enabled)
 /skill:<name> [args]  Use a skill
 /<template> [args]  Expand a prompt template
 /tree  Browse the session tree and rewrite from before a message
