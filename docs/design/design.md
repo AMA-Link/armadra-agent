@@ -1039,6 +1039,7 @@ tool_call（模型产出）
 - **零配置可用**：没有任何配置文件时，按 §3.3 顺序找第一个设置了标准环境变量（如 `ANTHROPIC_API_KEY`、`DEEPSEEK_API_KEY`）的供应商，用它的缺省模型直接运行；本地 Ollama / LM Studio 可达时也算。找不到则交互模式弹出供应商选择并提示 `ama auth set <provider>`。
 - **一个文件、五个常用键**：`defaultModel`、`tools.preset`、`permission.mode`、`thinkingLevel`、`providers`（只在自定义供应商或覆盖时需要）；其余全部有缺省，`ama config show` 打印生效值与来源。
 - **一个模型引用格式**：`provider/model-id`，到处一致（配置、命令行、`/model`、SDK）。
+- **关闭契约**：不设统一的能力开关键，各能力沿用自己的开关（`memory.enabled`、`codemode.mode`、`tools.disabled` / `tools.default`、宿主 `tools.disable`）；能力关闭 = 工具表、系统提示的节与规则句、codemode 脚本的 `ALL_TOOLS`、`/help` 与补全与 RPC `get_commands` 里的命令、子会话继承的活动集**一并消失**，且关闭状态的 `{ system, tools }` 与该能力从未存在时逐字节相同。memory / codemode / task / todo / web_fetch 五项由 `src/cli/capability-off.test.ts` 锁定（黄金在 `test/fixtures/capability-off/<能力>.json`），新增能力往表里加一行。
 
 ### §10.2 `config.json`
 
