@@ -5,7 +5,7 @@ import { createTmpHome, withTmpHome } from "../../test/helpers/tmp-home.js";
 import { StartupError } from "../errors.js";
 import { hooksFromConfig, loadHookConfigs, type LoadedHook } from "./config.js";
 import { HookDispatcher, type HookCommonContext, type HookExecutor } from "./dispatcher.js";
-import { compileMatcher, splitAlternatives } from "./matcher.js";
+import { argumentText, compileMatcher, splitAlternatives } from "./matcher.js";
 import { hookEnv, mergeResults, parseHookOutput } from "./protocol.js";
 import { runHookCommand } from "./runner.js";
 import type { HookEvent, HookInput, HookRunResult } from "./types.js";
@@ -76,6 +76,21 @@ describe("matcher", () => {
     expect(compileMatcher("/^(read|ls)$/")("lsx", {})).toBe(false);
     expect(splitAlternatives("bash(a|b)|edit")).toEqual(["bash(a|b)", "edit"]);
     expect(() => compileMatcher("/(/")).toThrow();
+  });
+
+  it("web_fetch(...) 对 url 文本做 glob；bash / 文件类工具取值不变", () => {
+    const docs = compileMatcher("web_fetch(*docs.example.org*)");
+    expect(docs("web_fetch", { url: "https://docs.example.org/guide", maxChars: 10 })).toBe(true);
+    expect(docs("web_fetch", { url: "https://evil.example.com/?q=docs.example.or" })).toBe(false);
+    expect(docs("bash", { url: "https://docs.example.org/" })).toBe(false);
+    const https = compileMatcher("web_fetch(https://*.example.org/**)");
+    expect(https("web_fetch", { url: "https://api.example.org/v1/x" })).toBe(true);
+    expect(https("web_fetch", { url: "http://api.example.org/v1/x" })).toBe(false);
+    expect(argumentText("web_fetch", { url: "https://a.example/", raw: true })).toBe(
+      "https://a.example/",
+    );
+    expect(argumentText("read", { path: "a.ts", url: "https://x/" })).toBe("a.ts");
+    expect(argumentText("bash", { command: "ls", url: "https://x/" })).toBe("ls");
   });
 });
 
