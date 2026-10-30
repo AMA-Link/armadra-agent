@@ -99,6 +99,8 @@ interface ToolResult {
 
 宿主工具与内置工具走同一条路径：schema 校验 → 命令式 Hook PreToolUse → 权限管线（按 `permission` 分类）→ 审批 → 执行 → PostToolUse。在 codemode 脚本里也能以 `tools.<name>()` 调用。
 
+导出的 `ToolPermission` 类型多了 `"network"`（内置 `web_fetch` 用，按 execute 判定、plan 下询问，见 [permissions.md](../guides/permissions.md)「网络类」）；宿主经 `tools.register` 注册的工具仍只接受 `read` / `write` / `execute`，`HOST_API_VERSION` 不变。
+
 ## 事件
 
 `events.on` 的处理器只观察：抛错只记日志，不影响运行；处理器依次调用并等待，`session_shutdown` 被 await（退出前可以做清理）。

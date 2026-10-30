@@ -104,6 +104,8 @@ interface ToolResult {
 
 Host tools take the same path as built-in tools: schema validation → command hook PreToolUse → permission pipeline (classified by `permission`) → approval → execution → PostToolUse. They can also be called from codemode scripts as `tools.<name>()`.
 
+The exported `ToolPermission` type gains `"network"` (used by the built-in `web_fetch`; judged as execute and asks in plan, see [permissions.md](../guides/permissions.md) "Network class"); tools registered by a host through `tools.register` still accept only `read` / `write` / `execute`, and `HOST_API_VERSION` is unchanged.
+
 ## Events
 
 `events.on` handlers only observe: a throw is just logged and does not affect the run; handlers are called and awaited in order, and `session_shutdown` is awaited (so you can clean up before exit).

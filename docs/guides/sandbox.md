@@ -204,6 +204,12 @@ which needs the user's approval.]`。按文本猜测，可能误报（同样的�
   文件，不是终端。不用 `--unshare-pid`：沙箱里能看到并向同用户的进程发信号。
 - 后台 bash 由 ama 打开输出文件再交给子进程，输出目录无论在不在可写列表都能写。
 - SDK（`createAgent`）不读 `sandbox.bash`，bash 不包装、权限照旧。
+- **`web_fetch` 不在沙箱里**：它在 ama 进程内发请求，`sandbox.network: deny` 只断 bash 的网，不断 `web_fetch`。
+  这是有意的分工：bash 断网换免审批，联网读取改走显式受控的 `web_fetch`（权限类 `network`，default 询问、`-p`
+  拒绝、执行层拒私网与元数据地址，见 [permissions.md](permissions.md)「网络类」）。外泄面：获批的 `web_fetch`
+  能把上下文里的内容拼进 URL 的路径与查询串带出去（查询串 ≤ 1024 字符）；`auto` 的分类器对像密钥的查询串询问，
+  但它不是安全边界。不需要联网时用 `tools.disabled: ["web_fetch"]` 或 `permission.deny: ["web_fetch"]` 关掉，
+  只允许少数站点时配 `--permission-mode allowlist` 加 `--allow 'web_fetch(<域名>)'`。
 
 ### 测试
 

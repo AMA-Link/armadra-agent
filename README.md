@@ -196,6 +196,11 @@ await session.dispose();
 every mode. On macOS (`sandbox-exec`) and Linux (bubblewrap) an OS sandbox isolates codemode and, optionally, bash; Windows has none. See
 [permissions](docs/en/guides/permissions.md) and [sandbox](docs/guides/sandbox.md) (Chinese).
 
+- **Reading the web**: the built-in `web_fetch` reads one public http(s) page as Markdown (there is no search). It has
+  its own permission class, `network`: Manual asks (with "allow this host for this session"), `-p` denies, and
+  `--allow 'web_fetch(example.com)'` allows by domain; local, private and cloud-metadata addresses are refused in every
+  mode. Turn it off with `tools.disabled: ["web_fetch"]`. See [permissions](docs/en/guides/permissions.md), "Network class".
+
 The interface is available in English and Chinese (`--lang`, `AMA_LANG` or `ui.language`); text sent to the model is
 always English, so requests are byte-identical in both languages.
 

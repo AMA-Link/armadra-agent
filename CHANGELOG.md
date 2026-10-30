@@ -5,6 +5,15 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Tools and permissions
+
+- **`web_fetch`**: a new built-in tool in the `default` preset that GETs one public http(s) URL and returns its main content as Markdown (HTML, zero-dependency converter), pretty JSON or plain text; binaries are not parsed. Output is cut at `maxChars` (50 000 by default) with `offset` to continue, the full text goes to `outputs/`, and the first line marks the content as untrusted. Same-host redirects are followed (≤ 5, re-checked per hop), cross-host ones are reported. 30 s total / 15 s first byte / 5 MB body. Search is not included (#232).
+- **Permission class `network`**: `web_fetch` asks in Manual / Accept edits (the second option becomes "allow `<host>` for this session"), asks in Plan, is denied under `-p` unless an allow rule matches, goes to the classifier in Auto and is allowed in Bypass. Rules `web_fetch(<pattern>)` match `host/path`; a bare domain covers its subdomains. Whatever the mode, local host names, private, link-local and cloud-metadata addresses (every resolved address, IPv4-mapped forms included) are refused and the connection is pinned to the checked address. No new config keys: turn it off with `tools.disabled: ["web_fetch"]`, `tools.default: ["-web_fetch"]` or `permission.deny`. The exported `ToolPermission` type gains `"network"`; protocol constants are unchanged.
+- **Hooks**: matcher `web_fetch(...)` matches against the `url`.
+- **Prompt budgets**: `default` grows by about 120 tokens (≈ 1 600 with codemode); the `codemode-only` limit rises from 1 775 to 1 900 (measured 1 835, the `web_fetch` declaration is inlined) and `default` + task gets its own 2 150 limit (measured 2 116). Sessions resumed from an older version miss the cache once.
+
 ## 0.10.0 (2026-10-23)
 
 Version aligned with Armadra and armadra-cloud (all three ship 0.10.0); protocol constants unchanged. Nothing else was merged after 0.9.3.
