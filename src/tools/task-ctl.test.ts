@@ -11,7 +11,19 @@ import {
   userTexts,
   waitUntil,
 } from "../agent/testing/subagent-harness.js";
-import { createTaskCtlTool } from "./task-ctl.js";
+import {
+  registerTaskControl,
+  unregisterTaskControl,
+  type TaskControl,
+} from "../agents/task-control.js";
+import type { TaskInfo } from "./types.js";
+import {
+  COORDINATOR_WAIT_MAX_MS,
+  DEFAULT_WAIT_MS,
+  MAX_WAIT_MS,
+  bindTaskCtlWaitCap,
+  createTaskCtlTool,
+} from "./task-ctl.js";
 
 const results = (h: ReturnType<typeof subagentHarness>) =>
   h.session.messages.flatMap((m) => (m.role === "toolResult" ? [m as ToolResultMessage] : []));
@@ -105,5 +117,74 @@ describe("task_ctl", () => {
     expect(await tool.execute({ action: "list" }, top)).toEqual({ content: "No sub-agent tasks." });
     expect((await tool.execute({ action: "wait" }, top)).content).toBe("wait needs taskId");
     expect(tool.annotations?.pollable).toBe(true);
+  });
+});
+
+describe("task_ctl wait 封顶（#242）", () => {
+  const info: TaskInfo = {
+    taskId: "t1",
+    agent: "general",
+    runner: "ama",
+    status: "running",
+    description: "",
+    startedAt: 0,
+    background: true,
+  };
+  /** 假控制面：记录 wait 收到的超时，永远超时。 */
+  function withControl<T>(run: (timeouts: number[]) => Promise<T>): Promise<T> {
+    const timeouts: number[] = [];
+    const control = {
+      list: () => [info],
+      get: () => info,
+      wait: async (_id: string, timeoutMs: number) => {
+        timeouts.push(timeoutMs);
+        return undefined;
+      },
+      detachSignal: () => new AbortController().signal,
+    } as unknown as TaskControl;
+    registerTaskControl("sess-test", control);
+    return run(timeouts).finally(() => unregisterTaskControl("sess-test", control));
+  }
+  const wait = (tool: ReturnType<typeof createTaskCtlTool>, timeoutMs?: number) =>
+    tool.execute(
+      { action: "wait", taskId: "t1", ...(timeoutMs === undefined ? {} : { timeoutMs }) },
+      makeToolContext("/w"),
+    );
+
+  it("协调者封顶：显式大超时与缺省都只等 5 秒，回复说明被封顶；小超时不变", async () => {
+    const tool = createTaskCtlTool();
+    bindTaskCtlWaitCap(tool, COORDINATOR_WAIT_MAX_MS);
+    await withControl(async (timeouts) => {
+      const big = await wait(tool, 60_000);
+      const dflt = await wait(tool);
+      const small = await wait(tool, 1000);
+      expect(timeouts).toEqual([5000, 5000, 1000]);
+      expect(String(big.content)).toMatch(
+        /^Task t1 is still running \(0 turns so far\)\..*capped at 5s/,
+      );
+      expect(String(dflt.content)).toContain("capped at 5s");
+      expect(String(small.content)).not.toContain("capped");
+    });
+  });
+
+  it("没绑定（其它预设）：缺省 30 秒、上限 600 秒，回复文案不变", async () => {
+    const tool = createTaskCtlTool();
+    await withControl(async (timeouts) => {
+      const reply = await wait(tool, 60_000);
+      await wait(tool);
+      await wait(tool, MAX_WAIT_MS * 2);
+      expect(timeouts).toEqual([60_000, DEFAULT_WAIT_MS, MAX_WAIT_MS]);
+      expect(reply.content).toBe(
+        "Task t1 is still running (0 turns so far). Wait again or stop it.",
+      );
+    });
+  });
+
+  it("封顶只绑在被绑定的那个工具对象上；工具描述与 schema 不变", () => {
+    const capped = createTaskCtlTool();
+    const plain = createTaskCtlTool();
+    bindTaskCtlWaitCap(capped, COORDINATOR_WAIT_MAX_MS);
+    expect(capped.description).toBe(plain.description);
+    expect(capped.parameters).toEqual(plain.parameters);
   });
 });

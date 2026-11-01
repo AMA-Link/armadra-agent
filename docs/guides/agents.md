@@ -86,7 +86,8 @@ ama 再跑一轮、在消息里要求「不要调用工具、直接给最终报�
 
 是否后台的优先级：调用参数 `background` > 类型定义的 `background:` > config `subagents.background`。
 `subagents.background` 缺省 `auto`：交互界面、RPC、ACP 下后台（模型需要结果才写 `background: false`），`-p` 下前台；
-`always` / `never` 固定。两种缺省对应两版 `task` 工具描述，会话内不变，不影响缓存前缀稳定。
+`always` / `never` 固定。
+`coordinator` 工具预设（协调者只分派、不阻塞）下缺省固定为后台，不受 `-p` 与 `subagents.background` 影响。两种缺省对应两版 `task` 工具描述，会话内不变，不影响缓存前缀稳定。
 
 前台任务运行中可以转后台，任务不中断，`task` 工具调用立即返回一段固定英文结果（含 `taskId` 与输出文件），完成后照常发
 `<task-notification>`：
@@ -127,6 +128,8 @@ ama 再跑一轮、在消息里要求「不要调用工具、直接给最终报�
 | `stop`   | 停止任务，返回终态                                                                                      |
 | `output` | 运行中返回已有输出，结束后返回最终文本（同样有 50 KB 上限）                                             |
 | `send`   | 向任务追加一条消息并放到后台运行（等价于 `task{taskId, prompt, background:true}`）                      |
+
+`coordinator` 预设下 `wait` 的超时封顶 5 000 毫秒（含缺省与更大的 `timeoutMs`），超时回复里说明被封顶、完成后会有通知；其它预设不变。
 
 ### 续聊、保留与 resume
 

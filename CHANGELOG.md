@@ -9,6 +9,7 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 ### Tools and permissions
 
+- **The `coordinator` preset never blocks**: when `task` / `task_ctl` are exposed, `task` defaults to background (regardless of `-p` and `subagents.background`; an explicit `background` argument and an agent definition's `background:` still win) and `task_ctl wait` is capped at 5 s (the default and larger `timeoutMs` included); the timed-out reply says the wait was capped and that a `<task-notification>` follows. Other presets, tool descriptions and schemas are byte-identical (#242).
 - **`env` / `printenv` are no longer auto-safe**: the bash subprocess inherits the whole process environment (provider API keys included), so in Auto mode a bare `env`, `printenv`, `env FOO=1` or `env | grep …` now goes to the classifier / approval instead of being allowed statically; `env FOO=1 cmd` is still judged as `cmd`. The read-only list for Plan already excluded them, so both lists now agree (#240).
 
 ## 0.11.0 (2026-10-30)

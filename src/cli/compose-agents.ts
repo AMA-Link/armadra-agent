@@ -26,6 +26,8 @@ import {
   type ExternalWiring,
 } from "../agents/external.js";
 import { hostRunnersOf } from "../host/api-impl.js";
+import { isCoordinatorPreset } from "../tools/presets.js";
+import { COORDINATOR_WAIT_MAX_MS, bindTaskCtlWaitCap } from "../tools/task-ctl.js";
 import { bindTaskAgents, bindTaskBackground } from "../tools/task.js";
 import { resolveTaskBackground } from "../agent/subagent-background.js";
 import type { ComposeExtensionDeps } from "./compose-extensions.js";
@@ -76,6 +78,8 @@ export function subagentEnvironment(
   // [W7-B1] 缺省后台与自动转后台（配置键 W7-B2 登记于 config/types-w5.ts）
   const sub = config.subagents;
   env.background = resolveTaskBackground(sub?.background, deps.assembly.unattended === true);
+  // [#242] 协调者不阻塞：缺省后台，不受 subagents.background / -p 影响（调用参数与类型定义仍优先）
+  if (isCoordinatorPreset(config)) env.background = true;
   const after = sub?.autoBackgroundAfterMs;
   if (typeof after === "number" && after > 0) env.autoBackgroundAfterMs = after;
   return env;
@@ -140,5 +144,8 @@ export function createSubagentsFactory(deps: ComposeExtensionDeps): SessionExten
   bindTaskAgents(task, catalog);
   const env = subagentEnvironment(deps, catalog);
   bindTaskBackground(task, env.background === true);
+  // [#242] 协调者预设：task_ctl wait 超时封顶（task 与 task_ctl 同进退）
+  if (isCoordinatorPreset(deps.assembly.config))
+    bindTaskCtlWaitCap(deps.assembly.tools.get("task_ctl"), COORDINATOR_WAIT_MAX_MS);
   return ({ core }) => (core.depth > 0 ? undefined : createSubagentExtension(core, env, wiring));
 }

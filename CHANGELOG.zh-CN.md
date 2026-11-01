@@ -8,6 +8,7 @@
 
 ### 工具与权限
 
+- **`coordinator` 预设不阻塞**：暴露 `task` / `task_ctl` 时，`task` 缺省后台（不受 `-p` 与 `subagents.background` 影响，调用参数 `background` 与类型定义的 `background:` 仍优先），`task_ctl wait` 的超时封顶 5 秒（含缺省与更大的 `timeoutMs`），超时回复说明被封顶、完成后会有 `<task-notification>`。其它预设、工具描述与 schema 逐字节不变（#242）。
 - **`env` / `printenv` 不再免审批**：bash 子进程继承整个进程环境（含供应商 API key），Auto 模式下裸 `env`、`printenv`、`env FOO=1`、`env | grep …` 现在交给分类器 / 审批，不再静态放行；`env FOO=1 cmd` 仍按 `cmd` 判断。Plan 的只读名单本来就没有它们，两份名单现在一致（#240）。
 
 ## 0.11.0（2026-10-30）

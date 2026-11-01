@@ -23,6 +23,8 @@
  *   `codemode.mode` 显式配置覆盖（缺省配置不写这个键，以后调整映射能惠及老用户）。
  * - `coordinator` 预设即使显式 `on`，脚本里能调用的工具也只限活动集（read + 宿主工具），见
  *   `codemodeCallableFilter`：协调者「不写文件、不跑 bash」的约定不能经 codemode 绕过。
+ * - （#242）`coordinator` 预设不阻塞：`task` 缺省后台（无视 `subagents.background`，调用参数 `background`
+ *   与类型定义的 `background:` 仍优先）、`task_ctl wait` 的超时封顶 5 秒；其它预设不变。
  * - codemode 工具由 B10 经组装根的 `toolFactories` 注册（生效模式为 off 时不注册）；不可用
  *   （例如 `codemode.requireStrict` 而运行时 Node 不隔离网络）时 codemode-only 预设**回退到 default 并
  *   warning**（不报错：零配置用户不应因此起不来），显式 `on` 同样忽略；跟随预设得到的 `on` 静默回退。
@@ -98,7 +100,15 @@ export function effectiveCodemodeMode(
  * 不限（`undefined`；`on` 模式下脚本还能调没直接暴露的 ls / task / todo 等）。
  */
 export function codemodeCallableFilter(config: Pick<AmaConfig, "tools">): "active" | undefined {
-  return canonicalPreset(config.tools?.preset) === "coordinator" ? "active" : undefined;
+  return isCoordinatorPreset(config) ? "active" : undefined;
+}
+
+/**
+ * [#242] 是否 `coordinator` 预设：协调者只分派、不阻塞——`task` 缺省后台、`task_ctl wait` 超时封顶
+ * （组装根据此绑定，见 cli/compose-agents.ts）。其它预设不受影响。
+ */
+export function isCoordinatorPreset(config: Pick<AmaConfig, "tools">): boolean {
+  return canonicalPreset(config.tools?.preset) === "coordinator";
 }
 
 /**
