@@ -81,6 +81,21 @@ import { backgroundTasks, blockingTasks, keyLabel, runningBackground } from "./t
 
 const HINT_MS = 2500;
 
+/** 底部提示行的清除计时器（测试注入手动时钟，帧黄金不再依赖墙钟）。 */
+export interface HintTimers {
+  set(fn: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const realHintTimers: HintTimers = {
+  set: (fn, ms) => {
+    const handle = setTimeout(fn, ms);
+    handle.unref?.();
+    return handle;
+  },
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
 export interface InteractiveModeOptions {
   /** 缺省 `ProcessTerminal`（测试注入 MemoryTerminal）。 */
   terminal?: Terminal;
@@ -98,6 +113,8 @@ export interface InteractiveModeOptions {
   onReady?(handle: InteractiveHandle): void;
   /** 剪贴板读取的注入（测试；缺省调系统命令）。 */
   clipboard?: ClipboardDeps;
+  /** 提示行清除计时器的注入（测试；缺省真实 `setTimeout`）。 */
+  hintTimers?: HintTimers;
   /** 终端程序状态 OSC 7501（缺省只在真实终端启用；测试注入终端时给了才启用）。 */
   programStatus?: ProgramStatusOptions;
 }
@@ -209,7 +226,8 @@ export function runInteractiveMode(
   // ---- 小工具 ---------------------------------------------------------------
 
   let finished = false;
-  let hintTimer: ReturnType<typeof setTimeout> | undefined;
+  const hintTimers = options.hintTimers ?? realHintTimers;
+  let hintTimer: unknown;
   let resolveExit: (code: number) => void = () => undefined;
 
   const render = (): void => tui.requestRender();
@@ -219,14 +237,13 @@ export function runInteractiveMode(
   };
   const showHint = (text: string, ms = HINT_MS): void => {
     hint.setText(text === "" ? "" : theme.fg("dim", text));
-    if (hintTimer !== undefined) clearTimeout(hintTimer);
+    if (hintTimer !== undefined) hintTimers.clear(hintTimer);
     hintTimer = undefined;
     if (text !== "") {
-      hintTimer = setTimeout(() => {
+      hintTimer = hintTimers.set(() => {
         hint.setText("");
         render();
       }, ms);
-      hintTimer.unref?.();
     }
     render();
   };
@@ -520,7 +537,7 @@ export function runInteractiveMode(
     if (finished) return;
     finished = true;
     logoAnimation?.finish();
-    if (hintTimer !== undefined) clearTimeout(hintTimer);
+    if (hintTimer !== undefined) hintTimers.clear(hintTimer);
     loader.stop();
     area.dispose();
     osc7501.exit();
