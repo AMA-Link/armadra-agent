@@ -385,8 +385,12 @@ export interface AcpListSessionsParams {
 export interface AcpSessionInfo {
   sessionId: string;
   cwd: string;
+  /** Agent 报告的额外工作区根（绝对路径）；缺省与空数组等价。 */
+  additionalDirectories?: string[];
   title?: string | null;
+  /** ISO 8601 的最近活动时间。 */
   updatedAt?: string | null;
+  _meta?: Record<string, unknown> | null;
 }
 export interface AcpListSessionsResult {
   sessions: AcpSessionInfo[];
@@ -396,6 +400,8 @@ export interface AcpListSessionsResult {
 export interface AcpCloseSessionParams {
   sessionId: string;
 }
+/** `session/close` 的答复：规范里只有 `_meta`。 */
+export type AcpCloseSessionResult = { _meta?: Record<string, unknown> | null };
 
 export interface AcpSetModeParams {
   sessionId: string;

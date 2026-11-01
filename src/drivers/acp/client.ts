@@ -19,6 +19,10 @@
  *   `elicitationId` 若还挂着（处理器没答），它的 `signal` 随之 abort、答 `{ action: "cancel" }`，宿主据此收掉卡片。
  *   表单字段含字符串多选（`type: "array"`）与带标题的 `oneOf` / `anyOf`，答复 `content` 里多选是字符串数组；
  *   {@link multiSelectOptions} / {@link singleSelectOptions} 把两种写法收成统一的 `{ const, title }` 列表。
+ * - 会话管理：`listSessions(cwd?, cursor?, signal?)` 发 `session/list`（要 Agent 声明 `sessionCapabilities.list`，见
+ *   `supportsList`），`listAllSessions` 跟 `nextCursor` 翻页取全；`closeSession(sessionId, signal?)` 发 `session/close`
+ *   （`supportsClose`），按规范等同先取消：该会话挂起的权限请求答 `cancelled`、elicitation 答 `cancel`，再发请求。
+ *   没声明能力的 Agent 会答 -32601，开会话遇 -32000 同样原样抛出（{@link isAuthRequiredError}）。
  * - `setConfigOption(sessionId, configId, value)` 发 `session/set_config_option`；开会话答的 `configOptions`
  *   原样交回。`initialize` 声明 `clientCapabilities.session.configOptions: {}`（只认 select，不声明 boolean）；
  *   `auth.terminal` 缺省不声明（ama 作客户端没有可借给 Agent 的交互终端），见下 `authTerminal`。[ACP-D]
@@ -49,6 +53,8 @@ import {
   type AcpImplementationInfo,
   type AcpInitializeResult,
   type AcpListSessionsResult,
+  type AcpCloseSessionResult,
+  type AcpSessionInfo,
   type AcpLoadSessionResult,
   type AcpNewSessionResult,
   type AcpPromptResult,
@@ -315,15 +321,44 @@ export class AcpClient {
     );
   }
 
-  listSessions(cwd?: string, cursor?: string): Promise<AcpListSessionsResult> {
-    return this.peer.request(ACP_METHODS.sessionList, {
-      ...(cwd !== undefined ? { cwd } : {}),
-      ...(cursor !== undefined ? { cursor } : {}),
-    });
+  /** 一页会话；`cwd` 过滤（绝对路径），`cursor` 取自上一页的 `nextCursor`。 */
+  listSessions(
+    cwd?: string,
+    cursor?: string,
+    signal?: AbortSignal,
+  ): Promise<AcpListSessionsResult> {
+    return this.peer.request(
+      ACP_METHODS.sessionList,
+      {
+        ...(cwd !== undefined ? { cwd } : {}),
+        ...(cursor !== undefined ? { cursor } : {}),
+      },
+      signal,
+    );
   }
 
-  closeSession(sessionId: string): Promise<unknown> {
-    return this.peer.request(ACP_METHODS.sessionClose, { sessionId });
+  /** 跟 `nextCursor` 翻页取全（`maxPages` 防对端游标不终止，缺省 100 页）。 */
+  async listAllSessions(
+    cwd?: string,
+    signal?: AbortSignal,
+    maxPages = 100,
+  ): Promise<AcpSessionInfo[]> {
+    const sessions: AcpSessionInfo[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < maxPages; page++) {
+      const result = await this.listSessions(cwd, cursor, signal);
+      sessions.push(...(result.sessions ?? []));
+      if (typeof result.nextCursor !== "string" || result.nextCursor === "") break;
+      cursor = result.nextCursor;
+    }
+    return sessions;
+  }
+
+  /** 关闭会话：规范要求 Agent 先取消进行中的工作，所以本端先把该会话挂起的请求收掉。 */
+  closeSession(sessionId: string, signal?: AbortSignal): Promise<AcpCloseSessionResult> {
+    for (const controller of this.pendingPermissions.get(sessionId) ?? []) controller.abort();
+    for (const controller of this.pendingElicitations.get(sessionId) ?? []) controller.abort();
+    return this.peer.request(ACP_METHODS.sessionClose, { sessionId }, signal);
   }
 
   prompt(
