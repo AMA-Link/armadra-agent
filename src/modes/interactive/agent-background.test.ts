@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sharedCacheReporting } from "../../ai/cache/reporting.js";
 import type { FakeResponse } from "../../ai/fake/fake-script.js";
 import { setLocale } from "../../i18n/index.js";
+import { FOCUS_HINT_MS } from "./key-dispatch.js";
 import {
   cleanupStarted,
   golden,
@@ -68,7 +69,12 @@ const ARGV = ["--tools", "read,task", "--permission-mode", "full-auto"];
 
 describe("Ctrl+B：前台 task 转后台", () => {
   it("zh 80×24：工具行后台样式、主回合继续、新消息有回复、后台完成后通知回合", async () => {
-    const s = await start(script(1500), { columns: 80, rows: 24, argv: ARGV });
+    const s = await start(script(1500), {
+      columns: 80,
+      rows: 24,
+      argv: ARGV,
+      manualHints: true,
+    });
     await running(s, /运行 task .*Ctrl\+B 转后台/);
     s.type(CTRL_B);
     await waitFor(s, (x) => x.includes("好的，先做别的"), "parent continued");
@@ -79,6 +85,15 @@ describe("Ctrl+B：前台 task 转后台", () => {
     expect(screen).toMatch(/⎿ 已转后台 · /);
     expect(screen).toMatch(/↳ t1 explore · 运行中/);
     expect(screen).not.toContain("Moved to the background");
+    // 提示行的限时清除走手动时钟：到期前一直在，推进 FOCUS_HINT_MS 后才清掉
+    expect(s.hintTimers?.size).toBe(1);
+    s.hintTimers?.advance(FOCUS_HINT_MS - 1);
+    s.frame();
+    expect(s.terminal.viewport().join("\n")).toContain("已转后台：t1，完成后会通知");
+    s.hintTimers?.advance(1);
+    s.frame();
+    expect(s.terminal.viewport().join("\n")).not.toContain("已转后台：t1，完成后会通知");
+    expect(s.hintTimers?.size).toBe(0);
     // 后台任务还在跑：主会话空闲，可以发新消息
     await s.handle.session().waitForIdle();
     s.type("还有别的吗\r");
@@ -95,6 +110,7 @@ describe("Ctrl+B：前台 task 转后台", () => {
       columns: 80,
       rows: 24,
       argv: ARGV,
+      manualHints: true,
     });
     await running(s, /Running task .*Ctrl\+B to background/);
     golden("en/run-foreground-task-80x24", shot(s, "foreground task running"));
@@ -119,7 +135,12 @@ describe("Ctrl+B：前台 task 转后台", () => {
 
 describe("Agent 栏内 b / x", () => {
   it("zh 80×24：b 转后台选中的任务；x 第一次提示、再按停止", async () => {
-    const s = await start(script(4000), { columns: 80, rows: 24, argv: ARGV });
+    const s = await start(script(4000), {
+      columns: 80,
+      rows: 24,
+      argv: ARGV,
+      manualHints: true,
+    });
     await running(s, /运行 task .*↓ Agent 栏/);
     s.type(DOWN);
     await waitFor(s, (x) => x.includes("b 转后台 · x 停止"), "bar focused");

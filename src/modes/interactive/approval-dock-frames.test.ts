@@ -57,6 +57,7 @@ function script(childMs: number, parentMs: number, reply: string): FakeResponse[
 }
 
 const ARGV = ["--tools", "read,task,write", "--permission-mode", "default"];
+// 帧黄金里的「已转后台」提示由限时计时器清除：golden 用例走手动时钟（manualHints），不随 runner 卡顿变化
 
 /** 发消息、批准主会话的 task 调用、Ctrl+B 转后台，等子会话的审批停靠。 */
 async function docked(s: Started, label: RegExp): Promise<void> {
@@ -70,7 +71,7 @@ async function docked(s: Started, label: RegExp): Promise<void> {
 
 describe("后台任务审批停靠", () => {
   it("zh 80×24：忙时停靠在栏里，主会话空闲且空输入时自动弹出", async () => {
-    const s = await start(script(300, 1500, "父会话回复"), { argv: ARGV });
+    const s = await start(script(300, 1500, "父会话回复"), { argv: ARGV, manualHints: true });
     await docked(s, /等待审批/);
     expect(s.handle.tui.hasOverlay).toBe(false);
     const screen = s.terminal.viewport().join("\n");
@@ -125,7 +126,7 @@ describe("后台任务审批停靠", () => {
 
   it("en 80×24：停靠帧", async () => {
     setLocale("en");
-    const s = await start(script(300, 1500, "parent reply"), { argv: ARGV });
+    const s = await start(script(300, 1500, "parent reply"), { argv: ARGV, manualHints: true });
     await docked(s, /needs approval/);
     expect(s.terminal.viewport().join("\n")).toMatch(/↓ handle approval/);
     golden("en/approval-docked-80x24", shot(s, "main busy: background approval docked"));

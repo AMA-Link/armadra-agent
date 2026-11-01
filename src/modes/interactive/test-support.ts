@@ -19,7 +19,7 @@ import type { Runtime } from "../../cli/runtime.js";
 import type { ClipboardDeps } from "../../tools/clipboard-image.js";
 import { MemoryTerminal, plainTheme, stripAnsi, type Component, type Theme } from "../../tui.js";
 import { AMA_VERSION } from "../../version.js";
-import { runInteractiveMode, type InteractiveHandle } from "./interactive-mode.js";
+import { runInteractiveMode, type HintTimers, type InteractiveHandle } from "./interactive-mode.js";
 import type { ProgramStatusOptions } from "./program-status-ui.js";
 
 export function usage(partial: Partial<Usage> = {}): Usage {
@@ -87,6 +87,42 @@ export const started: { h: ComposeHarness | undefined; runtime: Runtime | undefi
   runtime: undefined,
 };
 
+/**
+ * 手动提示计时器：`set` 只登记，`advance(ms)` 才触发到期的回调。帧黄金里的限时提示（如「已转后台」）
+ * 由此固定存在，不随 runner 卡顿消失。
+ */
+export class ManualHintTimers implements HintTimers {
+  private time = 0;
+  private nextId = 1;
+  private readonly pending = new Map<number, { at: number; fn: () => void }>();
+
+  set(fn: () => void, ms: number): number {
+    const id = this.nextId++;
+    this.pending.set(id, { at: this.time + ms, fn });
+    return id;
+  }
+
+  clear(handle: unknown): void {
+    this.pending.delete(handle as number);
+  }
+
+  /** 登记着、还没触发的计时器个数。 */
+  get size(): number {
+    return this.pending.size;
+  }
+
+  /** 推进时钟，按到期顺序触发。 */
+  advance(ms: number): void {
+    this.time += ms;
+    const due = [...this.pending.entries()]
+      .filter(([, t]) => t.at <= this.time)
+      .sort((a, b) => a[1].at - b[1].at);
+    for (const [id, timer] of due) {
+      if (this.pending.delete(id)) timer.fn();
+    }
+  }
+}
+
 export async function cleanupStarted(): Promise<void> {
   await started.runtime?.dispose();
   started.runtime = undefined;
@@ -104,6 +140,8 @@ export interface Started {
   /** 等到会话发出某个事件（含判定），然后渲染。 */
   until(pred: (e: SessionEvent) => boolean): Promise<void>;
   type(text: string): void;
+  /** `manualHints: true` 时的提示计时器（否则 undefined）。 */
+  hintTimers: ManualHintTimers | undefined;
 }
 
 export async function start(
@@ -126,6 +164,8 @@ export async function start(
     clipboard?: ClipboardDeps;
     /** 启用终端程序状态 OSC 7501（缺省不启用）。 */
     programStatus?: ProgramStatusOptions;
+    /** 提示行的限时清除改用手动时钟（`s.hintTimers.advance(ms)`）；缺省走真实计时器。 */
+    manualHints?: boolean;
   } = {},
 ): Promise<Started> {
   if (options.keepHarness !== true || started.h === undefined)
@@ -145,6 +185,7 @@ export async function start(
   if (parsed.kind !== "run") throw new Error("subcommand");
   const context: ModeContext = { args: parsed.args, prompt: undefined, io: h.io };
   const terminal = new MemoryTerminal({ columns: options.columns ?? 80, rows: options.rows ?? 24 });
+  const hintTimers = options.manualHints === true ? new ManualHintTimers() : undefined;
   let handle: InteractiveHandle | undefined;
   const done = runInteractiveMode(rt, context, {
     terminal,
@@ -159,6 +200,7 @@ export async function start(
       run: async () => ({ code: null, stdout: Buffer.alloc(0), stderr: "", missing: true }),
     },
     ...(options.programStatus !== undefined ? { programStatus: options.programStatus } : {}),
+    ...(hintTimers !== undefined ? { hintTimers } : {}),
     onReady: (x) => (handle = x),
   });
   if (handle === undefined) throw new Error("not ready");
@@ -171,6 +213,7 @@ export async function start(
     done,
     rt,
     frame,
+    hintTimers,
     type: (text) => {
       terminal.sendInput(text);
       frame();
