@@ -153,10 +153,10 @@ stdin 关闭后等已开始的运行结束再退出（0）；`ama` 进程的 std
 
 模型经 `task(agent="acp:<程序>")` 使用 ACP Agent（ama 自己是 `task(agent="acp:ama")`，见 [agents.md](../guides/agents.md)「在 task 里使用」）。
 
-`AcpClient`（`@armadra/agent/acp`）：`initialize`、`newSession`、`resumeSession`（优先，不回放）、`loadSession`、`listSessions`、`closeSession`、`prompt`、`setMode`、`cancel`。
+`AcpClient`（`@armadra/agent/acp`）：`initialize`、`authenticate`、`logout`、`newSession`、`resumeSession`（优先，不回放）、`loadSession`、`listSessions`、`listAllSessions`、`closeSession`、`prompt`、`setMode`、`cancel`。
 
 - 声明的客户端能力：`session.configOptions: {}`（接 select 型配置项，不声明 boolean）；不声明 `fs`（Agent 发来的 `fs/*` 请求回 method not found）；`terminal` 只在构造参数给了
-  `onTerminal` 时声明（见下），也不声明 `auth.terminal`（ama 没有可借给 Agent 的交互终端）。
+  `onTerminal` 时声明（见下），`auth.terminal` 缺省也不声明（ama 没有可借给 Agent 的交互终端；宿主有交互终端时构造参数给 `authTerminal: true`，见下）。
 - 线路两侧开 `$/cancel_request`：本端请求的 `signal` 在发出后 abort 会通知 Agent 撤回；Agent 撤回挂起的
   `session/request_permission` / `elicitation/create` 时处理器的 `signal` abort，答 `cancelled` / `cancel`（处理器之后给的选择不作数）。
 - `session/request_permission` 交给 `onPermission`；没有处理器时回首个 `reject_once`（无人值守）。
@@ -175,7 +175,11 @@ stdin 关闭后等已开始的运行结束再退出（0）；`ama` 进程的 std
   `clientCapabilities.terminal: true`，并把 `terminal/create|output|wait_for_exit|kill|release` 连同原样参数交给它，返回值即答复，
   抛 `RpcError` 回对应错误；没给时声明 `terminal: false`、请求回 method not found（与旧版相同）。权限、cwd 限制与输出上限由宿主负责；
   ama 自己作客户端时不给处理器。
-- `AcpClient.features`：`{ mcpServers, elicitation, configOptions, terminal }`，宿主据此做特性检测。
+- 认证：`authenticate(methodId, signal?)` 发 `authenticate { methodId }`；`logout(signal?)` 发 `logout`（Agent 声明 `agentCapabilities.auth.logout` 才可用，`supportsLogout()`）。`authMethods` 保留 `initialize` 答的 id、name、description、type，terminal 型还有 `args`、`env`（`isTerminalAuthMethod` 判断类型）。terminal 型方法规范禁止经 `authenticate`：已知是 terminal 型时 `authenticate` 本地抛 -32602、不发请求，由宿主在终端里跑 agent 命令加该方法的 `args`、`env`，退出码 0 即成功。构造参数 `authTerminal: true` 才声明 `clientCapabilities.auth.terminal`，Agent 据此才给 terminal 型方法。开会话或发提示遇 -32000（auth_required）用 `isAuthRequiredError(error)` 判断，再把 `authMethods` 交给用户。ama 自己作客户端不给 `authTerminal`、不替人登录。
+- `elicitation/complete`（Agent → 客户端通知，URL 型 elicitation 在带外完成）：构造参数给了 `onElicitationComplete({ elicitationId })` 才接，并把 `initialize` 的 `elicitation` 声明成 `{ form: {}, url: {} }`（只给 `onElicitation` 时仍是 `{}`）。同一 `elicitationId` 的请求若还没答，它处理器的 `signal` 随之 abort、答 `{ action: "cancel" }`，宿主据此收掉卡片；参数里没有字符串 `elicitationId` 的通知被忽略。
+- 表单字段：除 `string` / `number` / `integer` / `boolean` 外，`type: "array"` 是字符串多选（`items: { type: "string", enum }` 或带标题的 `items: { anyOf: [{ const, title }] }`，可带 `minItems` / `maxItems`），`string` 字段可带 `oneOf: [{ const, title }]`（带标题的单选）。答复 `content` 里多选值是字符串数组。`multiSelectOptions(field)` / `singleSelectOptions(field)` 把这几种写法收成 `{ const, title }` 列表（不是对应控件返回 undefined）；不认识的 `type` 原样保留，不要当已知控件渲染。
+- 会话管理：`listSessions(cwd?, cursor?, signal?)` 发 `session/list`（`supportsList()`），`listAllSessions(cwd?, signal?, maxPages = 100)` 跟 `nextCursor` 翻页取全；`closeSession(sessionId, signal?)` 发 `session/close`（`supportsClose()`）。规范要求关闭等同先取消，所以 `closeSession` 先让该会话挂起的权限请求答 `cancelled`、elicitation 答 `cancel`，别的会话不受影响。Agent 没声明能力会答 -32601，需要登录时答 -32000，错误码都原样抛出。
+- `AcpClient.features`：`{ mcpServers, elicitation, configOptions, terminal, auth, elicitationComplete }`，宿主据此做特性检测。
 
 `AcpDriver` 在客户端之上实现驱动契约（`AgentDriver`）：
 
