@@ -7,6 +7,8 @@
  *   与父一致，运行时拒绝；
  * - `wait` / `output` 是轮询类调用（`annotations.pollable`，重复调用检测豁免）；
  * - `send` = 续聊放后台：等价于 `task{taskId, prompt, background:true}`，完成后同样收到通知。
+ * - [#242] `coordinator` 预设下 `wait` 的超时封顶 `COORDINATOR_WAIT_MAX_MS`（协调者不阻塞，见
+ *   `bindTaskCtlWaitCap`）；其它预设不变。
  * - [W7-B1] `wait` 被转后台（`background()`，TUI `Ctrl+B` / RPC `background_task`）打断时立即返回固定
  *   文案，要求模型不要再等。
  */
@@ -19,6 +21,18 @@ import type { TaskInfo, ToolContext, ToolDefinition, ToolResult } from "./types.
 export const TASK_CTL_TOOL = "task_ctl";
 export const DEFAULT_WAIT_MS = 30_000;
 export const MAX_WAIT_MS = 600_000;
+/** [#242] `coordinator` 预设下 `wait` 的超时上限（毫秒）。 */
+export const COORDINATOR_WAIT_MAX_MS = 5_000;
+
+const waitCaps = new WeakMap<object, number>();
+
+/**
+ * [#242] 组装根把 `wait` 的超时上限绑到 `task_ctl` 工具（`coordinator` 预设）；没绑定按 `MAX_WAIT_MS`。
+ * 工具描述与参数 schema 不变（其它预设逐字节不变）；被封顶时在超时回复里说明。
+ */
+export function bindTaskCtlWaitCap(tool: ToolDefinition | undefined, capMs: number): void {
+  if (tool !== undefined) waitCaps.set(tool, capMs);
+}
 
 export interface TaskCtlInput {
   action: "list" | "wait" | "stop" | "output" | "send";
@@ -57,7 +71,7 @@ async function send(input: TaskCtlInput, ctx: ToolContext): Promise<ToolResult> 
 }
 
 export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
-  return {
+  const tool: ToolDefinition<TaskCtlInput> = {
     name: TASK_CTL_TOOL,
     label: "TaskCtl",
     description:
@@ -109,14 +123,20 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
           };
         }
         case "wait": {
-          const timeout = Math.min(Math.max(input.timeoutMs ?? DEFAULT_WAIT_MS, 0), MAX_WAIT_MS);
+          const cap = Math.min(waitCaps.get(tool) ?? MAX_WAIT_MS, MAX_WAIT_MS);
+          const wanted = Math.min(Math.max(input.timeoutMs ?? DEFAULT_WAIT_MS, 0), MAX_WAIT_MS);
+          const timeout = Math.min(wanted, cap);
           const signal = control.detachSignal(taskId);
           const result = await control.wait(taskId, timeout, { signal });
           if (result === undefined && signal.aborted) return { content: waitDetachedText(taskId) };
           if (result === undefined) {
             const turns = control.get(taskId)?.turns ?? 0;
+            const capped =
+              wanted > timeout
+                ? ` Waits are capped at ${Math.round(timeout / 1000)}s here; do not block on it: keep working, a <task-notification> follows when it finishes.`
+                : "";
             return {
-              content: `Task ${taskId} is still running (${turns} turns so far). Wait again or stop it.`,
+              content: `Task ${taskId} is still running (${turns} turns so far). Wait again or stop it.${capped}`,
             };
           }
           return {
@@ -129,4 +149,5 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
       }
     },
   };
+  return tool;
 }
