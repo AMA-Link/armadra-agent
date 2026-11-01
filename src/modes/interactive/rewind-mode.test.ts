@@ -8,11 +8,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { composeHarness } from "../../../test/helpers/compose-harness.js";
 import type { FakeResponse } from "../../ai/fake/fake-script.js";
-import { cleanupStarted, start, started, type Started } from "./test-support.js";
+import { cleanupStarted, start, started, waitScreen, type Started } from "./test-support.js";
 
 afterEach(cleanupStarted);
-
-const tick = (ms = 30): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 const EDIT_SCRIPT: FakeResponse[] = [
   { text: "好的" },
@@ -36,16 +34,39 @@ async function send(s: Started, text: string): Promise<void> {
   s.type(text);
   s.terminal.sendInput("\r");
   await settled;
-  await tick(0);
+  // agent_settled 先于运行状态收尾：等会话真正空闲，否则紧接着的 /rewind 会因「正在运行」被拒
+  await s.handle.session().waitForIdle();
+  s.frame();
 }
 
-async function press(s: Started, data: string, ms = 30): Promise<string> {
+/** 送一次按键并立即渲染，返回视口（不等待；同步完成的按键用它）。 */
+function press(s: Started, data: string): string {
   s.terminal.sendInput(data);
   s.terminal.flushInput();
-  await tick(ms);
   s.frame();
   return s.terminal.viewport().join("\n");
 }
+
+/**
+ * 送一次按键，逐帧等到视口满足 `ready`（回滚预览、写盘与摘要都是异步的）：等的是确定状态而不是固定毫秒，
+ * 负载高时只是多等几帧，不会放宽断言。
+ */
+async function pressUntil(
+  s: Started,
+  data: string,
+  ready: (screen: string) => boolean,
+  label: string,
+): Promise<string> {
+  s.terminal.sendInput(data);
+  s.terminal.flushInput();
+  await waitScreen(s, ready, label);
+  return s.terminal.viewport().join("\n");
+}
+
+const has =
+  (...parts: string[]) =>
+  (screen: string): boolean =>
+    parts.every((part) => screen.includes(part));
 
 function fileOf(name: string): string {
   return readFileSync(join(started.h!.home.cwd, name), "utf8");
@@ -67,35 +88,30 @@ describe("回滚交互（MemoryTerminal + fake）", () => {
         .map((p) => p.hasCheckpoint),
     ).toEqual([true, true]);
 
-    let screen = await press(s, "\x1b");
+    let screen = await pressUntil(s, "\x1b", has("再按 Esc 回滚"), "esc hint");
     expect(screen).toContain("再按 Esc 回滚");
-    screen = await press(s, "\x1b", 80);
-    expect(screen).toContain("回滚到哪条消息之前");
-    // 改动统计是异步预览（dryRun），负载高时 80 ms 内可能还没回来：等到出现为止
-    for (let i = 0; i < 40 && !/把 alpha 改成大写.*1 文件 \+1 −1/.test(screen); i++) {
-      await tick(50);
-      s.frame();
-      screen = s.terminal.viewport().join("\n");
-    }
+    // 改动统计是异步预览（dryRun）：等到出现为止
+    screen = await pressUntil(
+      s,
+      "\x1b",
+      (x) => x.includes("回滚到哪条消息之前") && /把 alpha 改成大写.*1 文件 \+1 −1/.test(x),
+      "rewind list with stats",
+    );
     expect(screen).toMatch(/把 alpha 改成大写.*1 文件 \+1 −1/);
 
-    screen = await press(s, "\r", 50);
+    screen = await pressUntil(s, "\r", has("回滚到这条消息之前", "3. 恢复代码"), "confirm panel");
     expect(screen).toContain("回滚到这条消息之前");
     expect(screen).toContain("1. 恢复代码和对话");
     expect(screen).toContain("将恢复 1 个文件 +1 −1 · 对话将分叉");
     expect(screen).toContain("3. 恢复代码");
 
-    screen = await press(s, "1", 80);
-    // 恢复是异步写盘，慢机器（CI Windows）80 ms 内可能还没写完：等到文件与提示都出现为止
-    for (
-      let i = 0;
-      i < 60 && (fileOf("a.txt") !== "alpha\n" || !screen.includes("已恢复 1 个文件"));
-      i++
-    ) {
-      await tick(50);
-      s.frame();
-      screen = s.terminal.viewport().join("\n");
-    }
+    // 恢复是异步写盘；结果通知排在写盘、重画和回填之后，等通知出现即全部完成
+    screen = await pressUntil(
+      s,
+      "1",
+      has("已恢复 1 个文件", "对话已回到这条消息之前，原消息已放回输入框"),
+      "restore result",
+    );
     expect(fileOf("a.txt")).toBe("alpha\n");
     expect(s.handle.editor.getText()).toBe("把 alpha 改成大写");
     const users = s.handle.session().messages.filter((m) => m.role === "user");
@@ -115,11 +131,11 @@ describe("回滚交互（MemoryTerminal + fake）", () => {
     await send(s, "第一条");
     await send(s, "把 alpha 改成大写");
     s.type("/rewind");
-    await press(s, "\r", 80);
-    let screen = await press(s, "\r", 50);
+    await pressUntil(s, "\r", has("回滚到哪条消息之前"), "rewind list");
+    let screen = await pressUntil(s, "\r", has("4. 从这里摘要"), "confirm panel");
     expect(screen).toContain("4. 从这里摘要");
-    for (const key of ["\x1b[B", "\x1b[B", "\x1b[B", ..."只记文件名"]) await press(s, key, 0);
-    screen = await press(s, "\r", 120);
+    for (const key of ["\x1b[B", "\x1b[B", "\x1b[B", ..."只记文件名"]) press(s, key);
+    screen = await pressUntil(s, "\r", has("已从这里分叉，离开的部分写成了摘要"), "summary result");
     expect(screen).toContain("已从这里分叉，离开的部分写成了摘要");
     expect(s.handle.editor.getText()).toBe("把 alpha 改成大写");
     expect(fileOf("a.txt")).toBe("ALPHA\n");
@@ -132,13 +148,13 @@ describe("回滚交互（MemoryTerminal + fake）", () => {
   it("输入框有字：双击 Esc 清空并存进输入历史，↑ 取回", async () => {
     const s = await start([]);
     s.type("写到一半的草稿");
-    let screen = await press(s, "\x1b");
+    let screen = press(s, "\x1b");
     expect(screen).toContain("再按 Esc 清空");
     expect(s.handle.editor.getText()).toBe("写到一半的草稿");
-    screen = await press(s, "\x1b");
+    screen = press(s, "\x1b");
     expect(s.handle.editor.getText()).toBe("");
     expect(screen).toContain("已清空输入 · ↑ 取回");
-    await press(s, "\x1b[A");
+    press(s, "\x1b[A");
     expect(s.handle.editor.getText()).toBe("写到一半的草稿");
     s.handle.exit(0);
     await s.done;
@@ -146,12 +162,12 @@ describe("回滚交互（MemoryTerminal + fake）", () => {
 
   it("没有回合时双击 Esc 提示一行；Esc 之间按别的键重新计", async () => {
     const s = await start([]);
-    await press(s, "\x1b");
+    press(s, "\x1b");
     s.type("x");
     s.handle.editor.clear();
-    let screen = await press(s, "\x1b");
+    let screen = press(s, "\x1b");
     expect(screen).toContain("再按 Esc 回滚");
-    screen = await press(s, "\x1b");
+    screen = await pressUntil(s, "\x1b", has("还没有可回滚的消息"), "empty notice");
     expect(screen).toContain("还没有可回滚的消息");
     s.handle.exit(0);
     await s.done;
@@ -172,11 +188,10 @@ describe("回滚交互（MemoryTerminal + fake）", () => {
     s.terminal.sendInput("\x1b");
     s.terminal.flushInput();
     await settled;
-    await tick(50);
-    s.frame();
+    // 撤回在运行结束后异步完成，通知排在回填之后：等通知出现
+    await waitScreen(s, has("已撤回被中断的消息"), "undo notice");
     expect(s.handle.editor.getText()).toBe("帮我看看");
     expect(s.handle.session().messages.some((m) => m.role === "user")).toBe(false);
-    expect(s.terminal.viewport().join("\n")).toContain("已撤回被中断的消息");
     s.handle.exit(0);
     await s.done;
   });
@@ -202,7 +217,9 @@ describe("回滚交互（MemoryTerminal + fake）", () => {
     s.terminal.sendInput("\x1b");
     s.terminal.flushInput();
     await settled;
-    await tick(50);
+    // 不撤回没有可观察的事件：等会话空闲（撤回判断挂在同一个空闲上，先于这里的续体）再让出一个宏任务
+    await s.handle.session().waitForIdle();
+    await new Promise((resolve) => setImmediate(resolve));
     expect(s.handle.editor.getText()).toBe("");
     expect(s.handle.session().messages.some((m) => m.role === "user")).toBe(true);
     s.handle.exit(0);
@@ -217,7 +234,7 @@ describe("回滚交互（MemoryTerminal + fake）", () => {
     await send(s, "第一条");
     await send(s, "把 alpha 改成大写");
     s.type("/rewind 2 conversation");
-    const screen = await press(s, "\r", 60);
+    const screen = await pressUntil(s, "\r", has("对话已回到这条消息之前"), "conversation result");
     expect(fileOf("a.txt")).toBe("ALPHA\n");
     expect(s.handle.editor.getText()).toBe("把 alpha 改成大写");
     expect(screen).toContain("对话已回到这条消息之前");
