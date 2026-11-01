@@ -16,7 +16,13 @@
  *   挂起的 elicitation 一律回 `{ action: "cancel" }`；ama 从不替人填表。
  * - `setConfigOption(sessionId, configId, value)` 发 `session/set_config_option`；开会话答的 `configOptions`
  *   原样交回。`initialize` 声明 `clientCapabilities.session.configOptions: {}`（只认 select，不声明 boolean）；
- *   不声明 `auth.terminal`（ama 作客户端没有可借给 Agent 的交互终端）。[ACP-D]
+ *   `auth.terminal` 缺省不声明（ama 作客户端没有可借给 Agent 的交互终端），见下 `authTerminal`。[ACP-D]
+ * - 认证：`authenticate(methodId)` 发 `authenticate`（agent 型方法）、`logout()` 发 `logout`（Agent 声明
+ *   `auth.logout` 才可用，见 `supportsLogout`）；terminal 型方法规范禁止经 `authenticate`，已知是 terminal 型时本地
+ *   拒绝（-32602），宿主自己在终端里跑 `args` / `env`。构造参数 `authTerminal: true` 才在 `initialize` 声明
+ *   `clientCapabilities.auth.terminal`（宿主有交互终端可借；Agent 据此才给 terminal 型方法），缺省线路与旧版相同。
+ *   开会话遇 -32000（auth_required）用 {@link isAuthRequiredError} 判断，`authMethods` 保留 id / name / description / type
+ *   / args / env 原样。
  * - 线路两侧开 `$/cancel_request`：本端请求的 `signal` abort 时通知 Agent；Agent 撤回挂起的
  *   `session/request_permission` / `elicitation/create` 时处理器的 `signal` abort，回 cancelled / cancel。[ACP-D]
  */
@@ -28,6 +34,9 @@ import {
   RPC_ERRORS,
   type AcpAgentCapabilities,
   type AcpAuthMethod,
+  type AcpAuthenticateResult,
+  type AcpLogoutResult,
+  isTerminalAuthMethod,
   type AcpContentBlock,
   type AcpElicitationParams,
   type AcpElicitationResult,
@@ -70,6 +79,16 @@ export interface AcpClientOptions extends AcpClientHandlers {
   input: NodeJS.ReadableStream;
   output: NodeJS.WritableStream;
   clientInfo?: AcpImplementationInfo;
+  /**
+   * 宿主能在交互终端里复现 Agent 的启动命令：声明 `clientCapabilities.auth.terminal`，Agent 才会在
+   * `authMethods` 里给 terminal 型方法。缺省不声明。
+   */
+  authTerminal?: boolean;
+}
+
+/** 错误是 ACP 的 auth_required（-32000）：开会话或发提示前需要先认证 / 登录。 */
+export function isAuthRequiredError(error: unknown): error is RpcError {
+  return error instanceof RpcError && error.code === RPC_ERRORS.authRequired;
 }
 
 /** 开会话参数里的 `mcpServers`：拷一份，缺省空数组。 */
@@ -104,14 +123,16 @@ export class AcpClient {
    * - `mcpServers`：开会话时可经 {@link AcpSessionOptions} 传 MCP 服务器；
    * - `elicitation`：构造参数 `onElicitation` 接 `elicitation/create`；
    * - `configOptions`：`setConfigOption` 与开会话答的 `configOptions`；
-   * - `terminal`：构造参数 `onTerminal` 接 `terminal/*`。
+   * - `terminal`：构造参数 `onTerminal` 接 `terminal/*`；
+   * - `auth`：`authenticate` / `logout`、构造参数 `authTerminal`、`isAuthRequiredError`。
    */
   static readonly features: {
     readonly mcpServers: true;
     readonly elicitation: true;
     readonly configOptions: true;
     readonly terminal: true;
-  } = { mcpServers: true, elicitation: true, configOptions: true, terminal: true };
+    readonly auth: true;
+  } = { mcpServers: true, elicitation: true, configOptions: true, terminal: true, auth: true };
 
   private readonly peer: JsonRpcPeer;
   /** sessionId → 挂起权限请求的取消器。 */
@@ -171,6 +192,7 @@ export class AcpClient {
           fs: { readTextFile: false, writeTextFile: false },
           terminal: this.options.onTerminal !== undefined,
           session: { configOptions: {} },
+          ...(this.options.authTerminal === true ? { auth: { terminal: true } } : {}),
           ...(this.options.onElicitation !== undefined ? { elicitation: {} } : {}),
         },
         ...(this.options.clientInfo !== undefined ? { clientInfo: this.options.clientInfo } : {}),
@@ -198,8 +220,31 @@ export class AcpClient {
   supportsClose(): boolean {
     return this.agentCapabilities.sessionCapabilities?.close != null;
   }
+  /** Agent 声明了 `auth.logout`（存在即支持）。 */
+  supportsLogout(): boolean {
+    return this.agentCapabilities.auth?.logout != null;
+  }
   supportsImages(): boolean {
     return this.agentCapabilities.promptCapabilities?.image === true;
+  }
+
+  /**
+   * 用 agent 型认证方法登录（`methodId` 取自 `authMethods`）。terminal 型方法不经 `authenticate`：已知是
+   * terminal 型时抛 -32602，由宿主在终端里跑该方法的 `args` / `env`。失败的错误码原样抛出。
+   */
+  async authenticate(methodId: string, signal?: AbortSignal): Promise<AcpAuthenticateResult> {
+    const known = this.authMethods.find((method) => method.id === methodId);
+    if (known !== undefined && isTerminalAuthMethod(known))
+      throw new RpcError(
+        RPC_ERRORS.invalidParams,
+        `auth method ${methodId} is a terminal method: run it in a terminal, not through authenticate`,
+      );
+    return this.peer.request(ACP_METHODS.authenticate, { methodId }, signal);
+  }
+
+  /** 登出当前账号；Agent 没声明 `auth.logout`（见 `supportsLogout`）时会答 method not found。 */
+  logout(signal?: AbortSignal): Promise<AcpLogoutResult> {
+    return this.peer.request(ACP_METHODS.logout, {}, signal);
   }
 
   newSession(

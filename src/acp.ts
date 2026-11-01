@@ -13,6 +13,7 @@ export type * from "./drivers/types.js";
 export type * from "./drivers/acp/types.js"; // AcpToolKind 与驱动契约同一类型
 export {
   ACP_META_KEY,
+  isTerminalAuthMethod,
   ACP_METHODS,
   ACP_PROTOCOL_VERSION,
   RPC_ERRORS,
@@ -32,6 +33,7 @@ export {
 } from "./drivers/jsonrpc.js";
 export {
   AcpClient,
+  isAuthRequiredError,
   unattendedOutcome,
   type AcpClientHandlers,
   type AcpClientOptions,

@@ -17,8 +17,10 @@ export const ACP_PROTOCOL_VERSION = 1 as const;
 /** 方法名（客户端 → Agent 的请求 / 通知，Agent → 客户端的请求 / 通知）。 */
 export const ACP_METHODS = {
   initialize: "initialize",
-  /** ama 不实现（只给 terminal 型认证方法，规范要求这类方法不经 authenticate）。 */
+  /** 客户端 → Agent：agent 型认证方法经它完成；terminal 型不经它（规范）。 */
   authenticate: "authenticate",
+  /** 客户端 → Agent：登出当前账号（Agent 声明 `agentCapabilities.auth.logout` 才可用）。 */
+  logout: "logout",
   sessionNew: "session/new",
   sessionLoad: "session/load",
   sessionResume: "session/resume",
@@ -31,6 +33,8 @@ export const ACP_METHODS = {
   sessionUpdate: "session/update",
   requestPermission: "session/request_permission",
   elicitationCreate: "elicitation/create",
+  /** Agent → 客户端通知：URL 型 elicitation 已在带外完成。 */
+  elicitationComplete: "elicitation/complete",
   /** 协议级取消（双向通知，`requestId` 指对端发来的、尚未答复的请求）。 */
   cancelRequest: "$/cancel_request",
 } as const;
@@ -97,6 +101,7 @@ export interface AcpClientCapabilities {
   /** 会话相关的客户端能力；`configOptions.boolean` 存在即能显示 boolean 型配置项。 */
   session?: { configOptions?: { boolean?: Record<string, unknown> | null } | null } | null;
   /** `terminal: true`：客户端能替 Agent 起终端跑 terminal 型认证方法。 */
+  /** 能在交互终端里复现 Agent 的启动命令；声明后 Agent 才会给 terminal 型认证方法。 */
   auth?: { terminal?: boolean };
 }
 
@@ -137,6 +142,18 @@ export type AcpAuthMethod =
 
 export interface AcpAuthenticateParams {
   methodId: string;
+}
+
+/** `authenticate` / `logout` 的答复：规范里只有 `_meta`。 */
+export type AcpAuthenticateResult = { _meta?: Record<string, unknown> | null };
+export type AcpLogoutResult = { _meta?: Record<string, unknown> | null };
+
+/** terminal 型认证方法（客户端在终端里跑 `<agent 命令> <args…>`，带 `env`）。 */
+export type AcpTerminalAuthMethod = Extract<AcpAuthMethod, { type: "terminal" }>;
+
+/** 是 terminal 型认证方法：这类方法不经 `authenticate`。 */
+export function isTerminalAuthMethod(method: AcpAuthMethod): method is AcpTerminalAuthMethod {
+  return method.type === "terminal";
 }
 
 export interface AcpInitializeResult {
