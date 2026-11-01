@@ -90,6 +90,28 @@ describe("createRuntimeDeps + bootstrap", () => {
     expect((await names([])).tools).toEqual(["edit", "read", "task", "task_ctl", "write"]);
   });
 
+  it("coordinator 预设带 task 时 task 缺省后台（#242）；default 预设 -p 仍前台", async () => {
+    h = composeHarness();
+    const taskDescription = async (argv: string[]) => {
+      const runtime = await h.boot(["--model", "fake/echo", ...argv]);
+      const task = runtime.session.getTools().find((t) => t.name === "task");
+      await runtime.dispose();
+      return String(task?.description);
+    };
+    h.home.write("home/.config/ama/config.json", {
+      version: 1,
+      tools: { preset: "coordinator", default: ["+task"] },
+      subagents: { background: "never" },
+    });
+    expect(await taskDescription([])).toContain("Runs in the background by default");
+    h.home.write("home/.config/ama/config.json", {
+      version: 1,
+      tools: { preset: "minimal", default: ["+task"] },
+      subagents: { background: "never" },
+    });
+    expect(await taskDescription([])).not.toContain("Runs in the background by default");
+  });
+
   it("权限：内置 deny 按 builtinDeny 过滤，非法规则 warning 后跳过", async () => {
     h = composeHarness();
     h.home.write("home/.config/ama/config.json", {
