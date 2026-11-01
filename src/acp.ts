@@ -14,6 +14,8 @@ export type * from "./drivers/acp/types.js"; // AcpToolKind 与驱动契约同�
 export {
   ACP_META_KEY,
   isTerminalAuthMethod,
+  multiSelectOptions,
+  singleSelectOptions,
   ACP_METHODS,
   ACP_PROTOCOL_VERSION,
   RPC_ERRORS,

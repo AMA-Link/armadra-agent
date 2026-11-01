@@ -14,6 +14,11 @@
  * - `elicitation/create` 交给 `onElicitation`；给了它 `initialize` 才声明 `clientCapabilities.elicitation`，
  *   没给时线路与旧版相同（不声明，Agent 发来的请求回 method not found）。`cancel(sessionId)`、连接关闭时
  *   挂起的 elicitation 一律回 `{ action: "cancel" }`；ama 从不替人填表。
+ * - `elicitation/complete`（Agent → 客户端通知，URL 型 elicitation 在带外完成）交给 `onElicitationComplete`；给了它
+ *   `initialize` 声明 `elicitation: { form: {}, url: {} }`（只给 `onElicitation` 时仍是 `{}`，与旧版相同）。同一
+ *   `elicitationId` 若还挂着（处理器没答），它的 `signal` 随之 abort、答 `{ action: "cancel" }`，宿主据此收掉卡片。
+ *   表单字段含字符串多选（`type: "array"`）与带标题的 `oneOf` / `anyOf`，答复 `content` 里多选是字符串数组；
+ *   {@link multiSelectOptions} / {@link singleSelectOptions} 把两种写法收成统一的 `{ const, title }` 列表。
  * - `setConfigOption(sessionId, configId, value)` 发 `session/set_config_option`；开会话答的 `configOptions`
  *   原样交回。`initialize` 声明 `clientCapabilities.session.configOptions: {}`（只认 select，不声明 boolean）；
  *   `auth.terminal` 缺省不声明（ama 作客户端没有可借给 Agent 的交互终端），见下 `authTerminal`。[ACP-D]
@@ -37,6 +42,7 @@ import {
   type AcpAuthenticateResult,
   type AcpLogoutResult,
   isTerminalAuthMethod,
+  type AcpCompleteElicitationParams,
   type AcpContentBlock,
   type AcpElicitationParams,
   type AcpElicitationResult,
@@ -65,6 +71,11 @@ export interface AcpClientHandlers {
    * `signal`：该会话被 cancel、连接关闭时 abort（此时回 `{ action: "cancel" }`，不必再答）。
    */
   onElicitation?(params: AcpElicitationParams, signal: AbortSignal): Promise<AcpElicitationResult>;
+  /**
+   * `elicitation/complete`：URL 型 elicitation 已在带外完成（`params.elicitationId` 对应此前
+   * `elicitation/create` 的同名字段），宿主据此收掉对应卡片。给了它，`initialize` 才声明 `elicitation.url`。
+   */
+  onElicitationComplete?(params: AcpCompleteElicitationParams): void;
   /**
    * `terminal/*`（create / output / wait_for_exit / kill / release）：宿主替 Agent 起终端。给了它才声明
    * `clientCapabilities.terminal: true` 并把这些请求交给它；`method` 是完整方法名，`params` 原样交回，返回值即
@@ -124,7 +135,8 @@ export class AcpClient {
    * - `elicitation`：构造参数 `onElicitation` 接 `elicitation/create`；
    * - `configOptions`：`setConfigOption` 与开会话答的 `configOptions`；
    * - `terminal`：构造参数 `onTerminal` 接 `terminal/*`；
-   * - `auth`：`authenticate` / `logout`、构造参数 `authTerminal`、`isAuthRequiredError`。
+   * - `auth`：`authenticate` / `logout`、构造参数 `authTerminal`、`isAuthRequiredError`；
+   * - `elicitationComplete`：构造参数 `onElicitationComplete` 接 `elicitation/complete`，表单字段含多选与 `oneOf`。
    */
   static readonly features: {
     readonly mcpServers: true;
@@ -132,13 +144,23 @@ export class AcpClient {
     readonly configOptions: true;
     readonly terminal: true;
     readonly auth: true;
-  } = { mcpServers: true, elicitation: true, configOptions: true, terminal: true, auth: true };
+    readonly elicitationComplete: true;
+  } = {
+    mcpServers: true,
+    elicitation: true,
+    configOptions: true,
+    terminal: true,
+    auth: true,
+    elicitationComplete: true,
+  };
 
   private readonly peer: JsonRpcPeer;
   /** sessionId → 挂起权限请求的取消器。 */
   private readonly pendingPermissions = new Map<string, Set<AbortController>>();
   /** sessionId（没给就是空串）→ 挂起 elicitation 的取消器。 */
   private readonly pendingElicitations = new Map<string, Set<AbortController>>();
+  /** elicitationId → 挂起 elicitation 的取消器（`elicitation/complete` 用）。 */
+  private readonly elicitationsById = new Map<string, AbortController>();
   private initResult: AcpInitializeResult | undefined;
 
   constructor(private readonly options: AcpClientOptions) {
@@ -150,6 +172,7 @@ export class AcpClient {
       onNotification: (method, params) => {
         if (method === ACP_METHODS.sessionUpdate)
           options.onUpdate?.(params as AcpSessionNotification);
+        else if (method === ACP_METHODS.elicitationComplete) this.onElicitationComplete(params);
       },
       onClose: () => {
         for (const set of this.pendingPermissions.values()) for (const c of set) c.abort();
@@ -193,7 +216,12 @@ export class AcpClient {
           terminal: this.options.onTerminal !== undefined,
           session: { configOptions: {} },
           ...(this.options.authTerminal === true ? { auth: { terminal: true } } : {}),
-          ...(this.options.onElicitation !== undefined ? { elicitation: {} } : {}),
+          ...(this.options.onElicitation !== undefined || this.options.onElicitationComplete
+            ? {
+                elicitation:
+                  this.options.onElicitationComplete !== undefined ? { form: {}, url: {} } : {},
+              }
+            : {}),
         },
         ...(this.options.clientInfo !== undefined ? { clientInfo: this.options.clientInfo } : {}),
       },
@@ -385,6 +413,8 @@ export class AcpClient {
     const set = this.pendingElicitations.get(key) ?? new Set();
     set.add(controller);
     this.pendingElicitations.set(key, set);
+    const id = typeof request.elicitationId === "string" ? request.elicitationId : undefined;
+    if (id !== undefined) this.elicitationsById.set(id, controller);
     const signal = AbortSignal.any([controller.signal, connection]);
     try {
       const answer = await Promise.race([
@@ -399,6 +429,16 @@ export class AcpClient {
       return elicitationAnswer(answer);
     } finally {
       set.delete(controller);
+      if (id !== undefined && this.elicitationsById.get(id) === controller)
+        this.elicitationsById.delete(id);
     }
+  }
+
+  /** 通知没有答复：参数不对就忽略；还挂着的同 id elicitation 先收掉，再交给宿主。 */
+  private onElicitationComplete(params: unknown): void {
+    const id = (params as AcpCompleteElicitationParams | null)?.elicitationId;
+    if (typeof id !== "string") return;
+    this.elicitationsById.get(id)?.abort();
+    this.options.onElicitationComplete?.(params as AcpCompleteElicitationParams);
   }
 }

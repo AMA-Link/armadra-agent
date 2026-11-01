@@ -37,6 +37,7 @@ describe("AcpClient 开会话的 mcpServers", () => {
       configOptions: true,
       terminal: true,
       auth: true,
+      elicitationComplete: true,
     });
   });
 
