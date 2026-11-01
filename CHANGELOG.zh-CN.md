@@ -11,6 +11,12 @@
 - **`coordinator` 预设不阻塞**：暴露 `task` / `task_ctl` 时，`task` 缺省后台（不受 `-p` 与 `subagents.background` 影响，调用参数 `background` 与类型定义的 `background:` 仍优先），`task_ctl wait` 的超时封顶 5 秒（含缺省与更大的 `timeoutMs`），超时回复说明被封顶、完成后会有 `<task-notification>`。其它预设、工具描述与 schema 逐字节不变（#242）。
 - **`env` / `printenv` 不再免审批**：bash 子进程继承整个进程环境（含供应商 API key），Auto 模式下裸 `env`、`printenv`、`env FOO=1`、`env | grep …` 现在交给分类器 / 审批，不再静态放行；`env FOO=1 cmd` 仍按 `cmd` 判断。Plan 的只读名单本来就没有它们，两份名单现在一致（#240）。
 
+### ACP 客户端
+
+- **认证**：`AcpClient.authenticate(methodId)` 与 `logout()`（`supportsLogout()`）、判断 -32000 的 `isAuthRequiredError`，以及声明 `clientCapabilities.auth.terminal` 的构造参数 `authTerminal`。`authMethods` 保留 id、name、description、type，terminal 型还有 `args` / `env`；已知是 terminal 型的方法按规范由 `authenticate` 本地拒绝（-32602）。新增导出 `isTerminalAuthMethod` 与类型 `AcpAuthenticateResult`、`AcpLogoutResult`、`AcpTerminalAuthMethod`（#245）。
+- **`elicitation/complete` 与更丰富的表单**：`onElicitationComplete` 接这条通知（声明 `elicitation: { form: {}, url: {} }`），并收掉同 `elicitationId` 还挂着的请求；表单字段新增 `array` 多选与带标题的 `oneOf` / `anyOf`，`content` 的值可以是字符串数组，`multiSelectOptions` / `singleSelectOptions` 把几种写法收成统一的选项列表（#245）。
+- **会话**：`listSessions` 可传 `signal`，新增跟 `nextCursor` 翻页的 `listAllSessions`；`closeSession` 可传 `signal`，并先把该会话挂起的权限与 elicitation 请求答成取消；`AcpSessionInfo` 补 `additionalDirectories`、`_meta`。`AcpClient.features` 增加 `auth` 与 `elicitationComplete`。不用新选项时默认线路输出不变（#245）。
+
 ## 0.11.0（2026-10-30）
 
 ### 工具与权限

@@ -12,6 +12,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 - **The `coordinator` preset never blocks**: when `task` / `task_ctl` are exposed, `task` defaults to background (regardless of `-p` and `subagents.background`; an explicit `background` argument and an agent definition's `background:` still win) and `task_ctl wait` is capped at 5 s (the default and larger `timeoutMs` included); the timed-out reply says the wait was capped and that a `<task-notification>` follows. Other presets, tool descriptions and schemas are byte-identical (#242).
 - **`env` / `printenv` are no longer auto-safe**: the bash subprocess inherits the whole process environment (provider API keys included), so in Auto mode a bare `env`, `printenv`, `env FOO=1` or `env | grep …` now goes to the classifier / approval instead of being allowed statically; `env FOO=1 cmd` is still judged as `cmd`. The read-only list for Plan already excluded them, so both lists now agree (#240).
 
+### ACP client
+
+- **Authentication**: `AcpClient.authenticate(methodId)` and `logout()` (`supportsLogout()`), `isAuthRequiredError` for -32000, and the `authTerminal` option that declares `clientCapabilities.auth.terminal`. `authMethods` keeps id, name, description, type and, for terminal methods, `args` / `env`; a known terminal method is refused locally by `authenticate` (-32602) as the spec requires. `isTerminalAuthMethod` and the types `AcpAuthenticateResult`, `AcpLogoutResult`, `AcpTerminalAuthMethod` are exported (#245).
+- **`elicitation/complete` and richer forms**: `onElicitationComplete` handles the notification (declaring `elicitation: { form: {}, url: {} }`) and dismisses a still-pending request with the same `elicitationId`; form fields gain `array` multi-select and titled `oneOf` / `anyOf`, `content` values may be string arrays, and `multiSelectOptions` / `singleSelectOptions` normalize the option lists (#245).
+- **Sessions**: `listSessions` takes a `signal`, `listAllSessions` follows `nextCursor`, `closeSession` takes a `signal` and first answers the session's pending permission and elicitation requests with cancel; `AcpSessionInfo` gains `additionalDirectories` and `_meta`. `AcpClient.features` gains `auth` and `elicitationComplete`. Default wire output is unchanged unless the new options are used (#245).
+
 ## 0.11.0 (2026-10-30)
 
 ### Tools and permissions

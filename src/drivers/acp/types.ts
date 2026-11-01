@@ -17,8 +17,10 @@ export const ACP_PROTOCOL_VERSION = 1 as const;
 /** 方法名（客户端 → Agent 的请求 / 通知，Agent → 客户端的请求 / 通知）。 */
 export const ACP_METHODS = {
   initialize: "initialize",
-  /** ama 不实现（只给 terminal 型认证方法，规范要求这类方法不经 authenticate）。 */
+  /** 客户端 → Agent：agent 型认证方法经它完成；terminal 型不经它（规范）。 */
   authenticate: "authenticate",
+  /** 客户端 → Agent：登出当前账号（Agent 声明 `agentCapabilities.auth.logout` 才可用）。 */
+  logout: "logout",
   sessionNew: "session/new",
   sessionLoad: "session/load",
   sessionResume: "session/resume",
@@ -31,6 +33,8 @@ export const ACP_METHODS = {
   sessionUpdate: "session/update",
   requestPermission: "session/request_permission",
   elicitationCreate: "elicitation/create",
+  /** Agent → 客户端通知：URL 型 elicitation 已在带外完成。 */
+  elicitationComplete: "elicitation/complete",
   /** 协议级取消（双向通知，`requestId` 指对端发来的、尚未答复的请求）。 */
   cancelRequest: "$/cancel_request",
 } as const;
@@ -97,6 +101,7 @@ export interface AcpClientCapabilities {
   /** 会话相关的客户端能力；`configOptions.boolean` 存在即能显示 boolean 型配置项。 */
   session?: { configOptions?: { boolean?: Record<string, unknown> | null } | null } | null;
   /** `terminal: true`：客户端能替 Agent 起终端跑 terminal 型认证方法。 */
+  /** 能在交互终端里复现 Agent 的启动命令；声明后 Agent 才会给 terminal 型认证方法。 */
   auth?: { terminal?: boolean };
 }
 
@@ -137,6 +142,18 @@ export type AcpAuthMethod =
 
 export interface AcpAuthenticateParams {
   methodId: string;
+}
+
+/** `authenticate` / `logout` 的答复：规范里只有 `_meta`。 */
+export type AcpAuthenticateResult = { _meta?: Record<string, unknown> | null };
+export type AcpLogoutResult = { _meta?: Record<string, unknown> | null };
+
+/** terminal 型认证方法（客户端在终端里跑 `<agent 命令> <args…>`，带 `env`）。 */
+export type AcpTerminalAuthMethod = Extract<AcpAuthMethod, { type: "terminal" }>;
+
+/** 是 terminal 型认证方法：这类方法不经 `authenticate`。 */
+export function isTerminalAuthMethod(method: AcpAuthMethod): method is AcpTerminalAuthMethod {
+  return method.type === "terminal";
 }
 
 export interface AcpInitializeResult {
@@ -253,15 +270,25 @@ export interface AcpSetConfigOptionResult {
 // elicitation（Agent 向人要结构化输入）
 // ---------------------------------------------------------------------------
 
-/** 表单里的一个字段：扁平的原始类型，规范只允许这几种。 */
+/** 带标题的枚举项（`oneOf` / `anyOf` 里的一项）：`const` 是提交的值，`title` 是显示名。 */
+export interface AcpEnumOption {
+  const: string;
+  title: string;
+}
+
+/** 表单里的一个字段：扁平的原始类型或字符串多选，规范只允许这几种；未知 `type` 保留原样、不当已知控件渲染。 */
 export type AcpElicitationField =
   | {
       type: "string";
       title?: string;
       description?: string;
+      /** 单选：只有取值。 */
       enum?: string[];
       enumNames?: string[];
+      /** 单选：带标题的取值（`const` / `title`）。 */
+      oneOf?: AcpEnumOption[];
       format?: string;
+      pattern?: string;
       minLength?: number;
       maxLength?: number;
       default?: string;
@@ -274,7 +301,42 @@ export type AcpElicitationField =
       maximum?: number;
       default?: number;
     }
-  | { type: "boolean"; title?: string; description?: string; default?: boolean };
+  | { type: "boolean"; title?: string; description?: string; default?: boolean }
+  | {
+      /** 字符串多选：提交值是 `string[]`。 */
+      type: "array";
+      title?: string;
+      description?: string;
+      minItems?: number;
+      maxItems?: number;
+      /** `{ type: "string", enum }`（只有取值）或 `{ anyOf: [{ const, title }] }`（带标题）。 */
+      items: { type?: "string"; enum?: string[]; anyOf?: AcpEnumOption[] };
+      default?: string[];
+    };
+
+/** 表单字段的提交值：多选是字符串数组。 */
+export type AcpElicitationValue = string | number | boolean | string[];
+
+/** 多选字段可选的项：带标题的 `anyOf` 或只有取值的 `enum`（标题取值本身）；不是多选字段返回 undefined。 */
+export function multiSelectOptions(field: AcpElicitationField): AcpEnumOption[] | undefined {
+  if (field.type !== "array") return undefined;
+  const items = field.items;
+  if (Array.isArray(items?.anyOf))
+    return items.anyOf.map((o) => ({ const: o.const, title: o.title }));
+  if (Array.isArray(items?.enum))
+    return items.enum.map((value) => ({ const: value, title: value }));
+  return undefined;
+}
+
+/** 单选字符串字段可选的项：`oneOf`（带标题）优先，其次 `enum`（可配 `enumNames`）；没有枚举返回 undefined。 */
+export function singleSelectOptions(field: AcpElicitationField): AcpEnumOption[] | undefined {
+  if (field.type !== "string") return undefined;
+  if (Array.isArray(field.oneOf))
+    return field.oneOf.map((o) => ({ const: o.const, title: o.title }));
+  if (Array.isArray(field.enum))
+    return field.enum.map((value, i) => ({ const: value, title: field.enumNames?.[i] ?? value }));
+  return undefined;
+}
 
 export interface AcpElicitationSchema {
   type: "object";
@@ -285,6 +347,12 @@ export interface AcpElicitationSchema {
 /** Agent 发来的 `elicitation/create` 参数；未知字段保留。 */
 export interface AcpElicitationParams {
   sessionId?: string;
+  /** 关联的工具调用（会话范围的 elicitation 可带）。 */
+  toolCallId?: string | null;
+  /** 不在会话里时关联的请求 id（请求范围）。 */
+  requestId?: string | number;
+  /** URL 型 elicitation 的 id；之后 Agent 以 `elicitation/complete` 通知它在带外完成。 */
+  elicitationId?: string;
   message: string;
   /** `form`（缺省）或 `url`。 */
   mode?: "form" | "url" | (string & {});
@@ -293,12 +361,18 @@ export interface AcpElicitationParams {
   [key: string]: unknown;
 }
 
+/** `elicitation/complete` 通知的参数：URL 型 elicitation 已完成。 */
+export interface AcpCompleteElicitationParams {
+  elicitationId: string;
+  _meta?: Record<string, unknown> | null;
+}
+
 export type AcpElicitationAction = "accept" | "decline" | "cancel";
 
 export interface AcpElicitationResult {
   action: AcpElicitationAction;
   /** 只随 `accept`。 */
-  content?: Record<string, string | number | boolean>;
+  content?: Record<string, AcpElicitationValue>;
 }
 
 export type AcpResumeSessionParams = AcpLoadSessionParams;
@@ -311,8 +385,12 @@ export interface AcpListSessionsParams {
 export interface AcpSessionInfo {
   sessionId: string;
   cwd: string;
+  /** Agent 报告的额外工作区根（绝对路径）；缺省与空数组等价。 */
+  additionalDirectories?: string[];
   title?: string | null;
+  /** ISO 8601 的最近活动时间。 */
   updatedAt?: string | null;
+  _meta?: Record<string, unknown> | null;
 }
 export interface AcpListSessionsResult {
   sessions: AcpSessionInfo[];
@@ -322,6 +400,8 @@ export interface AcpListSessionsResult {
 export interface AcpCloseSessionParams {
   sessionId: string;
 }
+/** `session/close` 的答复：规范里只有 `_meta`。 */
+export type AcpCloseSessionResult = { _meta?: Record<string, unknown> | null };
 
 export interface AcpSetModeParams {
   sessionId: string;
