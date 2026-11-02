@@ -142,6 +142,8 @@ export interface Started {
   type(text: string): void;
   /** `manualHints: true` 时的提示计时器（否则 undefined）。 */
   hintTimers: ManualHintTimers | undefined;
+  /** 放行脚本里 `gate` 名为 `name` 的响应（`FakeResponse.gate`）。 */
+  release(name: string): void;
 }
 
 export async function start(
@@ -214,6 +216,7 @@ export async function start(
     rt,
     frame,
     hintTimers,
+    release: (name) => h.fake.release(name),
     type: (text) => {
       terminal.sendInput(text);
       frame();

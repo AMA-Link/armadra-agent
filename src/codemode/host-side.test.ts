@@ -156,18 +156,33 @@ describe("runSandbox", () => {
   });
 
   it("超时：父进程杀掉子进程树，保留已产出输出", async () => {
+    // 超时计时器用手动时钟：子进程启动耗时随机器负载漂移，墙钟超时可能在 before 写出前就到期。
+    // 收到 before 之后才推进时钟，超时一定落在「已产出」之后
+    let fire: (() => void) | undefined;
+    let ms = -1;
     const result = await runSandbox(
       request(`text("before"); while (true) {}`, {
         options: { ...DEFAULT_SCRIPT_OPTIONS, timeoutMs: 400 },
+        timeoutTimers: {
+          set: (fn, delay) => {
+            fire = fn;
+            ms = delay;
+            return 1;
+          },
+          clear: () => {
+            fire = undefined;
+          },
+        },
+        onOutput: () => fire?.(),
       }),
     );
+    expect(ms).toBe(400);
     expect(result).toMatchObject({ ok: false, timedOut: true, outputs: ["before"] });
     expect(result.error).toMatch(/timed out after 400 ms/);
-    expect(result.elapsedMs).toBeGreaterThanOrEqual(400);
     expect(result.pid).toBeTypeOf("number");
     if (process.platform !== "win32") {
       const pid = result.pid as number;
-      const deadline = Date.now() + 3000;
+      const deadline = Date.now() + 10_000;
       while (isGroupAlive(pid) && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
