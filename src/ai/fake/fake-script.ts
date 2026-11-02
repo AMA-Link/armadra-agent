@@ -9,7 +9,8 @@
  *   { "error": { "kind": "rate_limit" } },
  *   { "text": "完成", "usage": { "input": 1200, "output": 30 } },
  *   { "steps": [{ "text": "写到一半" }], "error": { "kind": "disconnect" } },
- *   { "delayMs": 500, "text": "慢响应", "stopReason": "length" }
+ *   { "delayMs": 500, "text": "慢响应", "stopReason": "length" },
+ *   { "gate": "reply", "text": "等放行（进程内测试 provider.release('reply')）" }
  * ] }
  * ```
  *
@@ -63,6 +64,12 @@ export interface FakeResponse {
   error?: FakeError;
   /** start 之前的延迟（毫秒，可被 abort 打断）。 */
   delayMs?: number;
+  /**
+   * start 之前的闸门：这次调用停在闸门上，直到进程内的 `FakeProvider.release(gate)` 放行（可被 abort 打断；
+   * 先放行再调用也立即通过）。测试用它显式控制「谁先回」，不靠 `delayMs` 的墙钟。脚本文件里没人放行，
+   * 仅用于进程内测试；与 `delayMs` 同给时先过闸门再延迟。
+   */
+  gate?: string;
 }
 
 export type FakeExhaustedBehavior = "echo" | "repeat-last" | "error";
@@ -115,6 +122,9 @@ function checkResponse(value: unknown, path: string): FakeResponse {
   }
   if (value["text"] !== undefined && typeof value["text"] !== "string") {
     fail(`${path}.text`, "must be a string");
+  }
+  if (value["gate"] !== undefined && typeof value["gate"] !== "string") {
+    fail(`${path}.gate`, "must be a string");
   }
   const stop = value["stopReason"];
   if (

@@ -151,7 +151,29 @@ function tick(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+/** 等闸门放行；abort 时提前返回（随后由 checkAbort 收尾）。 */
+function waitOpen(open: Promise<void>, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const done = (): void => {
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    signal.addEventListener("abort", done, { once: true });
+    void open.then(done);
+  });
+}
+
 class AbortedError extends Error {}
+
+interface Gate {
+  open: Promise<void>;
+  release: () => void;
+  waiting: number;
+}
 
 export class FakeProvider {
   readonly calls: FakeCall[] = [];
@@ -161,6 +183,7 @@ export class FakeProvider {
   private readonly recordFile: () => string | undefined;
   private readonly keepCalls: boolean;
   private count = 0;
+  private readonly gates = new Map<string, Gate>();
 
   constructor(
     script?: FakeScript | FakeResponse[] | (() => FakeScript | undefined),
@@ -196,6 +219,28 @@ export class FakeProvider {
   reset(): void {
     this.calls.length = 0;
     this.count = 0;
+    this.gates.clear();
+  }
+
+  private gate(name: string): Gate {
+    let gate = this.gates.get(name);
+    if (gate === undefined) {
+      let release!: () => void;
+      const open = new Promise<void>((resolve) => (release = resolve));
+      gate = { open, release, waiting: 0 };
+      this.gates.set(name, gate);
+    }
+    return gate;
+  }
+
+  /** 放行名为 `name` 的闸门（`FakeResponse.gate`）：正在等的调用继续，之后到达的也直接通过。 */
+  release(name: string): void {
+    this.gate(name).release();
+  }
+
+  /** 正停在闸门 `name` 上的调用个数（测试确认「请求已发出、正在等」）。 */
+  waitingAt(name: string): number {
+    return this.gates.get(name)?.waiting ?? 0;
   }
 
   private ensureLoaded(): void {
@@ -273,6 +318,16 @@ export class FakeProvider {
     };
     try {
       options.onPayload?.({ fake: true, model: model.id, messages: context.messages.length });
+      if (response.gate !== undefined) {
+        const gate = this.gate(response.gate);
+        gate.waiting++;
+        try {
+          await waitOpen(gate.open, signal);
+        } finally {
+          gate.waiting--;
+        }
+        checkAbort();
+      }
       if (response.delayMs) await sleep(response.delayMs, signal);
       checkAbort();
       const error = response.error ? describeFakeError(response.error) : undefined;

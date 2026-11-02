@@ -144,6 +144,38 @@ describe("FakeProvider", () => {
     expect((await stream.result()).stopReason).toBe("aborted");
   });
 
+  it("闸门：放行前不产出任何事件，release 后继续；先放行再调用直接通过", async () => {
+    const fake = new FakeProvider([
+      { gate: "g", text: "after" },
+      { gate: "early", text: "early" },
+    ]);
+    const stream = fake.api.stream(echo, context, opts());
+    const pending = collectEvents(stream);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fake.waitingAt("g")).toBe(1);
+    let settled = false;
+    void pending.then(() => (settled = true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(settled).toBe(false);
+    fake.release("g");
+    const events = await pending;
+    expect(events.at(-1)?.type).toBe("done");
+    expect(fake.waitingAt("g")).toBe(0);
+    fake.release("early");
+    expect((await run(fake)).final.content).toEqual([{ type: "text", text: "early" }]);
+  });
+
+  it("闸门可被 abort 打断；脚本校验 gate 必须是字符串", async () => {
+    const fake = new FakeProvider([{ gate: "never", text: "late" }]);
+    const controller = new AbortController();
+    const stream = fake.api.stream(echo, context, opts({ signal: controller.signal }));
+    setTimeout(() => controller.abort(), 10);
+    const events = await collectEvents(stream);
+    expect(events.map((e) => e.type)).toEqual(["error"]);
+    expect((await stream.result()).stopReason).toBe("aborted");
+    expect(() => new FakeProvider([{ gate: 1 } as never])).toThrow(/gate/);
+  });
+
   it("onPayload / onResponse 被调用；append 追加响应", async () => {
     const fake = new FakeProvider();
     fake.append({ error: { kind: "auth" } });
