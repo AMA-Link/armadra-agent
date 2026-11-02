@@ -3,6 +3,7 @@
   "id": "xiaomi",
   "models": {
     "mimo-v2.6-flash": {
+      "canonical_model_id": "xiaomi/mimo-v2.6-flash",
       "cost": {
         "cache_read": 0.0028,
         "input": 0.14,
@@ -29,6 +30,7 @@
       "release_date": "2026-09-22"
     },
     "mimo-v2.6-pro": {
+      "canonical_model_id": "xiaomi/mimo-v2.6-pro",
       "cost": {
         "cache_read": 0.0036,
         "input": 0.435,
@@ -55,6 +57,7 @@
       "release_date": "2026-09-22"
     },
     "mimo-v2.6-pro-ultraspeed": {
+      "canonical_model_id": "xiaomi/mimo-v2.6-pro-ultraspeed",
       "cost": {
         "cache_read": 0.036,
         "input": 4.35,
