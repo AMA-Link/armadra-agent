@@ -231,17 +231,36 @@ describe("横轴", () => {
 });
 
 describe("长会话", () => {
-  it("5000 回合（10k 行）：数据完整、页面按虚拟列表渲染，生成足够快", () => {
-    const input = synthetic(5000);
-    const started = performance.now();
-    const html = render(input);
-    const elapsed = performance.now() - started;
+  /** 生成一次的 CPU 时间（毫秒，用户态 + 内核态；不含被抢占的等待）。 */
+  function cpuMs(turns: number): number {
+    const input = synthetic(turns);
+    const before = process.cpuUsage();
+    render(input);
+    const used = process.cpuUsage(before);
+    return (used.user + used.system) / 1000;
+  }
+
+  it("5000 回合（10k 行）：数据完整、页面按虚拟列表渲染", () => {
+    const html = render(synthetic(5000));
     const data = dataOf(html);
     expect(data.rows).toHaveLength(10_000);
     expect(data.rows.filter((r) => r.t !== undefined)).toHaveLength(5000);
     // 页面只建可见 ±50 行（脚本常量），不按行数输出 DOM
     expect(scriptOf(html)).toContain("OV=50");
     expect(html.match(/class="row/g)).toBeNull();
-    expect(elapsed).toBeLessThan(5000);
+  });
+
+  it("生成耗时随回合数线性增长（同次运行的相对基线，不依赖机器快慢）", () => {
+    // 500 → 5000 回合：线性约 10 倍，平方退化约 100 倍；比 CPU 时间，各取三次最快，去掉负载造成的尖峰
+    const best = (turns: number): number => Math.min(cpuMs(turns), cpuMs(turns), cpuMs(turns));
+    const small = Math.max(best(500), 1);
+    const large = best(5000);
+    expect(large).toBeLessThan(small * 40);
+    // 墙钟绝对上限只在 AMA_PERF=1 时断言（负载下的 CI 机器会漂移）
+    if (process.env["AMA_PERF"] === "1") {
+      const started = performance.now();
+      render(synthetic(5000));
+      expect(performance.now() - started).toBeLessThan(5000);
+    }
   });
 });
