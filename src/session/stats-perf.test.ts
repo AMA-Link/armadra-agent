@@ -1,6 +1,8 @@
 /**
  * `ama stats` 大目录性能：1000 个合成会话（每个 12 个回合、每回合 2 次工具调用，工具结果 2 KB）。
- * 目标：冷扫描 < 2 s；有索引缓存时远低于冷扫描。CI 机器（尤其 Windows）慢，阈值放宽到 6 s，只防数量级退化。
+ * 目标：冷扫描 < 2 s。墙钟随机器与负载漂移，默认只断言同次运行内的相对量：1000 个会话的冷扫描 CPU 时间不超过
+ * 100 个会话的 SCALE_RATIO 倍（线性约 10 倍，平方退化约 100 倍；CPU 时间不含被抢占的等待）；
+ * 墙钟绝对上限只在 `AMA_PERF=1` 时断言（CI 机器放宽到 6 s）。
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -16,6 +18,9 @@ import { assistantEntry, toolResultEntry, usageOf, userEntry } from "./test-supp
 const SESSIONS = 1000;
 const TURNS = 12;
 const LIMIT_MS = process.env["CI"] !== undefined ? 6000 : 2000;
+const ABSOLUTE = process.env["AMA_PERF"] === "1";
+const SMALL = 100;
+const SCALE_RATIO = 40;
 
 let home: TmpHome;
 let root: string;
@@ -76,8 +81,24 @@ beforeAll(() => {
 
 afterAll(() => home.cleanup());
 
+/** 换新索引冷扫描一遍，返回 CPU 时间（毫秒，用户态 + 内核态）。 */
+function coldScanCpuMs(files: string[], index: string): number {
+  const before = process.cpuUsage();
+  const cold = collectSummaries(files, { indexFile: index, prune: true });
+  aggregateStats(cold.summaries, { by: "day" });
+  const used = process.cpuUsage(before);
+  expect(cold.scanned).toBe(files.length);
+  return (used.user + used.system) / 1000;
+}
+
+function bestOf(runs: number, fn: (i: number) => number): number {
+  let best = Infinity;
+  for (let i = 0; i < runs; i++) best = Math.min(best, fn(i));
+  return best;
+}
+
 describe("stats 性能（1000 个会话）", () => {
-  it(`冷扫描与缓存命中都 < ${LIMIT_MS} ms，结果一致`, () => {
+  it("冷扫描随会话数线性增长，缓存命中结果一致", () => {
     const index = join(home.dataDir, "stats-index.json");
     const t0 = performance.now();
     const files = sessionFilesInScope(root);
@@ -88,16 +109,26 @@ describe("stats 性能（1000 个会话）", () => {
     const warm = collectSummaries(sessionFilesInScope(root), { indexFile: index, prune: true });
     const warmReport = aggregateStats(warm.summaries, { by: "day" });
     const warmMs = performance.now() - t1;
+    // 同次运行的相对基线：大小两档各取三次最快 CPU 时间（每次换新索引），去掉负载造成的尖峰
+    const smallCpu = bestOf(3, (i) =>
+      coldScanCpuMs(files.slice(0, SMALL), join(home.dataDir, `stats-index-small-${i}.json`)),
+    );
+    const largeCpu = bestOf(3, (i) =>
+      coldScanCpuMs(files, join(home.dataDir, `stats-index-large-${i}.json`)),
+    );
     console.info(
-      `stats perf: ${SESSIONS} 会话 ${(totalBytes / 1e6).toFixed(1)} MB，冷 ${coldMs.toFixed(0)} ms，缓存 ${warmMs.toFixed(0)} ms`,
+      `stats perf: ${SESSIONS} 会话 ${(totalBytes / 1e6).toFixed(1)} MB，冷 ${coldMs.toFixed(0)} ms，缓存 ${warmMs.toFixed(0)} ms，CPU：${SMALL} 会话 ${smallCpu.toFixed(0)} ms，${SESSIONS} 会话 ${largeCpu.toFixed(0)} ms`,
     );
     expect(cold.scanned).toBe(SESSIONS);
     expect(warm.cached).toBe(SESSIONS);
     expect(coldReport.totals.requests).toBe(SESSIONS * TURNS * 2);
     expect(coldReport.totals.turns).toBe(SESSIONS * TURNS);
     expect(warmReport).toEqual(coldReport);
-    expect(coldMs).toBeLessThan(LIMIT_MS);
-    // 缓存命中与冷扫描的快慢在 Windows runner 上受文件系统缓存影响会颠倒（冷 291 ms、热 816 ms），只防数量级退化
-    expect(warmMs).toBeLessThan(LIMIT_MS);
+    expect(largeCpu).toBeLessThan(Math.max(smallCpu, 1) * SCALE_RATIO);
+    if (ABSOLUTE) {
+      expect(coldMs).toBeLessThan(LIMIT_MS);
+      // 缓存命中与冷扫描的快慢在 Windows runner 上受文件系统缓存影响会颠倒（冷 291 ms、热 816 ms），只防数量级退化
+      expect(warmMs).toBeLessThan(LIMIT_MS);
+    }
   });
 });
