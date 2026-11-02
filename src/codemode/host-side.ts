@@ -129,7 +129,20 @@ export interface SandboxRunRequest {
   requireOsSandbox?: boolean;
   /** 子进程堆上限（MB），缺省 DEFAULT_CODEMODE_HEAP_MB；0 不设上限。 */
   maxHeapMb?: number;
+  /** 脚本总超时计时器的注入（测试用手动时钟，不随机器负载漂移）；缺省真实 `setTimeout`。 */
+  timeoutTimers?: TimeoutTimers;
 }
+
+/** 脚本总超时的计时器（缺省 `setTimeout`）。 */
+export interface TimeoutTimers {
+  set(fn: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const realTimeoutTimers: TimeoutTimers = {
+  set: (fn, ms) => setTimeout(fn, ms),
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
 
 /** 子进程因堆上限 OOM 退出时给模型的文案（固定英文）。 */
 export function heapLimitError(heapMb: number): string {
@@ -227,7 +240,8 @@ export async function runSandbox(request: SandboxRunRequest): Promise<SandboxRun
     finish();
   };
 
-  const timer = setTimeout(() => {
+  const timers = request.timeoutTimers ?? realTimeoutTimers;
+  const timer = timers.set(() => {
     settle({
       ok: false,
       timedOut: true,
@@ -349,7 +363,7 @@ export async function runSandbox(request: SandboxRunRequest): Promise<SandboxRun
   });
 
   await finished;
-  clearTimeout(timer);
+  timers.clear(timer);
   if (graceTimer !== undefined) clearTimeout(graceTimer);
   request.signal.removeEventListener("abort", onAbort);
   if (child.exitCode === null && child.signalCode === null) {
