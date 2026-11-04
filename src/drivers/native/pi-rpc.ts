@@ -18,7 +18,6 @@ import { randomUUID } from "node:crypto";
 import { resolve as resolvePath } from "node:path";
 import type { ContentBlock } from "../../ai/types.js";
 import { AmaError } from "../../errors.js";
-import { createLineReader } from "../../modes/rpc/jsonl.js";
 import {
   armCancelWatchdog,
   isReadOnlyMode,
@@ -39,9 +38,8 @@ import type {
   DriverTurnResult,
 } from "../types.js";
 import { PI_GATE_TITLE, PI_READ_ONLY_TOOLS, writePiGate } from "./pi-gate.js";
+import { PiRpcCore, type Json } from "./pi-rpc-core.js";
 import { msg } from "../../i18n/index.js";
-
-type Json = Record<string, unknown>;
 
 const DIALOG_METHODS: ReadonlySet<string> = new Set(["select", "confirm", "input", "editor"]);
 /** auto-edit 及更宽的模式下不问人的文件编辑工具。 */
@@ -78,14 +76,14 @@ export function piToolKind(tool: string): AcpToolKind {
   }
 }
 
-function piToolTitle(tool: string, input: Json): string {
+export function piToolTitle(tool: string, input: Json): string {
   if (typeof input["command"] === "string") return `$ ${oneLine(input["command"], 100)}`;
   if (typeof input["path"] === "string") return `${tool} ${input["path"]}`;
   if (typeof input["pattern"] === "string") return `${tool} ${oneLine(input["pattern"], 80)}`;
   return tool;
 }
 
-function textOf(message: Json): string {
+export function textOf(message: Json): string {
   const content = message["content"];
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -145,8 +143,7 @@ interface Usage {
 
 class PiSession implements DriverSession {
   readonly notices: string[] = [];
-  private nextId = 1;
-  private readonly pending = new Map<string, { resolve(r: Json): void; reject(e: Error): void }>();
+  private readonly core: PiRpcCore;
   private readonly permissions = new Set<AbortController>();
   private turn: TurnCollector | undefined;
   private hooks: DriverPromptHooks | undefined;
@@ -156,7 +153,6 @@ class PiSession implements DriverSession {
   private lastAssistant: Json | undefined;
   private interrupted = false;
   private closed = false;
-  private exited = false;
   private readonly exitWaiters = new Set<(error: Error) => void>();
 
   constructor(
@@ -167,12 +163,15 @@ class PiSession implements DriverSession {
     private readonly deps: DriverDeps,
     private readonly dispose: () => void,
   ) {
-    createLineReader(
-      transport.stdout,
-      (line) => this.onLine(line),
-      () => this.onExit(),
-    );
-    transport.stdin.on?.("error", () => undefined);
+    this.core = new PiRpcCore({
+      transport,
+      onEvent: (record) => this.onRecord(record),
+      onUiRequest: (record) => void this.onDialog(record),
+      onExit: (error) => this.onExit(error),
+      onNonJson: () => this.deps.log?.("debug", msg().drivers.agent.nonJson(this.agentId)),
+      exitMessage: (hint) => `${this.agentId} process exited${hint !== "" ? `: ${hint}` : ""}`,
+      timeoutMessage: (command) => `${this.agentId} did not answer ${command} in time`,
+    });
   }
 
   get sessionId(): string {
@@ -186,14 +185,14 @@ class PiSession implements DriverSession {
       signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
     });
     void aborted.catch(() => undefined);
-    const state = await Promise.race([this.request({ type: "get_state" }), aborted]);
+    const state = await Promise.race([this.core.request({ type: "get_state" }), aborted]);
     const data = (state["data"] ?? {}) as Json;
     if (typeof data["sessionId"] === "string" && data["sessionId"] !== "")
       this.id = data["sessionId"];
   }
 
   async prompt(content: ContentBlock[], hooks: DriverPromptHooks): Promise<DriverTurnResult> {
-    if (this.closed || this.exited)
+    if (this.closed || this.core.exited)
       throw new AmaError("agent_closed", `${this.agentId} session is closed`);
     if (this.running !== undefined)
       throw new AmaError("busy", `${this.agentId} is already running`);
@@ -220,7 +219,7 @@ class PiSession implements DriverSession {
     // 先让出一拍：`this.running` 赋值之后再写命令（同步回显的对端里事件可能立刻到达并触发 cancel）
     await Promise.resolve();
     const settled = new Promise<boolean>((resolve) => (this.settle = resolve));
-    const response = await this.request({ type: "prompt", ...this.message(content) });
+    const response = await this.core.request({ type: "prompt", ...this.message(content) });
     if (response["success"] !== true)
       throw new AmaError(
         "agent_failed",
@@ -234,9 +233,9 @@ class PiSession implements DriverSession {
   }
 
   async steer(content: ContentBlock[]): Promise<void> {
-    if (this.closed || this.exited)
+    if (this.closed || this.core.exited)
       throw new AmaError("agent_closed", `${this.agentId} session is closed`);
-    await this.request({ type: "steer", ...this.message(content) });
+    await this.core.request({ type: "steer", ...this.message(content) });
   }
 
   async cancel(): Promise<void> {
@@ -244,7 +243,7 @@ class PiSession implements DriverSession {
     if (running === undefined || this.closed) return;
     this.interrupted = true;
     for (const c of this.permissions) c.abort();
-    void this.request({ type: "abort" }).catch(() => undefined);
+    void this.core.request({ type: "abort" }).catch(() => undefined);
     armCancelWatchdog(
       this.transport,
       running.catch(() => undefined),
@@ -258,7 +257,7 @@ class PiSession implements DriverSession {
     for (const c of this.permissions) c.abort();
     if (this.running !== undefined) {
       this.interrupted = true;
-      this.write({ type: "abort" });
+      this.core.write({ type: "abort" });
     }
     try {
       await this.transport.terminate();
@@ -308,10 +307,10 @@ class PiSession implements DriverSession {
 
   /** `get_session_stats.contextUsage` → 上下文占用与窗口（拿不到就算了）。 */
   private async reportContext(turn: TurnCollector): Promise<void> {
-    if (this.exited) return;
+    if (this.core.exited) return;
     try {
       const stats = await Promise.race([
-        this.request({ type: "get_session_stats" }),
+        this.core.request({ type: "get_session_stats" }),
         new Promise<Json>((resolve) => setTimeout(() => resolve({}), 5_000).unref()),
       ]);
       const usage = (((stats["data"] ?? {}) as Json)["contextUsage"] ?? {}) as Json;
@@ -330,69 +329,20 @@ class PiSession implements DriverSession {
 
   private exitPromise(): Promise<never> {
     return new Promise<never>((_, reject) => {
-      if (this.exited) reject(this.exitError());
+      if (this.core.exited) reject(this.core.exitError());
       else this.exitWaiters.add(reject);
     });
   }
 
-  private exitError(): AmaError {
-    const hint = stderrHint(this.transport);
-    return new AmaError(
-      "agent_exited",
-      `${this.agentId} process exited${hint !== "" ? `: ${hint}` : ""}`,
-    );
-  }
-
-  private request(command: Json): Promise<Json> {
-    if (this.exited) return Promise.reject(this.exitError());
-    const id = `ama-${this.nextId++}`;
-    return new Promise<Json>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.write({ id, ...command });
-    });
-  }
-
-  private write(record: Json): void {
-    if (this.exited) return;
-    this.transport.stdin.write(`${JSON.stringify(record)}\n`);
-  }
-
-  private onExit(): void {
-    this.exited = true;
-    const error = this.exitError();
-    for (const p of this.pending.values()) p.reject(error);
-    this.pending.clear();
+  private onExit(error: Error): void {
     for (const reject of this.exitWaiters) reject(error);
     this.exitWaiters.clear();
     for (const c of this.permissions) c.abort();
   }
 
-  private onLine(line: string): void {
-    let record: Json;
-    try {
-      record = JSON.parse(line) as Json;
-    } catch {
-      this.deps.log?.("debug", msg().drivers.agent.nonJson(this.agentId));
-      return;
-    }
-    switch (record["type"]) {
-      case "response": {
-        const id = record["id"];
-        const pending = typeof id === "string" ? this.pending.get(id) : undefined;
-        if (pending === undefined || typeof id !== "string") return;
-        this.pending.delete(id);
-        pending.resolve(record);
-        return;
-      }
-      case "agent_settled":
-        this.settle?.(record["aborted"] === true);
-        return;
-      case "extension_ui_request":
-        void this.onDialog(record);
-        return;
-      default:
-        this.onEvent(record);
-    }
+  private onRecord(record: Json): void {
+    if (record["type"] === "agent_settled") this.settle?.(record["aborted"] === true);
+    else this.onEvent(record);
   }
 
   private onEvent(record: Json): void {
@@ -486,11 +436,11 @@ class PiSession implements DriverSession {
           oneLine(String(record["title"] ?? method), 80),
         ),
       });
-      this.write({ type: "extension_ui_response", id, cancelled: true });
+      this.core.write({ type: "extension_ui_response", id, cancelled: true });
       return;
     }
     const confirmed = await this.decide(record);
-    this.write({ type: "extension_ui_response", id, confirmed });
+    this.core.write({ type: "extension_ui_response", id, confirmed });
   }
 
   private async decide(record: Json): Promise<boolean> {
