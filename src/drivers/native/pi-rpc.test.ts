@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { candidateCapabilities, catalogEntry } from "../catalog.js";
 import { memoryTransport, readRecording, replayPeer, spawnRecorder } from "../test-support.js";
 import type { DriverEvent, DriverPermissionRequest, DriverPromptHooks } from "../types.js";
-import { PI_GATE_SOURCE, PI_GATE_TITLE, writePiGate } from "./pi-gate.js";
+import { PI_EXTENSION_SOURCE, PI_GATE_TITLE, writePiExtension } from "./pi-extension.js";
 import { PiRpcDriver, piArgs, piToolKind } from "./pi-rpc.js";
 
 // 驱动按平台解析路径（Windows 上带盘符）
@@ -66,10 +66,10 @@ describe("piArgs / 驱动表", () => {
   });
 
   it("审批闸：只读内置工具以外都经 confirm 交给 ama；文件写在私有临时目录、可清理", () => {
-    expect(PI_GATE_SOURCE).toContain(JSON.stringify(PI_GATE_TITLE));
-    expect(PI_GATE_SOURCE).toContain('["read","grep","find","ls"]');
-    const gate = writePiGate();
-    expect(readFileSync(gate.path, "utf8")).toBe(PI_GATE_SOURCE);
+    expect(PI_EXTENSION_SOURCE).toContain(JSON.stringify(PI_GATE_TITLE));
+    expect(PI_EXTENSION_SOURCE).toContain('["read","grep","find","ls"]');
+    const gate = writePiExtension();
+    expect(readFileSync(gate.path, "utf8")).toBe(PI_EXTENSION_SOURCE);
     gate.dispose();
     expect(existsSync(gate.path)).toBe(false);
   });
