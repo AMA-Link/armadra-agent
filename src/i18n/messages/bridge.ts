@@ -35,6 +35,8 @@ export const en = {
     turnFailed: (error: string) => `pi turn failed: ${error}`,
     commandTimedOut: (command: string) => `pi did not answer ${command} in time`,
     cancelGraceExpired: "pi did not stop within the grace period after cancel; closing the process",
+    dialogUnsupported: (title: string) =>
+      `an extension in pi asked for input (${title}), but the client does not support elicitation; cancelled`,
     mcpFailed: (error: string) => `could not hand an MCP server to pi: ${error}`,
     mcpSkipped: (names: string) =>
       `ignoring MCP servers the bridge cannot pass to pi (only stdio and http are supported): ${names}`,
@@ -97,6 +99,7 @@ export const zh = {
     turnFailed: (error) => `pi 这一轮出错：${error}`,
     commandTimedOut: (command) => `pi 没有及时回应 ${command}`,
     cancelGraceExpired: "取消后 pi 没有在宽限期内停下；关闭进程",
+    dialogUnsupported: (title) => `pi 里的扩展要求输入（${title}），但客户端不支持征询；已取消`,
     mcpFailed: (error) => `无法把 MCP 服务器交给 pi：${error}`,
     mcpSkipped: (names) => `忽略桥无法交给 pi 的 MCP 服务器（只支持 stdio 与 http）：${names}`,
   },

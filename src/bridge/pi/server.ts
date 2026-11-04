@@ -232,6 +232,9 @@ export class PiBridgeServer {
       mcpServers: mcp.names,
       askPermission: (request, signal) =>
         this.peer.request(ACP_METHODS.requestPermission, request, signal),
+      canElicit: () => this.options.connection.clientCapabilities.elicitation !== undefined,
+      askElicitation: (request, signal) =>
+        this.peer.request(ACP_METHODS.elicitationCreate, request, signal),
       ...(this.options.deps !== undefined ? { deps: this.options.deps } : {}),
       dispose: () => gate.dispose(),
     });

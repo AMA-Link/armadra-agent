@@ -15,6 +15,8 @@ import { armCancelWatchdog, type DriverDeps } from "../../drivers/base.js";
 import {
   RPC_ERRORS,
   type AcpPromptResult,
+  type AcpElicitationParams,
+  type AcpElicitationResult,
   type AcpRequestPermissionParams,
   type AcpRequestPermissionResult,
   type AcpSessionConfigOption,
@@ -40,6 +42,7 @@ import {
   modelValue,
   type ConfigState,
 } from "./config.js";
+import { CANCELLED_RESPONSE, planElicitation } from "./elicit.js";
 import { PiEventMapper } from "./events.js";
 import {
   BRIDGE_MODES,
@@ -70,6 +73,10 @@ export interface SessionInit {
     params: AcpRequestPermissionParams,
     signal: AbortSignal,
   ): Promise<AcpRequestPermissionResult>;
+  /** 客户端声明了 `elicitation`（没声明时其它扩展的对话框直接取消）。 */
+  canElicit(): boolean;
+  /** `elicitation/create`：只发给客户端；`signal` abort 时撤回请求。 */
+  askElicitation(params: AcpElicitationParams, signal: AbortSignal): Promise<AcpElicitationResult>;
   /** 关闭后清理（临时目录）。 */
   dispose(): void;
 }
@@ -377,7 +384,7 @@ export class PiBridgeSession {
     );
   }
 
-  /** 撤回挂起的审批（客户端收到 `$/cancel_request`）；Pi 一侧按拒绝应答。 */
+  /** 撤回挂起的审批与征询（客户端收到 `$/cancel_request`）；Pi 一侧按拒绝 / 取消应答。 */
   private cancelPending(): void {
     for (const controller of this.asks) controller.abort();
   }
@@ -482,7 +489,37 @@ export class PiBridgeSession {
       method === "input" ||
       method === "editor"
     ) {
-      respond({ cancelled: true });
+      void this.onDialog(record).then(respond, () => respond(CANCELLED_RESPONSE));
+    }
+  }
+
+  /** 其它扩展的对话框 → 征询（客户端声明了 `elicitation` 才转，否则取消并在 stderr 说一行）。 */
+  private async onDialog(record: Json): Promise<Json> {
+    const plan = planElicitation(record);
+    const title = oneLine(String(record["title"] ?? record["method"] ?? ""), 80);
+    if (plan === undefined || !this.init.canElicit() || this.closed) {
+      this.init.log(msg().bridge.pi.dialogUnsupported(title));
+      return CANCELLED_RESPONSE;
+    }
+    const controller = new AbortController();
+    this.asks.add(controller);
+    // Pi 的 timeout 到点它自己按取消处理；这里同时撤回给客户端的请求（$/cancel_request）
+    const timeout = record["timeout"];
+    const timer =
+      typeof timeout === "number" && timeout > 0
+        ? setTimeout(() => controller.abort(), timeout)
+        : undefined;
+    timer?.unref();
+    try {
+      const answer = await this.init.askElicitation(
+        { sessionId: this.id, mode: "form", message: plan.message, requestedSchema: plan.schema },
+        controller.signal,
+      );
+      if (controller.signal.aborted || answer.action !== "accept") return CANCELLED_RESPONSE;
+      return plan.toResponse(answer.content);
+    } finally {
+      clearTimeout(timer);
+      this.asks.delete(controller);
     }
   }
 
