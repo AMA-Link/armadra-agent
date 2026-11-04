@@ -7,7 +7,8 @@
  *   的会话在 Pi 里没有消息就当不存在（Pi 会静默新建），答 -32002 并收掉进程；load 回放历史，resume 不回放；
  * - Pi 低于下限答 `pi_outdated`、找不到答 `pi_missing`（`error.data.code`）；高于已验证区间或读不出版本照跑，
  *   stderr 一行，答复 `_meta["armadra.pi"] = { version, verified: false }`；
- * - 不替人回答：权限请求与征询只交给客户端。
+ * - 四个权限模式（`modes`，`session/set_mode` 立即生效）由审批闸实现；客户端的 `mcpServers` 写进 `bridge.json`
+ *   交给 Pi 内置的 MCP；`session/request_permission` 只发给客户端，桥从不代答。
  */
 
 import { randomUUID } from "node:crypto";
@@ -24,7 +25,7 @@ import {
   type AcpSessionUpdate,
 } from "../../drivers/acp/types.js";
 import { RpcError, type IncomingRequestContext } from "../../drivers/jsonrpc.js";
-import { writePiGate } from "../../drivers/native/pi-gate.js";
+import { PI_CONFIG_ENV, writePiExtension } from "../../drivers/native/pi-extension.js";
 import { ProgramProbe } from "../../drivers/probe.js";
 import { spawnTransport, type SpawnTransport } from "../../drivers/process.js";
 import { msg } from "../../i18n/index.js";
@@ -36,6 +37,7 @@ import {
   piVersionInfo,
   type PiVersionInfo,
 } from "./capabilities.js";
+import { piMcpPlan } from "./mcp.js";
 import { PiBridgeSession } from "./session.js";
 
 export const BRIDGE_AGENT_CAPABILITIES: AcpAgentCapabilities = {
@@ -47,6 +49,8 @@ export const BRIDGE_AGENT_CAPABILITIES: AcpAgentCapabilities = {
 
 /** 测试与宿主可注入的依赖。 */
 export interface BridgeDeps extends Pick<DriverDeps, "cancelGraceMs" | "setTimer"> {
+  /** 开会话时最多等扩展的能力报告多久（毫秒，缺省 300）。 */
+  statusWaitMs?: number;
   /** 缺省起真实子进程。 */
   spawn?: SpawnTransport;
   /** 缺省按 PATH 找 `pi` 并跑 `pi --version`。 */
@@ -76,16 +80,6 @@ function str(params: Params, key: string): string {
   if (typeof value !== "string" || value === "")
     throw new RpcError(RPC_ERRORS.invalidParams, msg().bridge.session.missingParam(key));
   return value;
-}
-
-/** 客户端给的 `mcpServers` 里的名字（桥只用名字认工具；连接由 Pi 自己做）。 */
-function mcpNames(params: Params): string[] {
-  const list = params["mcpServers"];
-  if (!Array.isArray(list)) return [];
-  return list.flatMap((s) => {
-    const name = (s as Params | null)?.["name"];
-    return typeof name === "string" && name !== "" ? [name] : [];
-  });
 }
 
 export class PiBridgeServer {
@@ -122,6 +116,9 @@ export class PiBridgeServer {
         return this.close(params);
       case ACP_METHODS.sessionPrompt:
         return this.prompt(params, ctx);
+      case ACP_METHODS.sessionSetMode:
+        this.session(params).setMode(str(params, "modeId"));
+        return {};
       case ACP_METHODS.sessionSetConfigOption:
         return this.setConfigOption(params);
       default:
@@ -203,7 +200,12 @@ export class PiBridgeServer {
     // 子进程是 pi，不是 ama
     delete env["AMA"];
     delete env["AI_AGENT"];
-    const gate = writePiGate();
+    // MCP 透传：客户端的 mcpServers 写进 bridge.json，扩展加载时交给 Pi 内置的 MCP（ama 自己不说 MCP）
+    const mcp = piMcpPlan(params["mcpServers"]);
+    if (mcp.skipped.length > 0)
+      this.options.log(msg().bridge.pi.mcpSkipped(mcp.skipped.join(", ")));
+    const gate = writePiExtension({ mcpServers: mcp.servers });
+    if (gate.configPath !== undefined) env[PI_CONFIG_ENV] = gate.configPath;
     const transport = (this.options.deps?.spawn ?? ((spec) => spawnTransport(spec)))({
       program: launch.path,
       args: [
@@ -227,7 +229,9 @@ export class PiBridgeServer {
       emit: (update: AcpSessionUpdate) =>
         void this.peer.notify(ACP_METHODS.sessionUpdate, { sessionId: session.sessionId, update }),
       log: this.options.log,
-      mcpServers: mcpNames(params),
+      mcpServers: mcp.names,
+      askPermission: (request, signal) =>
+        this.peer.request(ACP_METHODS.requestPermission, request, signal),
       ...(this.options.deps !== undefined ? { deps: this.options.deps } : {}),
       dispose: () => gate.dispose(),
     });
@@ -252,13 +256,16 @@ export class PiBridgeServer {
   ): Record<string, unknown> {
     setImmediate(() => void session.reportUsage());
     const configOptions = session.configOptions();
+    const capabilities = session.capabilities();
     return {
       ...(kind === "new" ? { sessionId: session.sessionId } : {}),
+      modes: session.modes(),
       ...(configOptions.length > 0 ? { configOptions } : {}),
       _meta: {
         "armadra.pi": {
           ...(launch.info.version !== undefined ? { version: launch.info.version } : {}),
           verified: launch.info.status === "verified",
+          ...(capabilities !== undefined ? { capabilities } : {}),
         },
       },
     };

@@ -60,7 +60,7 @@ export async function bridgeHarness(options: HarnessOptions = {}): Promise<Bridg
     {
       stdin: toBridge,
       stdout: fromBridge,
-      deps: { spawn: pi.spawn, probe: pi.probe, cancelGraceMs: 200 },
+      deps: { spawn: pi.spawn, probe: pi.probe, cancelGraceMs: 200, statusWaitMs: 30 },
     },
   );
   const client = new AcpClient({

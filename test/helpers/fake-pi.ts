@@ -74,6 +74,10 @@ export interface FakePiConfig {
   onPrompt?: (turn: FakePiTurn) => Promise<void>;
   /** 让这条命令永远不回（模拟卡死）。 */
   hangOn?: string;
+  /** 扩展报告的工具名（缺省七个内置工具）；`null` 表示不报告（模拟没加载到扩展）。 */
+  tools?: string[] | null;
+  /** 扩展报告的 MCP 注册失败。 */
+  mcpFailures?: string[];
   /** 收到 `abort` 只应答、不结束回合（模拟停不下来的 pi）。 */
   ignoreAbort?: boolean;
   /** PATH 上没有 `pi`。 */
@@ -91,6 +95,10 @@ export interface FakePiInstance {
   /** spawn 时读到的 `-e` 扩展源码。 */
   extensionSource: string | undefined;
   extensionPath: string | undefined;
+  /** spawn 时 `AMA_BRIDGE_CONFIG` 指向的 `bridge.json` 内容。 */
+  bridgeConfig: Json | undefined;
+  /** 拒绝后扩展用 editor 对话框取到的理由。 */
+  reasons: string[];
 }
 
 export interface FakePi {
@@ -138,7 +146,17 @@ export function fakePi(config: FakePiConfig = {}): FakePi {
       commands: [],
       uiResponses: [],
       unknown: [],
+      reasons: [],
     } as unknown as FakePiInstance;
+    const configFile = spec.env["AMA_BRIDGE_CONFIG"];
+    try {
+      instance.bridgeConfig =
+        configFile !== undefined
+          ? (JSON.parse(readFileSync(configFile, "utf8")) as Json)
+          : undefined;
+    } catch {
+      instance.bridgeConfig = undefined;
+    }
     instance.extensionSource = extensionSource;
     instance.extensionPath = extensionPath;
     instance.mem = memoryTransport((input, output) => serve(config, spec, instance, input, output));
@@ -190,10 +208,13 @@ function serve(
     const emit = (record: Json): void => write(record);
     const ui = (request: Json): Promise<Json> => {
       const id = `ui-${++uiCounter}`;
-      write({ type: "extension_ui_request", id, ...request });
       const dialog = ["select", "confirm", "input", "editor"].includes(String(request["method"]));
-      if (!dialog) return Promise.resolve({});
-      return new Promise<Json>((resolve) => uiWaiters.set(id, resolve));
+      // 先登记等待者再写：管道里的对端可能同步应答
+      const answered = dialog
+        ? new Promise<Json>((resolve) => uiWaiters.set(id, resolve))
+        : Promise.resolve<Json>({});
+      write({ type: "extension_ui_request", id, ...request });
+      return answered;
     };
     const turn: FakePiTurn = {
       message: String(cmd["message"] ?? ""),
@@ -241,16 +262,27 @@ function serve(
           const reply = await ui({
             method: "confirm",
             title: "ama-approval",
-            message: JSON.stringify({ id: o.id, tool: o.name, input: o.args ?? {}, ...o.gate }),
+            message: JSON.stringify({
+              id: o.id,
+              tool: o.name,
+              input: o.args ?? {},
+              readOnly: false,
+              ...o.gate,
+            }),
           });
           if (reply["confirmed"] !== true) {
+            // 与扩展一致：被拒绝后用 editor 对话框向 ama 取一句理由
+            const why = await ui({ method: "editor", title: "ama-reason", prefill: o.id });
+            const reason =
+              typeof why["value"] === "string" && why["value"] !== ""
+                ? why["value"]
+                : `${o.name} was not approved by the user`;
+            instance.reasons.push(reason);
             emit({
               type: "tool_execution_end",
               toolCallId: o.id,
               toolName: o.name,
-              result: {
-                content: [{ type: "text", text: `${o.name} was not approved by the user` }],
-              },
+              result: { content: [{ type: "text", text: reason }] },
               isError: true,
               ...parent,
             });
@@ -285,6 +317,20 @@ function serve(
     return turn;
   };
 
+  // 扩展的 session_start 能力报告：pi 启动完成、开始读 stdin 之前就发出（等对端的读取端接上再写）
+  if (config.tools !== null)
+    setImmediate(() =>
+      write({
+        type: "extension_ui_request",
+        id: "status-1",
+        method: "setStatus",
+        statusKey: "ama-bridge",
+        statusText: JSON.stringify({
+          tools: config.tools ?? ["read", "bash", "edit", "write", "grep", "find", "ls"],
+          mcpFailures: config.mcpFailures ?? [],
+        }),
+      }),
+    );
   return new Promise<void>((resolve) => {
     createLineReader(
       input,

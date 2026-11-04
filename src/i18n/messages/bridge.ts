@@ -35,6 +35,16 @@ export const en = {
     turnFailed: (error: string) => `pi turn failed: ${error}`,
     commandTimedOut: (command: string) => `pi did not answer ${command} in time`,
     cancelGraceExpired: "pi did not stop within the grace period after cancel; closing the process",
+    mcpFailed: (error: string) => `could not hand an MCP server to pi: ${error}`,
+    mcpSkipped: (names: string) =>
+      `ignoring MCP servers the bridge cannot pass to pi (only stdio and http are supported): ${names}`,
+  },
+  /** 权限模式的一行说明（名称沿用 ama 的显示名）。 */
+  modes: {
+    default: "Ask before writing files or running commands",
+    "auto-edit": "Accept file edits automatically; still ask before commands",
+    plan: "Read-only: pi may read and search but changes nothing",
+    "full-auto": "Allow everything (dangerous commands still ask)",
   },
   /** ACP 会话。 */
   session: {
@@ -42,6 +52,7 @@ export const en = {
     notOpen: (id: string) =>
       `session ${id} is not open in this connection; send session/load or session/resume first`,
     busy: "a prompt is already running in this session",
+    unknownMode: (mode: string) => `unknown mode: ${mode}`,
     invalidCwd: (cwd: string) => `cwd must be an absolute path (got ${cwd})`,
     missingParam: (key: string) => `missing ${key}`,
     promptNotArray: "prompt must be an array of content blocks",
@@ -86,11 +97,20 @@ export const zh = {
     turnFailed: (error) => `pi 这一轮出错：${error}`,
     commandTimedOut: (command) => `pi 没有及时回应 ${command}`,
     cancelGraceExpired: "取消后 pi 没有在宽限期内停下；关闭进程",
+    mcpFailed: (error) => `无法把 MCP 服务器交给 pi：${error}`,
+    mcpSkipped: (names) => `忽略桥无法交给 pi 的 MCP 服务器（只支持 stdio 与 http）：${names}`,
+  },
+  modes: {
+    default: "写文件、执行命令前询问",
+    "auto-edit": "自动接受文件编辑，执行命令仍询问",
+    plan: "只读：pi 可以读和搜索，但不改任何东西",
+    "full-auto": "全部放行（危险命令仍询问）",
   },
   session: {
     notFound: (id) => `pi 里没有会话 ${id}`,
     notOpen: (id) => `会话 ${id} 没有在本连接中打开；先发 session/load 或 session/resume`,
     busy: "这个会话里已有提示在运行",
+    unknownMode: (mode) => `未知模式：${mode}`,
     invalidCwd: (cwd) => `cwd 必须是绝对路径（收到 ${cwd}）`,
     missingParam: (key) => `缺少 ${key}`,
     promptNotArray: "prompt 应为内容块数组",
