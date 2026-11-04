@@ -42,7 +42,7 @@ function setup(commands?: ReadonlySet<string>) {
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 5));
 
 describe("PiRpcCore", () => {
-  it("按 id 关联应答；事件与扩展 UI 请求原样交给调用方；分帧只认 LF（U+2028 留在串里）", async () => {
+  it("按 id 关联应答；事件与扩展 UI 请求原样交给调用方；一条记录可跨块到达", async () => {
     const t = setup();
     const answer = t.core.request({ type: "get_state" });
     await tick();
