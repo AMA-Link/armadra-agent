@@ -28,6 +28,7 @@ import * as memory from "./messages/memory.js";
 import * as auth from "./messages/auth.js";
 import * as settings from "./messages/settings.js";
 import * as acp from "./messages/acp.js";
+import * as bridge from "./messages/bridge.js";
 
 const en = {
   cli: cli.en,
@@ -50,6 +51,7 @@ const en = {
   auth: auth.en,
   settings: settings.en,
   acp: acp.en,
+  bridge: bridge.en,
 };
 
 /** 运行期取用的目录形状：en 的形状、叶子放宽为 string / 同签名函数。 */
@@ -76,6 +78,7 @@ const zh = {
   auth: auth.zh,
   settings: settings.zh,
   acp: acp.zh,
+  bridge: bridge.zh,
 } satisfies Catalog;
 
 export const CATALOGS: { readonly en: Catalog; readonly zh: Catalog } = { en, zh };
