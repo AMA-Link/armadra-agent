@@ -258,7 +258,7 @@ export function candidateCapabilities(c: CatalogCandidate): DriverCapabilities {
         images: false,
       };
     case "pi-rpc":
-      // 审批经 ama 加载的审批闸扩展交给人（native/pi-gate.ts）
+      // 审批经 ama 加载的审批闸扩展交给人（native/pi-extension.ts）
       return {
         resume: "resume",
         list: false,

@@ -18,7 +18,7 @@ import {
   type AcpToolCall,
   type AcpToolCallStatus,
 } from "../../drivers/acp/types.js";
-import { PI_READ_ONLY_TOOLS } from "../../drivers/native/pi-gate.js";
+import { PI_READ_ONLY_TOOLS } from "../../drivers/native/pi-extension.js";
 import {
   bridgeToolTitle,
   mcpToolOf,
@@ -175,6 +175,26 @@ export class PiEventMapper {
     return mcpToolOf(tool, this.options.mcpServers());
   }
 
+  /** 一次调用的展示字段（`tool_call` 与权限请求的 `toolCall` 共用）。 */
+  describe(
+    tool: string,
+    input: Json,
+    record?: Json,
+  ): Omit<AcpToolCall, "toolCallId" | "status"> & { title: string } {
+    const mcp = this.mcpRef(tool);
+    const locations = piToolLocations(input, this.options.cwd);
+    const meta = this.metaOf(record, mcp);
+    return {
+      title: bridgeToolTitle(tool, input, mcp),
+      kind: piToolKind(tool),
+      name: tool,
+      rawInput:
+        mcp !== undefined ? { server: mcp.server, tool: mcp.tool, arguments: input } : input,
+      ...(locations !== undefined ? { locations } : {}),
+      ...(meta !== undefined ? { _meta: meta } : {}),
+    };
+  }
+
   /** 公布一个新调用（`tool_call`）。 */
   private publish(
     id: string,
@@ -184,25 +204,9 @@ export class PiEventMapper {
     record: Json | undefined,
     extra: Partial<AcpToolCall> = {},
   ): void {
-    const mcp = this.mcpRef(tool);
-    const title = bridgeToolTitle(tool, input, mcp);
-    const kind = piToolKind(tool);
-    const locations = piToolLocations(input, this.options.cwd);
-    const meta = this.metaOf(record, mcp);
-    this.published.set(id, { title, kind });
-    this.options.emit({
-      sessionUpdate: "tool_call",
-      toolCallId: id,
-      title,
-      kind,
-      status,
-      name: tool,
-      rawInput:
-        mcp !== undefined ? { server: mcp.server, tool: mcp.tool, arguments: input } : input,
-      ...(locations !== undefined ? { locations } : {}),
-      ...(meta !== undefined ? { _meta: meta } : {}),
-      ...extra,
-    });
+    const fields = this.describe(tool, input, record);
+    this.published.set(id, { title: fields.title, kind: fields.kind });
+    this.options.emit({ sessionUpdate: "tool_call", toolCallId: id, status, ...fields, ...extra });
   }
 
   /** `_meta`：自家工具标记（顶层，客户端约定）与 ama 命名空间下的父调用。 */

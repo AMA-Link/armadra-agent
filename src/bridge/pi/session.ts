@@ -14,17 +14,24 @@ import { AmaError } from "../../errors.js";
 import { armCancelWatchdog, type DriverDeps } from "../../drivers/base.js";
 import {
   RPC_ERRORS,
-  type AcpContentBlock,
   type AcpPromptResult,
+  type AcpRequestPermissionParams,
+  type AcpRequestPermissionResult,
   type AcpSessionConfigOption,
+  type AcpSessionModeState,
   type AcpSessionUpdate,
 } from "../../drivers/acp/types.js";
 import { RpcError } from "../../drivers/jsonrpc.js";
 import { PiRpcCore } from "../../drivers/native/pi-rpc-core.js";
-import { PI_GATE_TITLE } from "../../drivers/native/pi-gate.js";
+import {
+  PI_GATE_TITLE,
+  PI_REASON_TITLE,
+  PI_STATUS_KEY,
+} from "../../drivers/native/pi-extension.js";
 import { stderrHint, type AgentTransport } from "../../drivers/process.js";
 import { oneLine } from "../../drivers/turn.js";
 import { msg } from "../../i18n/index.js";
+import { permissionModeLabel } from "../../permissions/modes.js";
 import type { PiVersionInfo } from "./capabilities.js";
 import {
   CONFIG_IDS,
@@ -34,6 +41,14 @@ import {
   type ConfigState,
 } from "./config.js";
 import { PiEventMapper } from "./events.js";
+import {
+  BRIDGE_MODES,
+  isBridgeMode,
+  parseGateCall,
+  verdictFor,
+  type BridgeMode,
+  type GateCall,
+} from "./gate.js";
 import { promptCommand } from "./prompt.js";
 import { replayUpdates } from "./replay.js";
 import type { Json } from "./tools.js";
@@ -49,7 +64,12 @@ export interface SessionInit {
   log(message: string): void;
   /** 客户端给的 MCP 服务器名。 */
   mcpServers: readonly string[];
-  deps?: Pick<DriverDeps, "cancelGraceMs" | "setTimer">;
+  deps?: Pick<DriverDeps, "cancelGraceMs" | "setTimer"> & { statusWaitMs?: number };
+  /** `session/request_permission`：只发给客户端，桥从不代答；`signal` abort 时撤回请求。 */
+  askPermission(
+    params: AcpRequestPermissionParams,
+    signal: AbortSignal,
+  ): Promise<AcpRequestPermissionResult>;
   /** 关闭后清理（临时目录）。 */
   dispose(): void;
 }
@@ -75,6 +95,15 @@ export class PiBridgeSession {
   private interrupted = false;
   private closed = false;
   private lastUsage: string | undefined;
+  private mode: BridgeMode = "default";
+  /** 挂起的 `session/request_permission`（取消与关闭时撤回）。 */
+  private readonly asks = new Set<AbortController>();
+  /** 桥自己拒绝的调用 → 回给模型的理由（扩展随后用 editor 对话框来取）。 */
+  private readonly denials = new Map<string, string>();
+  /** 扩展报告的工具名（`setStatus`）；没收到为 undefined。 */
+  private tools: string[] | undefined;
+  private resolveStatus: (() => void) | undefined;
+  private readonly statusSeen = new Promise<void>((resolve) => (this.resolveStatus = resolve));
 
   constructor(private readonly init: SessionInit) {
     this.id = init.id;
@@ -132,6 +161,13 @@ export class PiBridgeSession {
         ...(typeof state["thinkingLevel"] === "string" ? { level: state["thinkingLevel"] } : {}),
       };
       await this.refreshLevels();
+      // 扩展的能力报告通常早于 get_state 的应答到达；没到就最多再等一小会儿
+      await Promise.race([
+        this.statusSeen,
+        new Promise<void>((resolve) =>
+          setTimeout(resolve, this.init.deps?.statusWaitMs ?? 300).unref(),
+        ),
+      ]);
     };
     try {
       await Promise.race([run(), aborted]);
@@ -341,8 +377,10 @@ export class PiBridgeSession {
     );
   }
 
-  /** 撤回挂起的审批与征询（后续批次接上）。 */
-  protected cancelPending(): void {}
+  /** 撤回挂起的审批（客户端收到 `$/cancel_request`）；Pi 一侧按拒绝应答。 */
+  private cancelPending(): void {
+    for (const controller of this.asks) controller.abort();
+  }
 
   async close(): Promise<void> {
     if (this.closed) return;
@@ -385,18 +423,127 @@ export class PiBridgeSession {
     else this.mapper.onEvent(record);
   }
 
-  /** 扩展对话框。本批：审批闸一律拒绝，其它对话框取消（后续批次接上审批与征询）。 */
+  /** 当前模式与可选模式（`session/new|load|resume` 的 `modes`）。 */
+  modes(): AcpSessionModeState {
+    const desc = msg().bridge.modes;
+    return {
+      currentModeId: this.mode,
+      availableModes: BRIDGE_MODES.map((id) => ({
+        id,
+        name: permissionModeLabel(id),
+        description: desc[id],
+      })),
+    };
+  }
+
+  /** `session/set_mode`：立即生效（闸每次调用都问桥）。 */
+  setMode(id: string): void {
+    if (!isBridgeMode(id))
+      throw new RpcError(RPC_ERRORS.invalidParams, msg().bridge.session.unknownMode(id));
+    this.mode = id;
+    this.init.emit({ sessionUpdate: "current_mode_update", currentModeId: id });
+  }
+
+  /** 扩展报告的能力：Pi 里有没有 `todo` / `subagent` / `questionnaire` 工具；没收到报告为 undefined。 */
+  capabilities(): { todo: boolean; subagent: boolean; questionnaire: boolean } | undefined {
+    const tools = this.tools;
+    if (tools === undefined) return undefined;
+    return {
+      todo: tools.includes("todo"),
+      subagent: tools.includes("subagent"),
+      questionnaire: tools.includes("questionnaire"),
+    };
+  }
+
+  /** 扩展 UI 请求：审批闸与拒绝理由、能力报告；其它对话框本批取消（后续批次接上征询）。 */
   private onUiRequest(record: Json): void {
     const id = String(record["id"] ?? "");
     const method = String(record["method"] ?? "");
-    if (method === "confirm" && record["title"] === PI_GATE_TITLE)
-      this.core.write({ type: "extension_ui_response", id, confirmed: false });
-    else if (
+    const respond = (body: Json): void =>
+      this.core.write({ type: "extension_ui_response", id, ...body });
+    if (method === "confirm" && record["title"] === PI_GATE_TITLE) {
+      void this.onGate(record).then(
+        (confirmed) => respond({ confirmed }),
+        () => respond({ confirmed: false }),
+      );
+    } else if (method === "editor" && record["title"] === PI_REASON_TITLE) {
+      const key = String(record["prefill"] ?? "");
+      const reason = this.denials.get(key);
+      this.denials.delete(key);
+      respond(reason !== undefined ? { value: reason } : { cancelled: true });
+    } else if (method === "setStatus" && record["statusKey"] === PI_STATUS_KEY) {
+      this.onStatus(record["statusText"]);
+    } else if (method === "notify") {
+      if (record["notifyType"] === "warning" || record["notifyType"] === "error")
+        this.init.log(oneLine(String(record["message"] ?? ""), 200));
+    } else if (
       method === "select" ||
       method === "confirm" ||
       method === "input" ||
       method === "editor"
-    )
-      this.core.write({ type: "extension_ui_response", id, cancelled: true });
+    ) {
+      respond({ cancelled: true });
+    }
+  }
+
+  private onStatus(text: unknown): void {
+    try {
+      const status = JSON.parse(String(text ?? "")) as Json;
+      if (Array.isArray(status["tools"]))
+        this.tools = status["tools"].filter((t): t is string => typeof t === "string");
+      if (Array.isArray(status["mcpFailures"]))
+        for (const failure of status["mcpFailures"])
+          this.init.log(msg().bridge.pi.mcpFailed(oneLine(String(failure), 200)));
+    } catch {
+      // 不是我们的报告
+    }
+    this.resolveStatus?.();
+  }
+
+  /** 审批闸：按模式放行、拒绝，或把请求交给客户端（人）。返回是否放行。 */
+  private async onGate(record: Json): Promise<boolean> {
+    const call = parseGateCall(record["message"]);
+    if (call === undefined || this.closed) return false;
+    const verdict = verdictFor(this.mode, call);
+    if (verdict.kind === "deny") {
+      this.denials.set(call.id, verdict.reason);
+      return false;
+    }
+    if (verdict.kind === "ask" && !(await this.askHuman(call))) return false;
+    this.mapper.markRunning(call.id);
+    return true;
+  }
+
+  /** `session/request_permission`（allow_once / reject_once）；客户端取消、出错或会话取消都按拒绝。 */
+  private async askHuman(call: GateCall): Promise<boolean> {
+    if (this.interrupted) return false;
+    const controller = new AbortController();
+    this.asks.add(controller);
+    const core = msg().acp.core;
+    try {
+      const fields = this.mapper.describe(call.tool, call.input, {
+        ...(call.parent !== undefined ? { parentToolCallId: call.parent } : {}),
+      });
+      const answer = await this.init.askPermission(
+        {
+          sessionId: this.id,
+          toolCall: { toolCallId: call.id, status: "pending", ...fields },
+          options: [
+            { optionId: "allow_once", name: core.allowOnce, kind: "allow_once" },
+            { optionId: "reject_once", name: core.rejectOnce, kind: "reject_once" },
+          ],
+        },
+        controller.signal,
+      );
+      return (
+        !controller.signal.aborted &&
+        answer.outcome.outcome === "selected" &&
+        answer.outcome.optionId === "allow_once"
+      );
+    } catch {
+      return false;
+    } finally {
+      this.asks.delete(controller);
+    }
   }
 }

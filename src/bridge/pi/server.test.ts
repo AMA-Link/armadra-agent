@@ -10,11 +10,13 @@ let h: BridgeHarness | undefined;
 beforeEach(() => setLocale("en"));
 afterEach(async () => {
   setLocale("zh");
-  await h?.finish().catch(() => undefined);
+  // 每条线上消息都要过官方 schema：校验失败在这里抛出
+  await h?.finish();
   h = undefined;
 });
 
 const CWD = process.platform === "win32" ? "C:\\work" : "/work";
+const NO_EXTRAS = { todo: false, subagent: false, questionnaire: false };
 const text = (t: string) => [{ type: "text" as const, text: t }];
 
 async function open(config: FakePiConfig = {}, options: Parameters<typeof bridgeHarness>[0] = {}) {
@@ -73,7 +75,7 @@ describe("initialize 与会话生命周期", () => {
       options: [{ value: "off" }, { value: "low" }, { value: "medium" }, { value: "high" }],
     });
     expect((created as unknown as { _meta: unknown })._meta).toEqual({
-      "armadra.pi": { version: "1.5.0", verified: true },
+      "armadra.pi": { version: "1.5.0", verified: true, capabilities: NO_EXTRAS },
     });
     expect(h.pi.last().unknown).toEqual([]);
   });
@@ -164,7 +166,7 @@ describe("版本适配", () => {
   it.each(["1.1.0", "1.4.0", "1.5.0"])("%s：已验证区间，没有提示", async (version) => {
     const { h, created } = await open({ version });
     expect((created as unknown as { _meta: Record<string, unknown> })._meta).toEqual({
-      "armadra.pi": { version, verified: true },
+      "armadra.pi": { version, verified: true, capabilities: NO_EXTRAS },
     });
     expect(h.stderr).toEqual([]);
     expect(h.pi.last().unknown).toEqual([]);
@@ -173,13 +175,13 @@ describe("版本适配", () => {
   it("2.0.0 与读不出版本：照跑，stderr 一行，_meta.verified 为 false", async () => {
     const newer = await open({ version: "2.0.0" });
     expect((newer.created as unknown as { _meta: unknown })._meta).toEqual({
-      "armadra.pi": { version: "2.0.0", verified: false },
+      "armadra.pi": { version: "2.0.0", verified: false, capabilities: NO_EXTRAS },
     });
     expect(newer.h.stderr.join("")).toMatch(/pi 2\.0\.0 is outside the verified range/);
     await newer.h.finish();
     const unknown = await open({ version: undefined });
     expect((unknown.created as unknown as { _meta: unknown })._meta).toEqual({
-      "armadra.pi": { verified: false },
+      "armadra.pi": { verified: false, capabilities: NO_EXTRAS },
     });
     expect(unknown.h.stderr.join("")).toMatch(/could not read the pi version/);
     expect(unknown.h.pi.last().unknown).toEqual([]);
@@ -503,27 +505,5 @@ describe("工具调用", () => {
       _meta: { ama: { parentToolCallId: "outer" } },
     });
     expect(h.updatesOf("tool_call_update").at(-1)).toMatchObject({ status: "failed" });
-  });
-
-  it("要过审批闸的调用先 pending；本批没有审批通道，闸一律拒绝，调用以 failed 结束", async () => {
-    const { h, id } = await open({
-      onPrompt: async (t) => {
-        await t.tool({ id: "w1", name: "write", args: { path: "a.txt", content: "x" }, gate: {} });
-        t.assistantEnd({});
-      },
-    });
-    await h.client.prompt(id, text("write it"));
-    expect(h.updatesOf("tool_call")[0]).toMatchObject({
-      toolCallId: "w1",
-      status: "pending",
-      kind: "edit",
-    });
-    expect(h.updatesOf("tool_call_update").at(-1)).toMatchObject({
-      toolCallId: "w1",
-      status: "failed",
-    });
-    expect(h.pi.last().uiResponses).toEqual([
-      expect.objectContaining({ type: "extension_ui_response", confirmed: false }),
-    ]);
   });
 });

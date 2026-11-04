@@ -6,7 +6,7 @@
  *
  * - 回合：`prompt` → 响应 `disposition`（`handled` 时没有运行，直接结束）→ 事件流 → `agent_settled`
  *   结束（`aborted` 为真即中断）；运行中追加用 `steer`；中断 `abort`（15 s 看门狗）。
- * - 审批：pi 自己不问人，ama 以 `-e` 加载审批闸（{@link PI_GATE_SOURCE}），只读内置工具以外的调用
+ * - 审批：pi 自己不问人，ama 以 `-e` 加载审批闸（{@link PI_EXTENSION_SOURCE}），只读内置工具以外的调用
  *   经 `extension_ui_request{confirm, title: "ama-approval"}` 到这里：plan / allowlist 直接拒绝（并以
  *   `--tools` 只开只读工具），auto-edit / auto / full-auto 放行 `edit` / `write`，其余交给人（只交给人，
  *   不代答）。其它扩展的对话框（select / input / editor / 别的 confirm）一律取消并提示。
@@ -37,7 +37,12 @@ import type {
   DriverSession,
   DriverTurnResult,
 } from "../types.js";
-import { PI_GATE_TITLE, PI_READ_ONLY_TOOLS, writePiGate } from "./pi-gate.js";
+import {
+  PI_GATE_TITLE,
+  PI_READ_ONLY_TOOLS,
+  PI_REASON_TITLE,
+  writePiExtension,
+} from "./pi-extension.js";
 import { PiRpcCore, type Json } from "./pi-rpc-core.js";
 import { msg } from "../../i18n/index.js";
 
@@ -108,7 +113,7 @@ export class PiRpcDriver implements AgentDriver {
   async open(options: DriverOpenOptions): Promise<DriverSession> {
     const probed = await probeCandidate(this.candidate, this.deps);
     const sessionId = options.resume ?? randomUUID();
-    const gate = writePiGate();
+    const gate = writePiExtension();
     const transport = spawnOf(this.deps)({
       program: probed.path ?? this.candidate.program,
       args: [...this.candidate.args, ...piArgs(options, sessionId, gate.path)],
@@ -425,6 +430,11 @@ class PiSession implements DriverSession {
           level: "warn",
           text: `${this.agentId}: ${oneLine(String(record["message"] ?? ""), 200)}`,
         });
+      return;
+    }
+    // 审批闸被拒绝后向 ama 取理由的 editor：驱动没有自定义理由，静默取消（扩展用默认句）
+    if (method === "editor" && record["title"] === PI_REASON_TITLE) {
+      this.core.write({ type: "extension_ui_response", id, cancelled: true });
       return;
     }
     if (method !== "confirm" || record["title"] !== PI_GATE_TITLE) {
