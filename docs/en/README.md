@@ -24,7 +24,7 @@ When a translation and the Chinese version differ, the Chinese version is author
 | [Permissions](guides/permissions.md)        | The six modes, decision order, auto's three tiers                                   |
 | [Sessions](guides/sessions.md)              | Stats, search, `--from`, export, traces, checkpoints                                |
 | [RPC protocol](reference/rpc.md)            | `ama --mode rpc`: stdio JSONL commands, responses and events                        |
-| [ACP](reference/acp.md)                     | `ama --mode acp`, sign-in methods, deviations, the ACP client                       |
+| [ACP](reference/acp.md)                     | `ama --mode acp`, the Pi ACP bridge, sign-in methods, deviations, the ACP client    |
 | [Host adapter API](reference/host-api.md)   | `@armadra/agent/host`: tools, approvals, injected messages, status                  |
 
 ## Chinese only

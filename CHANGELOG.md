@@ -5,6 +5,16 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### ACP
+
+- **A Pi bridge, `ama --mode acp --bridge pi`**: ama itself exposes the locally installed Pi as an ACP agent, with no ama key or model needed (it branches off before bootstrap). Each ACP session is one `pi --mode rpc --session-id <id>` child; `session/new` / `load` / `resume` / `close` / `prompt` / `cancel`, the `model` and `thought_level` config options, and `usage_update` with cost (from 1.5.0 it says whether the cost is a billed total). The four permission modes (`default` / `auto-edit` / `plan` / `full-auto`) are implemented by the approval gate and `session/set_mode` takes effect at once; requests that need a human go out as `session/request_permission` and the bridge never answers for the user. The client's `mcpServers` (stdio and http) are handed to Pi's built-in MCP, and the client's own tools carry `_meta.is_mcp_tool_call`. Arguments after `--` pass through to pi (flags the bridge manages are refused). Todos become `plan`, subagent calls carry `_meta["armadra.subagent"]`, and other extensions' dialogs become `elicitation/create`. It adapts to the Pi version: floor 1.1.0 (older answers `pi_outdated`), verified range `>=1.1.0 <2.0.0`, newer or unreadable versions run with a notice (`_meta["armadra.pi"].verified: false`), and only commands in the capability table are sent. The bridge registers no todo or questionnaire tools of its own; when Pi lacks them the gap shows in `_meta["armadra.pi"].capabilities`. See [docs/reference/acp.md](docs/reference/acp.md) (#254).
+
+### External agents
+
+- **The pi driver and the bridge share one extension**: `pi-gate` is merged into `pi-extension` (besides the approval gate it hands over MCP servers, reports capabilities and returns refusal reasons); request correlation, the command table and the 10 s deadline for non-prompt commands of `pi-rpc` moved into `pi-rpc-core`. Driver behaviour is unchanged (#254).
+
 ## 0.13.0 (2026-11-04)
 
 ### Maintenance
