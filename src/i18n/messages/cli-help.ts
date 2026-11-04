@@ -28,6 +28,8 @@ Modes
                                ≤ 5 MB each); in the interactive UI write @image-path or paste an image path
   --mode rpc                   stdio JSONL protocol (for embedding)
   --mode acp                   ACP server (driven by Zed / JetBrains / Armadra)
+  --mode acp --bridge pi [-- <pi args>]
+                               ACP server for an installed Pi (no ama key or model needed)
   --max-cost <USD>             Dollar limit for one run (estimated from catalog prices); stops the run,
                                -p exits with 8
   --tui-mode <mode>            Display mode; only regular (main screen) for now
@@ -153,6 +155,8 @@ export const zh = {
                                交互界面里写 @图片路径 或粘贴图片路径
   --mode rpc                   stdio JSONL 协议（供嵌入）
   --mode acp                   ACP 服务端（供 Zed / JetBrains / Armadra 驱动）
+  --mode acp --bridge pi [-- <pi 参数>]
+                               把本机的 Pi 暴露为 ACP 服务端（不需要 ama 的 key 与模型）
   --max-cost <USD>             一次运行的美元上限（按目录价估算）；到限结束运行，-p 退出码 8
   --tui-mode <模式>            显示模式，第一期只有 regular（主屏）
   --quiet-startup <档>         启动画面：normal | header | silent

@@ -14,6 +14,7 @@
  *   `createRuntimeDeps()`（cli/compose.ts，动态 import）。
  * - 签名 `main(argv): Promise<number>` 与「直接执行才自动运行」判定保持不变：
  *   src/bundle.ts 显式调用 `main()`。
+ * - `--bridge pi`（配 `--mode acp`）在解析前分流到 Pi 的 ACP 桥（bridge/pi），不走 bootstrap。
  * - [W6-C0] 界面语言在解析参数后、任何输出前定一次：`AMA_LANG` > `--lang` > 用户级 `ui.language` >
  *   `LC_ALL` / `LC_MESSAGES` / `LANG`（docs/guides/i18n.md）；profile / 项目级的 `ui.language` 由 bootstrap 合并后补定。
  */
@@ -37,6 +38,7 @@ import { resolveConfigDir } from "../config/paths.js";
 import { runSessions } from "./subcommands/sessions.js";
 import { runStats } from "./subcommands/stats.js";
 import { enableEnvProxy, proxyHint } from "./proxy.js";
+import { bridgeLangOf, hasBridgeFlag } from "../bridge/pi/args.js";
 import { msg, resolveLocale, setLocale, type LanguageSetting } from "../i18n/index.js";
 
 declare const __AMA_BUNDLED__: boolean | undefined;
@@ -195,6 +197,11 @@ export async function main(argv: readonly string[], options: MainOptions = {}): 
     return ExitCode.Ok;
   }
   if (options.processHooks !== false) installProcessHooks(io);
+  // `--bridge pi`：在解析供应商与模型之前分流（不需要 ama 的 key），详见 bridge/pi/entry.ts
+  if (hasBridgeFlag(argv)) {
+    setLocale(resolveLocale(io.env, { language: peekUserLanguage(io.env) }, bridgeLangOf(argv)));
+    return (await import("../bridge/pi/entry.js")).runBridge(argv, io);
+  }
   // 缺省装配走动态 import：--version / auth 不加载运行时实现（bundle 里同样内联）。
   // io 交给组装根决定启动期问答（迷你 TUI / 文本 / 不问）；--no-tui 在解析后才知道。
   let noTui = false;

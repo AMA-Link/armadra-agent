@@ -68,13 +68,14 @@ describe("Messages<T>：tsc 期覆盖率检查", () => {
 });
 
 describe("全部领域", () => {
-  it("catalog 登记了全部 20 个领域（第六波 19 个 + ACP-C0 的 acp）", () => {
+  it("catalog 登记了全部 21 个领域（第六波 19 个 + ACP-C0 的 acp + 桥的 bridge）", () => {
     expect([...MESSAGE_DOMAINS].sort()).toEqual(
       [
         "acp",
         "agents",
         "approval",
         "auth",
+        "bridge",
         "cli",
         "config",
         "drivers",
