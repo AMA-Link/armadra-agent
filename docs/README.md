@@ -34,12 +34,12 @@
 
 ## reference/ 协议与格式
 
-| 文档                                        | 内容                                                     |
-| ------------------------------------------- | -------------------------------------------------------- |
-| [RPC 协议](reference/rpc.md)                | `ama --mode rpc` 的 stdio JSONL 命令、响应与事件         |
-| [ACP](reference/acp.md)                     | `ama --mode acp` 服务端、登录方法、偏差，以及 ACP 客户端 |
-| [宿主适配器 API](reference/host-api.md)     | `@armadra/agent/host`：注册工具、审批、注入消息、状态    |
-| [会话文件格式](reference/session-format.md) | JSONL 条目树、头、条目类型与版本                         |
+| 文档                                        | 内容                                                                   |
+| ------------------------------------------- | ---------------------------------------------------------------------- |
+| [RPC 协议](reference/rpc.md)                | `ama --mode rpc` 的 stdio JSONL 命令、响应与事件                       |
+| [ACP](reference/acp.md)                     | `ama --mode acp` 服务端、Pi 的 ACP 桥、登录方法、偏差，以及 ACP 客户端 |
+| [宿主适配器 API](reference/host-api.md)     | `@armadra/agent/host`：注册工具、审批、注入消息、状态                  |
+| [会话文件格式](reference/session-format.md) | JSONL 条目树、头、条目类型与版本                                       |
 
 ## design/ 目标设计
 

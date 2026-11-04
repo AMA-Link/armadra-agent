@@ -4,6 +4,16 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## Unreleased
+
+### ACP
+
+- **Pi 的 ACP 桥 `ama --mode acp --bridge pi`**：ama 自己把本机装的 Pi 暴露为 ACP Agent，不需要 ama 的 key 与模型（bootstrap 之前分流）。一个 ACP 会话对应一个 `pi --mode rpc --session-id <id>` 子进程；`session/new` / `load` / `resume` / `close` / `prompt` / `cancel`，`model` 与 `thought_level` 配置项，带费用的 `usage_update`（≥1.5.0 标费用是不是账单值）；四个权限模式（`default` / `auto-edit` / `plan` / `full-auto`）经审批闸实现、`session/set_mode` 立即生效，需要人的请求发 `session/request_permission`，桥从不代答；客户端的 `mcpServers`（stdio 与 http）交给 Pi 内置的 MCP，自家工具带 `_meta.is_mcp_tool_call`；`--` 之后的参数原样交给 pi（桥自管的旗标拒绝）；待办 → `plan`、子 Agent 的 `_meta["armadra.subagent"]`、其它扩展的对话框 → `elicitation/create`。按 Pi 版本适配：下限 1.1.0（更低答 `pi_outdated`）、已验证区间 `>=1.1.0 <2.0.0`、更高或读不出版本照跑并提示（`_meta["armadra.pi"].verified: false`），只发能力表里有的命令。桥不注册自己的 todo / 问卷工具，Pi 里没有对应工具时缺口体现在 `_meta["armadra.pi"].capabilities`。见 [docs/reference/acp.md](docs/reference/acp.md)（#254）。
+
+### 外部 Agent
+
+- **pi 驱动与桥共用一份扩展**：`pi-gate` 并入 `pi-extension`（审批闸之外加 MCP 透传、能力报告与拒绝理由）；`pi-rpc` 的请求关联、命令表与非 prompt 命令的 10 秒截止拆成 `pi-rpc-core`。驱动的行为不变（#254）。
+
 ## 0.13.0（2026-11-04）
 
 ### 维护

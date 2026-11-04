@@ -257,6 +257,8 @@ pi 的社区 ACP 适配器 `pi-acp` 不收录：pi 本身没有审批通道，�
 ama 改为直接驱动 `pi --mode rpc`，并以 `-e` 给这一次运行加载一个最小扩展（写在每个会话自己的临时目录，关会话即删，不碰 pi 的配置）：
 只读内置工具（`read` / `grep` / `find` / `ls`）以外的调用都经 RPC 的扩展对话框交给 ama——`plan` / `allowlist` 直接拒绝（并以
 `--tools` 只开只读工具），`auto-edit` 及更宽的模式放行 `edit` / `write`，其余交给人。用户自己的扩展弹出的对话框一律取消、不代答。
+这份扩展（`src/drivers/native/pi-extension.ts`）与 ACP 桥共用；Armadra 等 ACP 客户端想直接驱动 pi 时用 `ama --mode acp --bridge pi`
+（四个权限模式、MCP 透传、待办与征询，见 [acp.md](../reference/acp.md)），不必经 `task`。
 
 #### 实测能力矩阵（2026-10-10）
 

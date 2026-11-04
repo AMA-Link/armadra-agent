@@ -4,7 +4,7 @@
 
 ama 在 ACP 两侧都能用：
 
-- **服务端**：`ama --mode acp` 把 ama 暴露为 ACP Agent，供 Zed、JetBrains、Armadra 的 ACP 节点驱动；
+- **服务端**：`ama --mode acp` 把 ama 暴露为 ACP Agent，供 Zed、JetBrains、Armadra 的 ACP 节点驱动；`ama --mode acp --bridge pi` 把本机的 Pi 暴露为 ACP Agent（见下文）；
 - **客户端**：ama 经 ACP 驱动外部 Agent（Gemini CLI、OpenCode、Kimi、Copilot 等原生 ACP，或装了适配器的 Claude Code / Codex），见 [agents.md](../guides/agents.md)。
 
 协议栈零依赖、手写，只维护一份：`@armadra/agent/acp` 导出类型、分帧、客户端与假 Agent，Armadra 直接复用。设计依据见 [wave5-plan.md](../history/wave5-plan.md) §5（D14）。
@@ -136,18 +136,96 @@ Zed 的配置（`settings.json`）：
 
 stdin 关闭后等已开始的运行结束再退出（0）；`ama` 进程的 stdout 从启动第一步起只给协议（宿主 / Hook 加载期的 `console.log` 改写到 stderr）；SIGINT / SIGTERM 中断后退出 130 / 143。宿主看到的模式是 `rpc`（`HostApi.mode`）。SDK 直接 `bootstrap(--mode acp)` 时得到 `mode: "rpc"` 的 Runtime，再交给 `runAcpMode`。
 
+## `ama --mode acp --bridge pi`
+
+```sh
+ama --mode acp --bridge pi [--lang zh|en] [-- <pi 的参数>]
+```
+
+把本机装的 [Pi](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent`）暴露为 ACP Agent，供 Armadra 与别的 ACP 客户端使用。入口在 bootstrap **之前**分流：不解析供应商与模型，不需要 ama 的 key，也不读写 ama 的会话；`--bridge` 只认 `pi`，且必须配 `--mode acp`。桥自己不发模型请求，提示字节规则不受影响。
+
+**进程与会话**：一个 ACP 会话对应一个 `pi --mode rpc --session-id <id> -e <桥扩展>` 子进程，ACP `sessionId` 就是 Pi 的会话 id，进程的工作目录是 `session/new` 的 `cwd`（必须是绝对路径）。`-- ` 之后的参数原样交给 pi（`--skill`、`--append-system-prompt` 等照用），但桥自己管的旗标一律拒绝（退出码 2）：`--mode`、`--session*`、`-c` / `--continue`、`-r` / `--resume`、`--fork`、`--no-session`、`--tools` / `-t`、`--no-mcp`、`-p` / `--print`。stdin 关闭时关掉全部 pi 子进程后退出 0。桥不读写 Pi 的配置与登录（`auth.json`、`mcp.json`、`settings.json`）；在 Pi 里用 `/login` 登录。
+
+| 方法                        | 桥的行为                                                                                                                                                                                                                                                         |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `initialize`                | `loadSession: true`，`sessionCapabilities: { resume, close }`（不报 `list`：Pi 的 RPC 没有列会话的命令，桥也不读 Pi 的会话目录），`mcpCapabilities: { http: true, sse: false }`，`promptCapabilities: { image: true, embeddedContext: true }`，`authMethods: []` |
+| `session/new`               | 用新 uuid 起子进程，答复带 `modes`、`configOptions` 与 `_meta`；Pi 没有可用模型时答 `error.data.code = "pi_no_model"`，提示去 Pi 里登录                                                                                                                          |
+| `session/load`              | 同上，用请求里的 id；Pi 里这个会话没有消息（Pi 会静默新建一个空的）就当不存在：-32002 并收掉进程。通过后把历史回放成 `user_message_chunk`、`agent_*_chunk` 与终态的 `tool_call`，末尾补一份当前计划                                                              |
+| `session/resume`            | 同 load，不回放                                                                                                                                                                                                                                                  |
+| `session/close`             | 中断、关子进程、删临时目录                                                                                                                                                                                                                                       |
+| `session/prompt`            | 文本与嵌入资源拼成 message，图片走 `images`。`disposition: handled` 不等回合；`agent_settled.aborted` → `cancelled`，`length` → `max_tokens`，出错 → JSON-RPC 错误。答复的 `usage` 是本回合累加。运行中再来的 prompt 答 invalid request（busy）                  |
+| `session/cancel`            | 撤回挂起的审批与征询，发 `abort`，15 秒看门狗（过了关 stdin 再结束进程树），回合以 `cancelled` 结束                                                                                                                                                              |
+| `session/set_mode`          | 四个模式，见下；立即生效                                                                                                                                                                                                                                         |
+| `session/set_config_option` | `model` 与 `thought_level`，见下                                                                                                                                                                                                                                 |
+
+### Pi 版本
+
+桥只发能力表里有的 RPC 命令（旧版 Pi 对未知命令的应答不带 id，请求无从关联），非 prompt 命令有 10 秒截止。
+
+| 能力                                                 | 起始版本       | 用在哪                         |
+| ---------------------------------------------------- | -------------- | ------------------------------ |
+| `--session-id`                                       | 0.76.0         | 新开 / 接回                    |
+| `agent_settled` / 其 `aborted`                       | 0.80.4 / 1.1.0 | 判定回合结束与取消             |
+| `get_available_thinking_levels`                      | 0.81.0         | `thought_level` 配置项         |
+| `prompt` 应答的 `disposition`                        | 0.99.0         | `handled` 时不等回合           |
+| 内置 MCP、`pi.registerMcpServer`、工具 `annotations` | 0.99.0         | 画布工具；plan 模式判定只读    |
+| `get_session_stats` 的 `cost` / `contextUsage`       | 0.63.0         | `usage_update`                 |
+| `Usage.cost.totalFromProvider`                       | 1.5.0          | 区分费用是账单值还是价目表估算 |
+
+- **下限 1.1.0**（必需能力里起始版本最晚的一项）。更低的 Pi：`session/new` 答 `error.data = { code: "pi_outdated", installed, minimum, package }`，找不到 `pi` 答 `{ code: "pi_missing", package }`，都不起进程。
+- **已验证区间 `>=1.1.0 <2.0.0`**：按能力表开关可选能力（例如 <1.5.0 时费用不标账单值）。已在 Pi 1.5.0 上实测。
+- **高于区间或读不出版本**：照跑，按最高已知能力处理；stderr 一行，答复里 `_meta["armadra.pi"].verified` 为 `false`，客户端据此提示。
+- 答复的 `_meta["armadra.pi"] = { version?, verified, capabilities? }`；`capabilities = { todo, subagent, questionnaire }` 是 Pi 里有没有同名工具（见「待办、子 Agent 与征询」）。
+
+### 模式与审批
+
+Pi 没有权限模式，也没有审批通道，所以桥给每次运行加载一个扩展（`-e`，写在会话自己的 `mkdtemp` 目录、权限 0600，关会话即删；与外部 Agent 驱动共用，见 [agents.md](../guides/agents.md)）。扩展在每次工具调用前把请求交给桥，**每次都问桥**，所以 `session/set_mode` 立即生效。
+
+| 模式（id 同 ama） | 行为                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------- |
+| `default`         | 只读（内置 `read` / `grep` / `find` / `ls`，或工具声明 `readOnlyHint` 的 MCP 工具）直接放行，其余交给人 |
+| `auto-edit`       | 再放行 `edit` / `write`，其余交给人                                                                     |
+| `plan`            | 只读放行，其余拒绝，并告诉模型当前在 plan 模式（描述改动而不是去做）                                    |
+| `full-auto`       | 都放行，但命中 ama 危险命令规则的 bash 仍交给人                                                         |
+
+交给人 = `session/request_permission`（`allow_once` / `reject_once`，带 `toolCallId`、标题、类别、`rawInput`、位置）。要过闸的调用先以 `pending` 公布，放行后转 `in_progress`。客户端回 `cancelled`、请求出错或会话取消都按拒绝；**桥从不代答**。
+
+### 配置项与用量
+
+- `model`：值 `provider/id`（按供应商分组），换模型后重取推理强度并发 `config_option_update`；
+- `thought_level`：Pi 的 `off`…`max`，当前模型不支持推理时不给这一项；是唯一的推理强度控件，不进 `modes`；
+- `usage_update`：开会话、回合结束与换模型之后发，`used` = `contextUsage.tokens`，`size` = 上下文窗口，`cost = { amount, currency: "USD" }`；≥1.5.0 时 `_meta["armadra.pi"].fromProvider` 标费用是不是账单值。Pi 在会话里改了模型（`set_model` 会写 Pi 自己的默认模型设置）是 Pi 的行为，桥不另存。
+
+### MCP
+
+客户端的 `mcpServers`（stdio 与 http；sse 跳过并在 stderr 说一行）写进会话临时目录的 `bridge.json`，扩展加载时对每一项调用 `pi.registerMcpServer(name, { …, exposure: "direct" })`——ama 自己不说 MCP，连接由 Pi 内置的 MCP 完成。Pi 的服务器名只允许字母、数字、`_`、`-`，其余换成 `_`；用户 `mcp.json` 里的同名服务器按 Pi 的规则优先。
+
+`mcp__<server>__<tool>`（只认桥注册过的服务器）的 `tool_call` 与权限请求带 `_meta.is_mcp_tool_call: true` 与 `rawInput { server, tool, arguments }`，客户端据此识别自家工具。codemode 里发起的内层调用带 `_meta.ama.parentToolCallId`。
+
+### 待办、子 Agent 与征询
+
+桥**不注册自己的 todo 或问卷工具**：这些只在已装的 Pi 本来就有对应工具或扩展时出现；没有就什么也不加，缺口体现在 `_meta["armadra.pi"].capabilities`。
+
+- **待办 → `plan`**：工具结果里的 `details.todos`（`{text, done}` 或 `{content, status}`）每来一次整表发一次 `plan`；`todo` 工具的类别是 `think`；
+- **子 Agent**：Pi 的 `subagent` 扩展工具是一条 kind 为 `other` 的 `tool_call`，`_meta["armadra.subagent"] = { agent, task }`（并行 / 链式为 `{ mode, tasks }`），流式进度写进 content，费用已计入 `get_session_stats`；
+- **对话框 → `elicitation/create`**：客户端声明了 `elicitation` 时，其它扩展的 select（带标题的枚举）、confirm（boolean）、input / editor（string，editor 的预填作默认值）转成 form 型征询；`accept` 把值回给 Pi，`decline` / `cancel` / 选项之外的值一律是 Pi 一侧的取消，桥不替人选。Pi 给的 `timeout` 到点时撤回请求（`$/cancel_request`）；会话取消同样撤回。客户端没声明时取消并在 stderr 说一行。ama 自己的对话框（审批闸、拒绝理由、能力报告）不在此列。
+
+### 测试
+
+脚本化的假 Pi（`test/helpers/fake-pi.ts`）覆盖版本 1.0.4 / 1.1.0 / 1.4.0 / 1.5.0 / 2.0.0 / 读不出版本、四个模式、取消、MCP、plan、子 Agent、征询，对表外命令像旧版 Pi 那样答不带 id 的应答，测试断言桥从不发；每条线上消息过 [官方 schema](../../test/helpers/acp-schema.ts)。bundle 级：`AMA_E2E=1 pnpm test:e2e`（`test/e2e/bridge.e2e.test.ts`，PATH 上的 `pi` 垫片转到假 pi）。
+
 ## 偏离与不做
 
 以下是有意的取舍，不是遗漏：
 
-| 项目                                            | ama 的做法与理由                                                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 客户端的 `fs/*`、`terminal/*`                   | 不使用（客户端声明了也不用）。ama 自己读写文件、自己跑命令，全部经自己的权限管线、沙箱与检查点；借客户端的文件系统或终端会绕开这些，也会让 TUI / RPC / ACP 三处行为不一致。                                                                                                                                       |
-| MCP（`mcpServers`，含规范要求必须支持的 stdio） | 不连接，`mcpCapabilities` 的 `http` / `sse` 为 false；收到非空 `mcpServers` 时 stderr 记一行后照常开会话。**这偏离了规范「Agent 必须支持 stdio MCP」的 MUST**：ama 的工具只来自自身与宿主（profile），扩展走 Skill；接 MCP 会把外部工具描述放进请求前缀，破坏逐字节稳定的提示词缓存，也绕开权限管线对工具的分类。 |
-| elicitation（Agent 向人要结构化输入）           | 作服务端时不发 `elicitation/create`：ama 需要人决定的只有审批，走 `session/request_permission`。作客户端时支持（见下文）。                                                                                                                                                                                        |
-| `session/delete`                                | 不实现（-32601）。会话文件的清理走 `ama sessions prune`。                                                                                                                                                                                                                                                         |
-| `logout`                                        | 不实现、不声明 `agentCapabilities.auth.logout`（-32601）。退出登录用 `ama auth logout chatgpt` / `ama auth remove <供应商>`。                                                                                                                                                                                     |
-| 会话 `cwd`                                      | 固定为 ama 的启动目录，`session/new` 给了别的目录回 -32602，`additionalDirectories` 忽略：信任、项目配置、会话目录与沙箱都按启动目录判定，同一进程里换目录会让它们失效。要换目录就在那个目录另起一个 `ama --mode acp`。                                                                                           |
+| 项目                                            | ama 的做法与理由                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 客户端的 `fs/*`、`terminal/*`                   | 不使用（客户端声明了也不用）。ama 自己读写文件、自己跑命令，全部经自己的权限管线、沙箱与检查点；借客户端的文件系统或终端会绕开这些，也会让 TUI / RPC / ACP 三处行为不一致。                                                                                                                                                                                                    |
+| MCP（`mcpServers`，含规范要求必须支持的 stdio） | 不连接，`mcpCapabilities` 的 `http` / `sse` 为 false；收到非空 `mcpServers` 时 stderr 记一行后照常开会话（Pi 的桥除外：它把 `mcpServers` 交给 Pi 内置的 MCP，见上文）。**这偏离了规范「Agent 必须支持 stdio MCP」的 MUST**：ama 的工具只来自自身与宿主（profile），扩展走 Skill；接 MCP 会把外部工具描述放进请求前缀，破坏逐字节稳定的提示词缓存，也绕开权限管线对工具的分类。 |
+| elicitation（Agent 向人要结构化输入）           | 作服务端时不发 `elicitation/create`：ama 需要人决定的只有审批，走 `session/request_permission`。作客户端时支持（见下文）。                                                                                                                                                                                                                                                     |
+| `session/delete`                                | 不实现（-32601）。会话文件的清理走 `ama sessions prune`。                                                                                                                                                                                                                                                                                                                      |
+| `logout`                                        | 不实现、不声明 `agentCapabilities.auth.logout`（-32601）。退出登录用 `ama auth logout chatgpt` / `ama auth remove <供应商>`。                                                                                                                                                                                                                                                  |
+| 会话 `cwd`                                      | 固定为 ama 的启动目录，`session/new` 给了别的目录回 -32602，`additionalDirectories` 忽略：信任、项目配置、会话目录与沙箱都按启动目录判定，同一进程里换目录会让它们失效。要换目录就在那个目录另起一个 `ama --mode acp`。                                                                                                                                                        |
 
 ## 作为客户端
 
