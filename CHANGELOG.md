@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Maintenance
+
+- **Maintenance release aligned with the unified version**: no user-visible changes. Timing-sensitive tests (scripted provider, background approval docking, the code-mode sandbox timeout, session stats and trace generation) now use gates and manual clocks instead of wall-clock sleeps and absolute time limits; the absolute limits are asserted only with `AMA_PERF=1` (#249, #250).
+
 ## 0.12.0 (2026-11-02)
 
 ### Tools and permissions
