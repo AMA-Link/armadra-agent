@@ -8,6 +8,7 @@
  * - MCP 工具（`mcp__<server>__<tool>`，只认桥注册过的服务器）写 `_meta.is_mcp_tool_call` 与
  *   `rawInput {server, tool, arguments}`，客户端据此识别自家工具；codemode 里发起的内层调用带
  *   `_meta.ama.parentToolCallId`；
+ * - 结果的 `details.todos` → `plan`（整表）；子 Agent 工具（`subagent`）写 `_meta["armadra.subagent"]`；
  * - assistant 的 `message_end` 累加本回合用量（input 不含缓存命中）与费用来源。
  */
 
@@ -25,6 +26,9 @@ import {
   piResultContent,
   piToolKind,
   piToolLocations,
+  planEntriesOf,
+  SUBAGENT_TOOL,
+  subagentMeta,
   type Json,
   type McpToolRef,
 } from "./tools.js";
@@ -183,7 +187,7 @@ export class PiEventMapper {
   ): Omit<AcpToolCall, "toolCallId" | "status"> & { title: string } {
     const mcp = this.mcpRef(tool);
     const locations = piToolLocations(input, this.options.cwd);
-    const meta = this.metaOf(record, mcp);
+    const meta = this.metaOf(record, mcp, tool, input);
     return {
       title: bridgeToolTitle(tool, input, mcp),
       kind: piToolKind(tool),
@@ -210,9 +214,18 @@ export class PiEventMapper {
   }
 
   /** `_meta`：自家工具标记（顶层，客户端约定）与 ama 命名空间下的父调用。 */
-  private metaOf(record: Json | undefined, mcp: McpToolRef | undefined): Json | undefined {
+  private metaOf(
+    record: Json | undefined,
+    mcp: McpToolRef | undefined,
+    tool: string,
+    input: Json,
+  ): Json | undefined {
     const meta: Json = {};
     if (mcp !== undefined) meta["is_mcp_tool_call"] = true;
+    if (tool === SUBAGENT_TOOL) {
+      const sub = subagentMeta(input);
+      if (sub !== undefined) meta["armadra.subagent"] = sub;
+    }
     const parent = record?.["parentToolCallId"];
     if (typeof parent === "string" && parent !== "")
       meta[ACP_META_KEY] = { parentToolCallId: parent };
@@ -253,6 +266,12 @@ export class PiEventMapper {
   private onToolEnd(record: Json): void {
     const id = String(record["toolCallId"] ?? "");
     const status: AcpToolCallStatus = record["isError"] === true ? "failed" : "completed";
+    // todo 类工具把整表放在结果的 details.todos：每来一次结果就整表发一次 plan
+    const entries =
+      record["isError"] === true
+        ? undefined
+        : planEntriesOf(((record["result"] ?? {}) as Json)["details"]);
+    if (entries !== undefined) this.options.emit({ sessionUpdate: "plan", entries });
     const content = piResultContent(record["result"]);
     if (!this.published.has(id)) {
       // 没执行就结束的调用（被阻止、参数不合）：直接公布成终态

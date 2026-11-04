@@ -2,16 +2,18 @@
  * `session/load` 的回放（#254）：Pi 的 `get_messages` → ACP 更新。
  *
  * user → `user_message_chunk`；assistant 的 text / thinking → `agent_message_chunk` / `agent_thought_chunk`，
- * toolCall → 终态的 `tool_call`（结果来自随后的 `toolResult` 消息）。system 与未知角色跳过。
+ * toolCall → 终态的 `tool_call`（结果来自随后的 `toolResult` 消息）；最后一次带 `details.todos` 的结果补一份 `plan`。
+ * system 与未知角色跳过。
  */
 
-import type { AcpSessionUpdate, AcpToolCallStatus } from "../../drivers/acp/types.js";
+import type { AcpPlanEntry, AcpSessionUpdate, AcpToolCallStatus } from "../../drivers/acp/types.js";
 import {
   bridgeToolTitle,
   mcpToolOf,
   piResultContent,
   piToolKind,
   piToolLocations,
+  planEntriesOf,
   type Json,
 } from "./tools.js";
 
@@ -25,7 +27,9 @@ export function replayUpdates(
     if (message["role"] === "toolResult" && typeof message["toolCallId"] === "string")
       results.set(message["toolCallId"], message);
   const out: AcpSessionUpdate[] = [];
+  let plan: AcpPlanEntry[] | undefined;
   for (const message of messages) {
+    if (message["role"] === "toolResult") plan = planEntriesOf(message["details"]) ?? plan;
     const content = message["content"];
     const blocks: Json[] =
       typeof content === "string"
@@ -96,5 +100,7 @@ export function replayUpdates(
       }
     }
   }
+  // 回放末尾补一份当前计划（最后一次带 todos 的结果）
+  if (plan !== undefined) out.push({ sessionUpdate: "plan", entries: plan });
   return out;
 }

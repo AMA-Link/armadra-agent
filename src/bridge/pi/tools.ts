@@ -6,7 +6,12 @@
  */
 
 import { isAbsolute, resolve } from "node:path";
-import type { AcpToolCallContent, AcpToolCallLocation } from "../../drivers/acp/types.js";
+import type {
+  AcpPlanEntry,
+  AcpToolCallContent,
+  AcpToolCallLocation,
+} from "../../drivers/acp/types.js";
+import type { AcpToolKind } from "../../drivers/types.js";
 import { piToolTitle } from "../../drivers/native/pi-rpc.js";
 import { msg } from "../../i18n/index.js";
 import { TOOL_OUTPUT_LIMIT } from "../../modes/acp/acp-tool-text.js";
@@ -14,7 +19,7 @@ import { TOOL_OUTPUT_LIMIT } from "../../modes/acp/acp-tool-text.js";
 import type { Json } from "../../drivers/native/pi-rpc-core.js";
 
 export type { Json };
-export { piToolKind } from "../../drivers/native/pi-rpc.js";
+import { piToolKind as driverToolKind } from "../../drivers/native/pi-rpc.js";
 
 /** Pi 对 MCP 工具名的规整：字母、数字、`_` 以外的字符换成 `_`。 */
 export function piToolSegment(name: string): string {
@@ -93,4 +98,57 @@ export function piResultContent(result: unknown): AcpToolCallContent[] | undefin
       },
     });
   return out.length > 0 ? out : undefined;
+}
+
+/** 工具类别：驱动的规则之上，`todo` 是 `think`。 */
+export function piToolKind(tool: string): AcpToolKind {
+  return tool === "todo" ? "think" : driverToolKind(tool);
+}
+
+/** Pi 的 subagent 扩展的工具名。 */
+export const SUBAGENT_TOOL = "subagent";
+
+/** 子 Agent 调用的 `_meta["armadra.subagent"]`：单个 `{agent, task}`；并行 / 链式带 `tasks`。 */
+export function subagentMeta(input: Json): Json | undefined {
+  const pair = (v: unknown): Json | undefined => {
+    const item = (v ?? {}) as Json;
+    return typeof item["agent"] === "string" && typeof item["task"] === "string"
+      ? { agent: item["agent"], task: item["task"] }
+      : undefined;
+  };
+  const single = pair(input);
+  if (single !== undefined) return single;
+  for (const key of ["tasks", "chain"]) {
+    const list = input[key];
+    if (Array.isArray(list)) {
+      const tasks = list.flatMap((v) => pair(v) ?? []);
+      if (tasks.length > 0) return { mode: key === "chain" ? "chain" : "parallel", tasks };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 工具结果里的 `details.todos` → ACP 计划条目（每次整表）。条目形如 `{text, done}` 或 `{content, status}`
+ * （`id`、`priority` 可有可无）；没有 `todos` 数组返回 undefined。
+ */
+export function planEntriesOf(details: unknown): AcpPlanEntry[] | undefined {
+  const todos = (details as Json | null | undefined)?.["todos"];
+  if (!Array.isArray(todos)) return undefined;
+  return (todos as Json[]).flatMap((todo): AcpPlanEntry[] => {
+    const content = [todo["text"], todo["content"], todo["title"]].find(
+      (v): v is string => typeof v === "string" && v !== "",
+    );
+    if (content === undefined) return [];
+    const raw = typeof todo["status"] === "string" ? todo["status"].toLowerCase() : "";
+    const status =
+      todo["done"] === true || raw === "completed" || raw === "done"
+        ? "completed"
+        : raw === "in_progress" || raw === "in-progress" || raw === "active"
+          ? "in_progress"
+          : "pending";
+    const priority =
+      todo["priority"] === "high" || todo["priority"] === "low" ? todo["priority"] : "medium";
+    return [{ content, priority, status }];
+  });
 }
