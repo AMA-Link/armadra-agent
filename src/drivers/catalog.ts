@@ -86,6 +86,15 @@ const CURSOR_MODES: Partial<Record<PermissionMode, string>> = {
   "full-auto": "agent",
 };
 
+/** omp（2026-11 实测 18.16.0）：只有 `default` 与 `plan` 两个模式；`default` 下需要审批的工具发 request_permission。 */
+const OMP_MODES: Partial<Record<PermissionMode, string>> = {
+  plan: "plan",
+  default: "default",
+  "auto-edit": "default",
+  auto: "default",
+  "full-auto": "default",
+};
+
 export const DRIVER_CATALOG: readonly CatalogEntry[] = [
   {
     agentId: "claude",
@@ -195,6 +204,20 @@ export const DRIVER_CATALOG: readonly CatalogEntry[] = [
     agentId: "goose",
     label: "Goose",
     candidates: [{ kind: "acp", program: "goose", args: ["acp"] }],
+  },
+  {
+    agentId: "omp",
+    label: "omp",
+    candidates: [
+      {
+        kind: "acp",
+        program: "omp",
+        args: ["acp"],
+        verified: ">=18.16.0 <19.0.0",
+        usage: "tokens",
+        modes: OMP_MODES,
+      },
+    ],
   },
   {
     agentId: "ama",

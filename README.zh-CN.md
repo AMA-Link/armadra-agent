@@ -118,6 +118,7 @@ ama -p "列出 TODO" --output-format json      # 或 stream-json，事件与 RPC
 | `copilot`                         | `copilot --acp --stdio`                                    | 已实测             |
 | `opencode`                        | `opencode acp`                                             | 已实测             |
 | `pi`                              | `pi --mode rpc`，运行时加载审批闸扩展                      | 已实测             |
+| `omp`                             | `omp acp`                                                  | 已实测             |
 | `cursor`                          | `cursor-agent acp`                                         | 已收录，未实测     |
 | `gemini`、`qwen`、`kimi`、`goose` | 各自的 ACP 子命令                                          | 已收录，未实测     |
 | `acp:<程序>`                      | 其它任意 ACP Agent                                         | —                  |

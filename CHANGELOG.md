@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### External agents
+
+- **omp joins the driver catalog**: `agent: "omp"` starts `omp acp` (Bun >= 1.4.4 required). Verified against omp 18.16.0: session modes `default` / `plan` (the other ama modes stay in `default`), session list / resume / fork / close, image prompts; shown in `/agents`. See [docs/guides/agents.md](docs/guides/agents.md) (#259).
+
 ## 0.14.0 (2026-11-05)
 
 ### ACP
