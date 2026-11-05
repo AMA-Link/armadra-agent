@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 外部 Agent
+
+- **驱动表收录 omp**：`agent: "omp"` 启动 `omp acp`（需要 Bun >= 1.4.4）。按 omp 18.16.0 实测：会话模式 `default` / `plan`（ama 的其余模式留在 `default`）、会话列表 / 恢复 / 分叉 / 关闭、图片提示；`/agents` 列出。见 [docs/guides/agents.md](docs/guides/agents.md)（#259）。
+
 ## 0.14.0（2026-11-05）
 
 ### ACP

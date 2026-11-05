@@ -246,6 +246,7 @@ ama 能以各 CLI 自己的账户、模型与权限策略驱动外部编码 Agen
 | `copilot`        | `copilot --acp --stdio`                                                                                             | 1.0.95                               |
 | `opencode`       | `opencode acp`                                                                                                      | 1.18.x                               |
 | `pi`             | `pi --mode rpc`（原生；审批经 ama 加载的审批闸扩展，见下）                                                          | 1.1.x                                |
+| `omp`            | `omp acp`（模式 `default` / `plan`；需要 Bun ≥1.4.4）                                                               | 18.16.x                              |
 | `cursor`         | `cursor-agent acp`（按官方文档：模式 `agent` / `plan` / `ask`）                                                     | 未验证（本机未装）                   |
 | `gemini`         | `gemini --acp` → `gemini -p --output-format stream-json`（一次性，只读）                                            | 未验证                               |
 | `qwen`           | `qwen --acp`（0.23.x 有不发权限请求的问题，只在 plan 下用）                                                         | 未验证                               |

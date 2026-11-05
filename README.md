@@ -121,6 +121,7 @@ as a tool result. Approvals it raises go to you only, and its mode is never wide
 | `copilot`                         | `copilot --acp --stdio`                                      | Verified             |
 | `opencode`                        | `opencode acp`                                               | Verified             |
 | `pi`                              | `pi --mode rpc` with an approval gate loaded for the run     | Verified             |
+| `omp`                             | `omp acp`                                                    | Verified             |
 | `cursor`                          | `cursor-agent acp`                                           | Listed, not verified |
 | `gemini`, `qwen`, `kimi`, `goose` | Their ACP subcommands                                        | Listed, not verified |
 | `acp:<program>`                   | Any other ACP agent                                          | —                    |
