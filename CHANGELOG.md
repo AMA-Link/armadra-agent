@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Maintenance
+
+- **Maintenance release aligned with the unified version 0.15.1**: no user-visible changes. Dev-toolchain dependency security updates: vite 8.3.5 and vitest 4.1.12 (#253, #263).
+
 ## 0.15.0 (2026-11-05)
 
 ### External agents
