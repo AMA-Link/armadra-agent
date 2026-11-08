@@ -25,11 +25,15 @@ import { createLsTool } from "./ls.js";
 import { createTodoTool } from "./todo.js";
 import { createTaskTool, type TaskToolOptions } from "./task.js";
 import { TASK_CTL_TOOL, createTaskCtlTool } from "./task-ctl.js";
+import { REPORT_TOOL, createReportTool } from "./report.js";
 import { createWebFetchTool, type WebFetchOptions } from "./web/fetch.js";
 
-/** [W5-C0] 主工具 → 随它出现 / 消失的伴随工具。 */
+/**
+ * [W5-C0] 主工具 → 随它出现 / 消失的伴随工具。[#269] `report` 也跟着 `task`：子会话用它报告状态，父会话
+ * 的表里也要有它（运行时拒绝），子会话的工具表才与父逐字节一致。
+ */
 export const TOOL_COMPANIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  task: [TASK_CTL_TOOL],
+  task: [TASK_CTL_TOOL, REPORT_TOOL],
 });
 
 /** 按 `TOOL_COMPANIONS` 配对：有主工具就带上（已注册的）伴随工具，没有就去掉。 */
@@ -142,7 +146,7 @@ export interface BuiltinToolOptions {
   webFetch?: WebFetchOptions;
 }
 
-/** 全部内置工具（read / write / edit / bash / grep / glob / ls / todo / task / task_ctl / web_fetch）。 */
+/** 全部内置工具（read / write / edit / bash / grep / glob / ls / todo / task / task_ctl / report / web_fetch）。 */
 export function builtinTools(options: BuiltinToolOptions = {}): ToolDefinition[] {
   const tools = [
     createReadTool(options.read),
@@ -155,6 +159,7 @@ export function builtinTools(options: BuiltinToolOptions = {}): ToolDefinition[]
     createTodoTool(),
     createTaskTool(options.task),
     createTaskCtlTool(),
+    createReportTool(),
     createWebFetchTool(options.webFetch),
   ] as ToolDefinition[];
   return tools;

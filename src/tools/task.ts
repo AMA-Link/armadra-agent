@@ -15,6 +15,8 @@
  * - [ME-A] `context: "fork"`：子会话继承本会话已完成的回合（同模型、同前缀）；`details.context` 是实际
  *   模式（不满足条件时回落 `fresh`）。
  * - 结果 = 子 Agent 的最终报告（> 50 KB 截头尾、全文落 outputs/，见 agents/result.ts）+ details。
+ * - [#269] 子 Agent 用 `report` 报告了状态时，正文前有 `[report]`（与 `[needs a person]`）行，`details.report`
+ *   是折叠后的报告（agents/report.ts）；没报告时结果与原来逐字节相同。
  */
 
 import type { ModelThinkingLevel } from "../ai/types.js";
@@ -215,6 +217,7 @@ export function createTaskTool(_options: TaskToolOptions = {}): ToolDefinition<T
           ...(result.sessionFile !== undefined ? { sessionFile: result.sessionFile } : {}),
           ...(result.outputFile !== undefined ? { outputFile: result.outputFile } : {}),
           ...(result.context !== undefined ? { context: result.context } : {}),
+          ...(result.report !== undefined ? { report: result.report } : {}),
           usage: result.usage,
           stopReason: result.stopReason,
         };

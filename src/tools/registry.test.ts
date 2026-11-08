@@ -34,6 +34,7 @@ describe("ToolRegistry", () => {
       "grep",
       "ls",
       "read",
+      "report",
       "task",
       "task_ctl",
       "todo",
@@ -48,6 +49,7 @@ describe("ToolRegistry", () => {
       grep: "parallel",
       ls: "parallel",
       read: "parallel",
+      report: "parallel", // [#269] 子会话的报告工具（task 的伴随工具）
       task: "parallel", // [W5-G] 同轮多个 task 并行（D23）
       task_ctl: "parallel",
       todo: "parallel",
@@ -55,7 +57,7 @@ describe("ToolRegistry", () => {
       write: "sequential",
     });
     expect(builtinTools().map((t) => t.name)).not.toContain("skill");
-    expect(builtinTools().length).toBe(11);
+    expect(builtinTools().length).toBe(12);
     expect(executionModeOf({ permission: "execute" })).toBe("sequential");
   });
 
@@ -98,13 +100,14 @@ describe("ToolRegistry", () => {
   });
 });
 
-describe("伴随工具（W5-C0：task_ctl 与 task 同进退）", () => {
-  it("disable(task) 一并禁用 task_ctl；setActive 选 task 时带上 task_ctl", () => {
+describe("伴随工具（W5-C0：task_ctl 与 task 同进退；#269 report 同）", () => {
+  it("disable(task) 一并禁用 task_ctl 与 report；setActive 选 task 时带上两者", () => {
     const reg = createToolRegistry();
     reg.setActive(["read", "task"]);
-    expect(reg.active().map((t) => t.name)).toEqual(["read", "task", "task_ctl"]);
+    expect(reg.active().map((t) => t.name)).toEqual(["read", "report", "task", "task_ctl"]);
     reg.disable("task");
     expect(reg.list()).not.toContain("task_ctl");
+    expect(reg.list()).not.toContain("report");
     expect(reg.active().map((t) => t.name)).toEqual(["read"]);
   });
 

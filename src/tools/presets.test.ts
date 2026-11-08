@@ -154,13 +154,13 @@ describe("工具预设", () => {
       config: cfg({ preset: "minimal", default: ["+task", "+nope", "-bash"] }),
       available: available(),
     });
-    // [W5-C0] task_ctl 随 task 进出
-    expect(r.builtin).toEqual(["edit", "read", "task", "task_ctl", "write"]);
+    // [W5-C0] task_ctl 随 task 进出；[#269] report 同
+    expect(r.builtin).toEqual(["edit", "read", "report", "task", "task_ctl", "write"]);
     expect(r.warnings.map((w) => msg().session.codemode.presetWarning(w))).toEqual([
       "tools.default：未知工具 nope，已忽略",
     ]);
     const without = resolvePreset({
-      config: cfg({ default: ["read", "task_ctl"] }),
+      config: cfg({ default: ["read", "task_ctl", "report"] }),
       available: available(),
     });
     expect(without.builtin).toEqual(["read"]);
