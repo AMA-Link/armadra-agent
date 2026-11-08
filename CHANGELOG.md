@@ -22,7 +22,7 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 ### Hooks
 
-- **Hook matchers see the normalised resource reference**: for a `read` call whose `path` is a registered host resource reference, `toolInput.path` is normalised to `lowercase-scheme://path` before the matcher runs and before the hook script receives it, so a `PreToolUse` hook with matcher `read(demo://*)` also catches `DEMO://…` and `Demo://…` — the same form the permission rules, session memory and the actual read use. Unregistered schemes and plain file paths stay verbatim; other tools are untouched. See [docs/guides/hooks.md](docs/guides/hooks.md) "matcher" (#277).
+- **Hook matchers see the normalised resource reference**: for a `read` call whose `path` is a registered host resource reference, `toolInput.path` is normalised to `lowercase-scheme://path` before the matcher runs and before the hook script receives it, so a `PreToolUse` hook with matcher `read(demo://*)` also catches `DEMO://…` and `Demo://…` — the same form the permission rules, session memory and the actual read use. The scheme in the matcher pattern is case-insensitive as well (`read(DEMO://*)` keeps working; the path part stays case-sensitive). Unregistered schemes and plain file paths stay verbatim; other tools are untouched. See [docs/guides/hooks.md](docs/guides/hooks.md) "matcher" (#277).
 
 ### Tools and permissions
 

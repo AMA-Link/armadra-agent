@@ -21,7 +21,7 @@
 
 ### Hook
 
-- **Hook matcher 看到的是规范化后的资源引用**：`read` 调用的 `path` 若是已注册的宿主资源引用，先规范成 `小写scheme://path` 再交给 matcher 与 Hook 脚本，matcher 为 `read(demo://*)` 的 `PreToolUse` Hook 也能挡住 `DEMO://…`、`Demo://…`——与权限规则、会话记忆和 read 实际读取看到的形式一致。未注册的 scheme 与普通文件路径保持原文，其它工具不受影响。见 [docs/guides/hooks.md](docs/guides/hooks.md)「matcher」（#277）。
+- **Hook matcher 看到的是规范化后的资源引用**：`read` 调用的 `path` 若是已注册的宿主资源引用，先规范成 `小写scheme://path` 再交给 matcher 与 Hook 脚本，matcher 为 `read(demo://*)` 的 `PreToolUse` Hook 也能挡住 `DEMO://…`、`Demo://…`——与权限规则、会话记忆和 read 实际读取看到的形式一致。matcher 括号里的 scheme 同样不分大小写（`read(DEMO://*)` 照常生效，路径部分仍区分）。未注册的 scheme 与普通文件路径保持原文，其它工具不受影响。见 [docs/guides/hooks.md](docs/guides/hooks.md)「matcher」（#277）。
 
 ### 工具与权限
 
