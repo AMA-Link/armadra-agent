@@ -182,17 +182,27 @@ function childToolNames(
   const available = new Set((parent.options.tools ?? []).map((tool) => tool.name));
   const all = [...(base ?? available)].filter((name) => available.has(name));
   const allow = spec.request.tools ?? spec.agent.tools;
+  if (allow !== undefined) {
+    return withChildOnly(
+      allow.filter((name) => available.has(name) && !PARENT_ONLY_TOOLS.includes(name)),
+      available,
+    );
+  }
   const deny = spec.agent.disallowedTools;
-  if (allow === undefined && deny === undefined) return all;
-  const picked =
-    allow !== undefined
-      ? allow.filter((name) => available.has(name) && !PARENT_ONLY_TOOLS.includes(name))
-      : all.filter(
-          (name) => !(deny as string[]).includes(name) && !PARENT_ONLY_TOOLS.includes(name),
-        );
+  if (deny !== undefined) {
+    return withChildOnly(
+      all.filter((name) => !deny.includes(name) && !PARENT_ONLY_TOOLS.includes(name)),
+      available,
+    );
+  }
+  return all;
+}
+
+/** [#269] 白名单 / 黑名单过滤之后补回子会话总是可用的工具（父注册了才补）。 */
+function withChildOnly(names: string[], available: ReadonlySet<string>): string[] {
   for (const name of CHILD_ONLY_TOOLS)
-    if (available.has(name) && !picked.includes(name)) picked.push(name);
-  return picked;
+    if (available.has(name) && !names.includes(name)) names.push(name);
+  return names;
 }
 
 /** ama 自己的子会话 runner（同进程）。 */
