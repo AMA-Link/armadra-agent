@@ -168,7 +168,7 @@ describe("[#269] 子 Agent 的报告 → 终端程序状态", () => {
       kind: "question",
       msg: "Which account?",
     });
-    // 同一任务的审批解除不会把 question 误判成解除
+    // 问题还在时来了审批：先显示审批，审批结束后恢复问题（而不是回 working）
     ev({
       type: "permission_request",
       requestId: "r",
@@ -176,9 +176,47 @@ describe("[#269] 子 Agent 的报告 → 终端程序状态", () => {
       input: { path: "/w/a.ts" },
       context: { depth: 1, taskId: "t1" },
     });
-    expect(task().at(-1)).toMatchObject({ state: "blocked", kind: "permission" });
+    expect(task().at(-1)).toMatchObject({
+      state: "blocked",
+      kind: "permission",
+      msg: "read · a.ts",
+    });
     ev({ type: "permission_resolved", requestId: "r", decision: "allow" });
-    expect(task().at(-1)?.state).toBe("working");
+    expect(task().at(-1)).toMatchObject({
+      state: "blocked",
+      kind: "question",
+      msg: "Which account?",
+    });
+    // 审批期间收到的报告不盖住审批；清掉问题后审批结束回 working
+    ev({
+      type: "permission_request",
+      requestId: "r2",
+      toolName: "read",
+      input: { path: "/w/b.ts" },
+      context: { depth: 1, taskId: "t1" },
+    });
+    ev({
+      type: "subagent_update",
+      taskId: "t1",
+      kind: "report",
+      turn: 2,
+      report: { state: "blocked", summary: "Also this.", humanAction: "Staging or prod?" },
+    });
+    expect(task().at(-1)).toMatchObject({
+      state: "blocked",
+      kind: "permission",
+      msg: "read · b.ts",
+    });
+    ev({
+      type: "subagent_update",
+      taskId: "t1",
+      kind: "report",
+      turn: 2,
+      report: { state: "waiting", summary: "Cleared." },
+    });
+    ev({ type: "permission_resolved", requestId: "r2", decision: "allow" });
+    expect(task().at(-1)).toMatchObject({ state: "working" });
+    expect(task().at(-1)).not.toHaveProperty("kind");
     ev({
       type: "subagent_update",
       taskId: "t1",

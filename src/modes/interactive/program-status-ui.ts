@@ -45,6 +45,8 @@ interface TaskRecord {
   /** blocked 的原因：审批，或 [#269] 子 Agent 留了待人决定的问题。 */
   kind?: BlockedKind;
   msg?: string;
+  /** [#269] 子 Agent 留着的待人决定的问题（审批盖住它时也保留，审批结束后恢复显示）。 */
+  question?: string;
 }
 interface Pending {
   msg: string;
@@ -118,8 +120,12 @@ export class ProgramStatusTracker {
         const task = taskId !== undefined ? this.tasks.get(taskId) : undefined;
         const still = [...this.approvals.values()].some((p) => p.taskId === taskId);
         if (task?.state === "blocked" && task.kind === "permission" && !still) {
-          task.state = "working";
-          delete task.kind;
+          if (task.question !== undefined)
+            Object.assign(task, { state: "blocked", kind: "question", msg: task.question });
+          else {
+            task.state = "working";
+            delete task.kind;
+          }
         }
         break;
       }
@@ -146,13 +152,20 @@ export class ProgramStatusTracker {
         if (event.kind === "report" && event.report !== undefined) {
           // [#269] 子 Agent 留了待人决定的问题：blocked:question，问题即 msg；问题清掉后回 working
           const question = event.report.humanAction;
-          if (question !== undefined)
-            Object.assign(task, { state: "blocked", kind: "question", msg: flat(question, 80) });
-          else if (task.state === "blocked" && task.kind === "question") {
-            task.state = "working";
-            delete task.kind;
-            task.msg = flat(event.report.summary, 80);
-          } else if (task.state === "working") task.msg = flat(event.report.summary, 80);
+          const pendingApproval = task.state === "blocked" && task.kind === "permission";
+          if (question !== undefined) {
+            task.question = flat(question, 80);
+            // 审批盖在上面时先显示审批，审批结束后恢复问题
+            if (!pendingApproval)
+              Object.assign(task, { state: "blocked", kind: "question", msg: task.question });
+          } else {
+            delete task.question;
+            if (task.state === "blocked" && task.kind === "question") {
+              task.state = "working";
+              delete task.kind;
+              task.msg = flat(event.report.summary, 80);
+            } else if (task.state === "working") task.msg = flat(event.report.summary, 80);
+          }
           break;
         }
         if (task.state === "working" && event.toolName !== undefined)
@@ -167,6 +180,7 @@ export class ProgramStatusTracker {
           s === "completed" ? "done" : s === "aborted" || s === "interrupted" ? "idle" : "error";
         delete task.kind;
         delete task.msg;
+        delete task.question;
         break;
       }
       default:
