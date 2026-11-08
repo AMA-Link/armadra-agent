@@ -578,7 +578,18 @@ describe("[W5-F] plan 模式细化与 allowlist 同步（docs/history/wave5-plan
   });
 });
 
-describe("[#270] 宿主资源读取按 read 类放行", () => {
+describe("[#270] 宿主资源读取按 read 类放行（只认已注册的 scheme）", () => {
+  const demo = { get: (scheme: string) => (scheme === "demo" ? { scheme } : undefined) };
+  const withDemo = (mode: PermissionMode, rules: string[] = []) =>
+    new PermissionPipeline({
+      mode,
+      cwd,
+      rules: [
+        ...BUILTIN_DENY_RULES.map((r) => parseRule(r, "deny", "builtin")),
+        ...rules.map((r) => parseRule(r, "deny", "user")),
+      ],
+      resources: demo,
+    });
   const call = (path: string): PermissionCheckInput => ({
     toolName: "read",
     permission: "read",
@@ -586,23 +597,33 @@ describe("[#270] 宿主资源读取按 read 类放行", () => {
     unattended: false,
   });
 
-  it("六个模式都放行；auto 下不做机密路径检查（demo://.env 不询问），静态层记 read-only", () => {
+  it("六个模式都放行；auto 下已注册的引用不做机密路径检查，静态层记 read-only", () => {
     for (const mode of MODES) {
-      expect(pipeline(mode).check(call("demo://items")).decision, mode).toBe("allow");
+      expect(withDemo(mode).check(call("demo://items")).decision, mode).toBe("allow");
     }
-    const auto = pipeline("auto").check(call("demo://secrets/.env"));
+    const auto = withDemo("auto").check(call("DEMO://secrets/.env"));
     expect(auto.decision).toBe("allow");
     expect(auto.auto).toEqual({ layer: "static", decision: "allow", reason: "read-only tool" });
     // 真实文件 .env 仍然询问
-    expect(pipeline("auto").check(call(".env")).decision).toBe("ask");
+    expect(withDemo("auto").check(call(".env")).decision).toBe("ask");
   });
 
-  it("deny 规则仍能挡住资源读取；会话记忆按 scheme:// 前缀", () => {
-    const denied = pipeline("default", ["read(demo://**)"]).check(call("demo://items"));
-    expect(denied.decision).toBe("deny");
-    expect(denied.step).toBe("deny-rule");
-    const p = pipeline("default");
-    p.rememberForSession("read", { path: "demo://items" });
+  it("未注册的 scheme / 没有注册表：按文件路径查机密与文件 deny 规则，不能绕过", () => {
+    // cwd 下 `ab:` 目录里的 .env / .ssh：auto 询问、内置 deny 拦截
+    expect(withDemo("auto").check(call("ab://secrets/.env")).decision).toBe("ask");
+    expect(withDemo("auto").check(call("ab://.ssh/id_rsa")).decision).toBe("deny");
+    expect(pipeline("auto").check(call("demo://secrets/.env")).decision).toBe("ask");
+    expect(pipeline("default").check(call("demo://.ssh/id_rsa")).step).toBe("deny-rule");
+  });
+
+  it("deny read(demo://**) 挡住大小写混写的 DEMO://；会话记忆按小写 scheme:// 前缀", () => {
+    for (const path of ["demo://items", "DEMO://items", "Demo://x/y"]) {
+      const denied = withDemo("default", ["read(demo://**)"]).check(call(path));
+      expect(denied.decision, path).toBe("deny");
+      expect(denied.step, path).toBe("deny-rule");
+    }
+    const p = withDemo("default");
+    p.rememberForSession("read", { path: "DEMO://items" });
     const hookAsk: PermissionCheckInput = { ...call("demo://events"), hookDecision: "ask" };
     // Hook ask 总是 ask（记忆不越过 Hook），但记忆本身覆盖同 scheme
     expect(p.check(hookAsk).decision).toBe("ask");

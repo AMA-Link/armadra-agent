@@ -6,8 +6,9 @@
  * - 带 `path` 的工具（read / write / edit / ls / grep / glob 及宿主工具）：对路径做 glob（`**`）。
  *   相对模式匹配 cwd 内的相对路径；以 `**` 开头的模式也匹配绝对路径（例如 .ssh 目录规则命中 ~/.ssh 下的文件）；
  *   绝对模式（`/…`、`~/…`）匹配绝对路径。缺 path 的调用以 cwd 为路径。
- * - [#270] `path` 是宿主资源引用（`scheme://path`，tools/resource-ref.ts）时不按文件路径解析，模式对
- *   原始引用字符串做同一套 glob（`read(demo://**)`、`read(demo://items/*)`）；
+ * - [#270] `path` 是**已注册**的宿主资源引用（`scheme://path`，tools/resource-ref.ts；注册表经 `resources`
+ *   传入）时不按文件路径解析：引用先规范成 `小写scheme://path`，模式里的 scheme 也转小写，再做同一套
+ *   glob（`read(demo://**)`、`read(demo://items/*)`）；未注册的 scheme 或没有注册表时一律按文件路径处理；
  * - 带 `url` 的工具（web_fetch）：对 `host/path` 匹配，裸域名含子域（network-class.ts）；
  * - 其它工具带 pattern 的规则不匹配（无可比对的对象）。
  *
@@ -24,6 +25,14 @@ import { PERMISSION_MODES_STRICT_FIRST } from "./types.js";
 import { globBody } from "../tools/glob.js";
 import { expandHome, resolvePath, toPosix } from "../tools/paths.js";
 import { parseResourceRef } from "../tools/resource-ref.js";
+
+/**
+ * [#270] 已注册资源的查找（`HostResourceLookup.get` 的子集：返回非 undefined 即已注册）；
+ * 缺省 = 没有资源，`scheme://` 一律按文件路径。
+ */
+export type ResourceSchemes = { get(scheme: string): unknown } | undefined;
+
+const SCHEME_PREFIX_RE = /^([A-Za-z][A-Za-z0-9+.-]{1,31}):\/\//;
 import { memoryRuleMatches } from "./memory-class.js";
 import { networkRuleMatches } from "./network-class.js";
 
@@ -112,29 +121,44 @@ function pathGlob(pattern: string): RegExp {
   return new RegExp(`^${globBody(pattern, { braces: true })}$`);
 }
 
-/** [#270] 输入里的 `path` 若是宿主资源引用（`scheme://path`）返回原文；否则 undefined。 */
-export function inputResourceRef(input: unknown): string | undefined {
+/**
+ * [#270] 输入里的 `path` 若是**已注册**的宿主资源引用，返回规范形式 `小写scheme://path`（deny 规则、会话
+ * 记忆与审计看到的和 read 实际读取的一致）；未注册、没有注册表或不是引用形状返回 undefined。
+ */
+export function inputResourceRef(input: unknown, resources: ResourceSchemes): string | undefined {
   const raw =
     typeof input === "object" && input !== null
       ? (input as Record<string, unknown>)["path"]
       : undefined;
-  return typeof raw === "string" && parseResourceRef(raw) !== undefined ? raw : undefined;
+  if (typeof raw !== "string" || resources === undefined) return undefined;
+  const ref = parseResourceRef(raw);
+  if (ref === undefined || resources.get(ref.scheme) === undefined) return undefined;
+  return `${ref.scheme}://${ref.path}`;
 }
 
-/** [#270] 资源引用的会话记忆前缀：小写 `scheme://`；不是资源引用返回 undefined。 */
-export function inputResourcePrefix(input: unknown): string | undefined {
-  const ref = inputResourceRef(input);
-  return ref === undefined ? undefined : `${ref.slice(0, ref.indexOf("://")).toLowerCase()}://`;
+/** [#270] 资源引用的会话记忆前缀：小写 `scheme://`；不是已注册的资源引用返回 undefined。 */
+export function inputResourcePrefix(
+  input: unknown,
+  resources: ResourceSchemes,
+): string | undefined {
+  const ref = inputResourceRef(input, resources);
+  return ref === undefined ? undefined : ref.slice(0, ref.indexOf("://") + 3);
 }
 
-/** 输入里的路径（绝对；[#270] 资源引用原样返回）；没有 path 字段的工具返回 undefined。 */
-export function inputPath(toolName: string, input: unknown, cwd: string): string | undefined {
+/** 输入里的路径（绝对；[#270] 已注册的资源引用返回规范形式）；没有 path 字段的工具返回 undefined。 */
+export function inputPath(
+  toolName: string,
+  input: unknown,
+  cwd: string,
+  resources?: ResourceSchemes,
+): string | undefined {
+  const ref = inputResourceRef(input, resources);
+  if (ref !== undefined) return ref;
   const raw =
     typeof input === "object" && input !== null
       ? (input as Record<string, unknown>)["path"]
       : undefined;
   if (typeof raw === "string") {
-    if (parseResourceRef(raw) !== undefined) return raw;
     try {
       return resolvePath(raw, cwd);
     } catch {
@@ -155,8 +179,17 @@ export function inputCommand(input: unknown): string | undefined {
 }
 
 export function pathMatches(pattern: string, absPath: string, cwd: string): boolean {
-  // [#270] 资源引用：模式对原文做 glob（`**` 跨 `/`），不展开 `~`、不解析 cwd
-  if (parseResourceRef(absPath) !== undefined) return pathGlob(pattern).test(absPath);
+  // [#270] 资源引用（inputPath 已规范成小写 scheme；绝对文件路径不会是这个形状）：模式的 scheme 也转小写，
+  // 对引用做 glob（`**` 跨 `/`），不展开 `~`、不解析 cwd
+  const ref = parseResourceRef(absPath);
+  if (ref !== undefined) {
+    const subject = `${ref.scheme}://${ref.path}`;
+    const normalized = pattern.replace(
+      SCHEME_PREFIX_RE,
+      (_m, scheme: string) => `${scheme.toLowerCase()}://`,
+    );
+    return pathGlob(normalized).test(subject);
+  }
   const absPosix = toPosix(absPath);
   const expanded = expandHome(pattern);
   if (isAbsolute(expanded)) return pathGlob(toPosix(resolve(expanded))).test(absPosix);
@@ -175,12 +208,13 @@ function matchesSubject(
   input: unknown,
   cwd: string,
   command?: string,
+  resources?: ResourceSchemes,
 ): boolean {
   if (!toolNameMatches(rule.tool, toolName)) return false;
   if (rule.pattern === undefined) return true;
   if (toolName === "memory") return memoryRuleMatches(rule.pattern, input); // [W6-M] 逻辑路径 / 命令名
   if (command !== undefined) return wildcardToRegExp(rule.pattern).test(command);
-  const abs = inputPath(toolName, input, cwd);
+  const abs = inputPath(toolName, input, cwd, resources);
   if (abs !== undefined) return pathMatches(rule.pattern, abs, cwd);
   return networkRuleMatches(rule.pattern, input);
 }
@@ -191,12 +225,13 @@ export function findDenyRule(
   toolName: string,
   input: unknown,
   cwd: string,
+  resources?: ResourceSchemes,
 ): Rule | undefined {
   const command = toolName === "memory" ? undefined : inputCommand(input);
   for (const rule of rules) {
     if (rule.effect !== "deny") continue;
     if (command === undefined || rule.pattern === undefined) {
-      if (matchesSubject(rule, toolName, input, cwd)) return rule;
+      if (matchesSubject(rule, toolName, input, cwd, undefined, resources)) return rule;
       continue;
     }
     const subjects = [normalizeCommand(command), ...splitShellSegments(command)];
@@ -211,10 +246,13 @@ export function findAllowRule(
   toolName: string,
   input: unknown,
   cwd: string,
+  resources?: ResourceSchemes,
 ): Rule | undefined {
   const allows = rules.filter((r) => r.effect === "allow");
   const command = toolName === "memory" ? undefined : inputCommand(input);
-  if (command === undefined) return allows.find((r) => matchesSubject(r, toolName, input, cwd));
+  if (command === undefined) {
+    return allows.find((r) => matchesSubject(r, toolName, input, cwd, undefined, resources));
+  }
   const unconditional = allows.find(
     (r) => r.pattern === undefined && toolNameMatches(r.tool, toolName),
   );
