@@ -23,6 +23,7 @@ import { AgentEventBus, createHostApi } from "../host/api-impl.js";
 import { activateHost, disposeHost } from "../host/loader.js";
 import type { ApprovalBroker, HostAdapterHandle } from "../host/types.js";
 import { helpText, parseArgs, UsageError, type ParsedArgs } from "./args.js";
+import { hostSessionStart } from "./compose-events.js";
 import { applyFromOption } from "./from-prompt.js";
 import type { CliIo, RuntimeDeps, SessionAssembly } from "./deps.js";
 import { ExitCode } from "./exit-codes.js";
@@ -364,12 +365,10 @@ export async function bootstrap(
       })();
       return disposed;
     };
-    await events.emit("session_start", {
-      sessionId: active.state.sessionId,
-      ...(active.state.sessionFile !== undefined ? { sessionFile: active.state.sessionFile } : {}),
-      cwd: active.state.cwd,
-      reason: source,
-    });
+    await events.emit(
+      "session_start",
+      hostSessionStart({ state: active.state, manager: sessionManager }, source),
+    );
     const outcome = await hooks.run("SessionStart", { source });
     if (outcome.decision === "block") {
       throw new StartupError(

@@ -8,6 +8,7 @@ import type { HostApi } from "../host/types.js";
 import type { ApprovalRequest } from "../permissions/types.js";
 import type { AgentSessionImpl } from "../agent/session.js";
 import { PermissionPipeline } from "../permissions/pipeline.js";
+import { SessionManager } from "../session/manager.js";
 import type { ToolFactoryContext } from "./compose.js";
 import {
   cacheSettingsFrom,
@@ -106,6 +107,64 @@ describe("switchSession", () => {
     const forked = await switchSession(runtime, { kind: "fork", entryId: leaf });
     expect(forked.state.sessionFile).not.toBe(file);
     expect(forked.getLastAssistantText()).toBe("keep me");
+    await runtime.dispose();
+  });
+});
+
+describe("[#268] session_start.uncleanEnd", () => {
+  /** 模拟崩溃：在已关闭的会话文件末尾追加一条带工具调用、没有结果的 assistant。 */
+  function appendDangling(file: string): void {
+    const manager = SessionManager.open(file);
+    manager.append({
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "d1", name: "bash", arguments: { command: "git push" } }],
+        api: "fake",
+        provider: "fake",
+        model: "echo",
+        usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2 },
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+      },
+    });
+    manager.close();
+  }
+  const starts = (host: ReturnType<typeof recordingHost>) =>
+    host
+      .events()
+      .filter((e) => e.name === "session_start")
+      .map((e) => e.event as { reason: string; uncleanEnd?: boolean });
+
+  it("resume 时带 uncleanEnd（干净 false、异常 true）；startup / new / fork 不带；兄弟会话同样", async () => {
+    h = composeHarness();
+    const host = recordingHost(h.home);
+    const runtime = await h.boot(["--model", "fake/echo", "--host", host.path]);
+    await runtime.session.prompt("keep me");
+    const crashed = runtime.session.state;
+    const fresh = await switchSession(runtime, { kind: "new" });
+    appendDangling(crashed.sessionFile as string);
+    await fresh.prompt("clean one");
+    const clean = fresh.state;
+    await switchSession(runtime, { kind: "new" });
+    const resumedClean = await switchSession(runtime, { kind: "resume", id: clean.sessionId });
+    const leaf = resumedClean.entries.at(-1)?.id as string;
+    await switchSession(runtime, { kind: "fork", entryId: leaf });
+    await switchSession(runtime, { kind: "resume", id: crashed.sessionId });
+    const sibling = await createSessionAlongside(runtime, { kind: "resume", id: clean.sessionId });
+    expect(starts(host)).toEqual([
+      { ...starts(host)[0], reason: "startup" },
+      { ...starts(host)[1], reason: "new" },
+      { ...starts(host)[2], reason: "new" },
+      { ...starts(host)[3], reason: "resume", uncleanEnd: false },
+      { ...starts(host)[4], reason: "fork" },
+      { ...starts(host)[5], reason: "resume", uncleanEnd: true },
+      { ...starts(host)[6], reason: "resume", uncleanEnd: false },
+    ]);
+    for (const [i, event] of starts(host).entries())
+      if (event.reason !== "resume") expect(event, `event ${i}`).not.toHaveProperty("uncleanEnd");
+    expect(starts(host)[6]?.uncleanEnd).toBe(false);
+    await sibling.dispose();
     await runtime.dispose();
   });
 });

@@ -298,7 +298,7 @@ describe("HostApi：host-api 1.1（#226）", () => {
     const api = binding.api;
     expect(HOST_API_VERSION).toBe(1);
     expect(api.version).toBe(1);
-    expect(HOST_API_MINOR).toBe(1);
+    expect(HOST_API_MINOR).toBe(2);
     expect(api.minor).toBe(HOST_API_MINOR);
     expect(typeof api.runners?.onDone).toBe("function");
     const { handle, rounds } = scripted();

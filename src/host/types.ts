@@ -17,6 +17,8 @@
  * - （#226）host-api 1.1：可选面 `HostApi.runners.onDone`（宿主 runner 每轮结束的 {@link RunnerDoneEvent}）
  *   与 `HostApi.minor`。主版本 `HOST_API_VERSION` 要求宿主严格相等，只在破坏性变化时改；只加不改的
  *   增量递增 {@link HOST_API_MINOR}，宿主按成员是否存在做特性探测。
+ * - （#268）host-api 1.2：`session_start` 在 `reason: "resume"` 时带 `uncleanEnd`（上一轮没有正常结束，
+ *   判定见 session/unclean-end.ts）。只加不改，主版本不变。
  */
 
 import type { CacheMiss, WarmingDecisionHandler } from "../ai/cache/types.js";
@@ -57,8 +59,11 @@ export type { CacheMiss, WarmDecision, WarmingDecisionHandler } from "../ai/cach
 
 export const HOST_API_VERSION = 1 as const;
 export type HostApiVersion = typeof HOST_API_VERSION;
-/** host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`）；旧运行时没有 `api.minor`，按 0 算。 */
-export const HOST_API_MINOR = 1 as const;
+/**
+ * host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`；2 = `session_start.uncleanEnd`）；
+ * 旧运行时没有 `api.minor`，按 0 算。
+ */
+export const HOST_API_MINOR = 2 as const;
 
 export type HostMode = "interactive" | "line" | "print" | "rpc";
 
@@ -84,6 +89,8 @@ export interface AgentEvents {
     sessionFile?: string;
     cwd: string;
     reason: "startup" | "resume" | "new" | "fork";
+    /** [#268] 只在 `reason: "resume"` 时出现：上一轮没有正常结束（host-api 1.2）。 */
+    uncleanEnd?: boolean;
   };
   before_agent_start: { prompt: string };
   agent_start: Empty;
