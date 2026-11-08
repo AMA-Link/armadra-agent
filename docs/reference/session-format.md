@@ -165,7 +165,7 @@ resume 时（`--resume` / `--continue`、`/resume`、RPC `switch_session`、ACP 
 
 判定结果的去向：
 
-- 第一次新提示前经 `ama.reminder` 追加一条恢复提醒（固定英文；列出最后一轮——最后一条非 `steer` 的 `user` 之后——的工具名与目标：`bash` 取命令第一个词，`write` / `edit` 取路径，其余只给名字，缺结果的标 `(no result)`，去重、最多 12 项；从不含结果正文），要求先检查工作区、git 历史与外部状态再决定是否重复外部动作。该条带 `details: { recovery: true }`；T 里已有这样的条目就不再注入，于是「只提醒一次」不依赖新的持久化：注入后模型还没回复又被杀，第二次 resume 不重复；resume 后不提问就退出，下一次 resume 仍会在第一次提示前注入。系统提示与工具表不变，缓存前缀不受影响。
+- 第一次新提示前经 `ama.reminder` 追加一条恢复提醒（固定英文；列出最后一轮——最后一条非 `steer` 的 `user` 之后——的工具名与目标：`bash` 取命令第一个词（跳过开头的 `VAR=…` 环境变量赋值，剩下的词仍带 `=` 或以 `-` 开头就不给目标），`write` / `edit` 取路径（去掉 `?` / `#` 之后的部分），其余只给名字，缺结果的标 `(no result)`，去重、最多 12 项；从不含结果正文），要求先检查工作区、git 历史与外部状态再决定是否重复外部动作。该条带 `details: { recovery: true }`；T 里已有这样的条目就不再注入，于是「只提醒一次」不依赖新的持久化：注入后模型还没回复又被杀，第二次 resume 不重复；resume 后不提问就退出，下一次 resume 仍会在第一次提示前注入。系统提示与工具表不变，缓存前缀不受影响。
 - 宿主事件 `session_start` 在 `reason: "resume"` 时带 `uncleanEnd`（[host-api.md](host-api.md)）。
 - 父会话里按 `custom{ama.task}` 重建为 `interrupted` 的任务，`task_ctl` 的 `list` / `output` / `wait` 附一句同样的提示；`taskId` 续聊重开的子会话按同一规则自行提醒。
 

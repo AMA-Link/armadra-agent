@@ -297,4 +297,15 @@ describe("toolTarget", () => {
     expect(long).toHaveLength(UNCLEAN_TARGET_MAX);
     expect(long.endsWith("…")).toBe(true);
   });
+
+  it("不带出命令开头的环境变量赋值，也不带出路径里的查询串", () => {
+    expect(toolTarget("bash", { command: "API_KEY=sk-secret curl https://x" })).toBe("curl");
+    expect(toolTarget("bash", { command: "A=1 B=two gh pr create" })).toBe("gh");
+    expect(toolTarget("bash", { command: "GH_TOKEN=ghp_x" })).toBeUndefined();
+    expect(toolTarget("bash", { command: "--token=abc run" })).toBeUndefined();
+    expect(toolTarget("bash", { command: "=oops" })).toBeUndefined();
+    expect(toolTarget("write", { path: "/tmp/x?token=secret" })).toBe("/tmp/x");
+    expect(toolTarget("edit", { path: "a.ts#frag" })).toBe("a.ts");
+    expect(toolTarget("write", { path: "?only" })).toBeUndefined();
+  });
 });

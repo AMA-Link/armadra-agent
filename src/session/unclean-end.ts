@@ -109,17 +109,29 @@ function clip(text: string): string {
   return one.length > UNCLEAN_TARGET_MAX ? `${one.slice(0, UNCLEAN_TARGET_MAX - 1)}…` : one;
 }
 
-/** 工具调用的目标：bash 取命令第一个词，write / edit 取路径，其余不带目标；从不读结果正文。 */
+/** 命令开头的环境变量赋值（`API_KEY=… cmd`）：值可能是密钥，一个字都不带出去。 */
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/**
+ * 工具调用的目标：bash 取命令第一个词（跳过开头的 `VAR=…` 赋值；剩下的词仍带 `=` 或以 `-` 开头时不带
+ * 目标），write / edit 取路径（去掉 `?` / `#` 之后的部分，查询串里可能有令牌），其余不带目标；从不读结果正文。
+ */
 export function toolTarget(name: string, args: Record<string, unknown>): string | undefined {
   if (name === "bash") {
     const command = args["command"];
     if (typeof command !== "string") return undefined;
-    const first = command.trim().split(/\s+/, 1)[0];
-    return first === undefined || first === "" ? undefined : clip(first);
+    const words = command.trim().split(/\s+/);
+    const first = words.find((word) => !ENV_ASSIGNMENT.test(word));
+    if (first === undefined || first === "" || first.includes("=") || first.startsWith("-")) {
+      return undefined;
+    }
+    return clip(first);
   }
   if (name === "write" || name === "edit") {
     const path = args["path"];
-    return typeof path === "string" && path !== "" ? clip(path) : undefined;
+    if (typeof path !== "string") return undefined;
+    const bare = path.split(/[?#]/, 1)[0] ?? "";
+    return bare !== "" ? clip(bare) : undefined;
   }
   return undefined;
 }
