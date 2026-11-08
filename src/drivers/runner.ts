@@ -26,6 +26,7 @@ import type {
   SubagentStatus,
 } from "../tools/types.js";
 import { defaultSetTimer } from "./base.js";
+import { reportFromTurn } from "./turn.js";
 import { buildChildEnv } from "./env.js";
 import { askHuman, clampMode, supportedMode, type ApproveFn } from "./permissions.js";
 import type { DriverPool } from "./pool.js";
@@ -532,6 +533,8 @@ class ProcessHandle implements RunnerHandle {
         turn.filesTouched.length,
       );
       this.armIdle();
+      const report = reportFromTurn(this.agent, turn, timedOut);
+      if (report !== undefined) this.emit({ type: "report", report });
       return {
         text: timedOut
           ? `${this.agent} timed out and was interrupted.${turn.finalText !== "" ? `\n\n${reportText(turn)}` : ""}`
@@ -541,6 +544,7 @@ class ProcessHandle implements RunnerHandle {
         isError: status === "failed",
         status,
         sessionRef: { runner: this.runner.id, sessionId: this.sessionId },
+        ...(report === undefined ? {} : { report }),
       };
     } catch (error) {
       if (turnStartedAt !== undefined)

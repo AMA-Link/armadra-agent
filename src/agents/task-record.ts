@@ -20,8 +20,10 @@ import type {
   SubagentEvent,
   SubagentRequest,
   SubagentResult,
+  SubagentStatus,
   TaskInfo,
 } from "../tools/types.js";
+import { ZERO_USAGE } from "../agent/loop.js";
 import { DEFAULT_AGENT } from "./builtin.js";
 import type { AgentCatalog } from "./catalog.js";
 import type { AgentDefinition } from "./types.js";
@@ -29,6 +31,20 @@ import type { AgentDefinition } from "./types.js";
 export const TASK_CUSTOM_TYPE = "ama.task";
 /** `subagent_update{kind:"text"}` 的合并间隔。 */
 export const TEXT_THROTTLE_MS = 250;
+
+/** 任务的终态（注册表据此认 runner 给的 status）。 */
+export const TERMINAL_STATUSES: readonly SubagentStatus[] = [
+  "completed",
+  "failed",
+  "aborted",
+  "max_turns",
+  "interrupted",
+];
+
+/** 注册表层面的失败结果（没起来、找不到任务、会话已关闭）。 */
+export function failedResult(text: string): SubagentResult {
+  return { text, usage: { ...ZERO_USAGE }, stopReason: "error", isError: true, status: "failed" };
+}
 
 /** 计数信号量；`waiting` 供排队上限判断；排队中 abort → 抛 aborted 并让出位置。 */
 export class SubagentPool {
@@ -317,6 +333,17 @@ export function applyRunnerEvent(
       return;
     case "context":
       record.info.context = event.mode;
+      return;
+    case "report":
+      // [#269] 这次运行当前折叠后的报告：进快照并即时发出（Agent 栏 / RPC / ACP 在父模型回答前就能看到）
+      record.info.report = event.report;
+      sink.emit({
+        type: "subagent_update",
+        taskId,
+        kind: "report",
+        turn: record.info.turns ?? 0,
+        report: event.report,
+      });
       return;
     case "turn_trace":
       sink.appendTrace?.({

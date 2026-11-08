@@ -210,7 +210,7 @@ describe("组装根里的 codemode", () => {
     expect(codemode).toContain(
       "same arguments: bash, edit, glob, grep, read, web_fetch, write (tools.bash resolves to BashResult",
     );
-    expect(codemode).toContain("Callable only from scripts: ls, task, task_ctl, todo.");
+    expect(codemode).toContain("Callable only from scripts: ls, report, task, task_ctl, todo.");
     expect(codemode).not.toContain("ls(args:");
     await runtime.dispose();
   });

@@ -60,6 +60,7 @@ describe("buildDeclarationBlock", () => {
       "grep",
       "ls",
       "read",
+      "report",
       "task",
       "task_ctl",
       "todo",

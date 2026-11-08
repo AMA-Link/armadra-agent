@@ -201,6 +201,7 @@ interface RunnerDoneEvent {
 - Observe-only: handlers are not awaited; a throw (including a rejected Promise) is logged once at error level through `log` and affects neither the `wait()` result nor other handlers.
 - ama may call `wait()` several times in one round (the task entry and the registry each once); the event is sent once. Calling `wait()` again after the round settled, without a new `send` / `interrupt`, sends nothing. An `interrupt` while running is followed to the end by the current round instead of starting another.
 - Only host-injected runners are covered; ama's own sub-sessions (`general` / `explore` / `plan`) still report through `subagent_start` / `subagent_end`.
+- (#269) `subagent_end` may carry `report?: { state: ready | blocked | failed | waiting, summary, humanAction? }`, the status a sub-agent gives through its `report` tool ([agents.md](../../guides/agents.md) "structured reports", Chinese); a host runner may put `report` on its result or emit a `{ type: "report", report }` progress event. Optional field; `HOST_API_VERSION` / `HOST_API_MINOR` unchanged.
 - Use: the host no longer needs to poll whether the coordinator is still waiting on a task — the event says ama's side of it has ended.
 
 ## Host resources

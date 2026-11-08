@@ -7,6 +7,7 @@
  * 原始事件只在内存里流过，不落盘（§5.4 敏感数据）。
  */
 
+import type { SubagentReport } from "../tools/types.js";
 import type { AcpToolKind, DriverEvent, DriverTurnResult } from "./types.js";
 
 export const TOOL_SUMMARY_LINES = 20;
@@ -142,4 +143,28 @@ export class TurnCollector {
 export function oneLine(text: string, max = 120): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/**
+ * [#269] 外部 Agent 的结构化报告：驱动给的优先；否则只映射能确定的停止原因（固定英文）——`refusal` →
+ * failed、`max_tokens` / `max_turn_requests` → blocked；`end_turn` 分不清 ready / waiting，不编造；超时与
+ * 取消由 status 表达。
+ */
+export function reportFromTurn(
+  agent: string,
+  turn: Pick<DriverTurnResult, "stopReason" | "report">,
+  timedOut: boolean,
+): SubagentReport | undefined {
+  if (timedOut) return undefined;
+  if (turn.report !== undefined) return turn.report;
+  switch (turn.stopReason) {
+    case "refusal":
+      return { state: "failed", summary: `${agent} refused the request.` };
+    case "max_tokens":
+      return { state: "blocked", summary: `${agent} hit its output limit before finishing.` };
+    case "max_turn_requests":
+      return { state: "blocked", summary: `${agent} hit its turn limit before finishing.` };
+    default:
+      return undefined;
+  }
 }

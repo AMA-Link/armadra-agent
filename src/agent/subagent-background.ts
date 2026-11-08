@@ -155,6 +155,7 @@ export class TaskNotifier {
       ...(info.turns === undefined ? {} : { turns: info.turns }),
       ...(info.usage === undefined ? {} : { usage: info.usage }),
       ...(info.outputFile === undefined ? {} : { outputFile: info.outputFile }),
+      ...(result.report === undefined ? {} : { reportState: result.report.state }),
       report: result.text,
     });
     const host = this.host;

@@ -64,6 +64,12 @@ declare const tools: {
     /** Max lines */
     limit?: number;
   }): Promise<string>;
+  /** Sub-agents only: your state and a one-line summary for the main agent; humanAction: a question only a person can answer (null clears it). */
+  report(args: {
+    state: "ready" | "blocked" | "failed" | "waiting";
+    summary: string;
+    humanAction?: unknown;
+  }): Promise<string>;
   /**
    * Delegate to a sub-agent (fresh context: give full instructions; context fork: inherits this conversation). Returns its final report. Parallel in one reply; writers use isolation worktree. background: returns a taskId (see task_ctl); taskId: continue it.
    * Agents:

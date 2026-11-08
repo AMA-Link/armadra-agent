@@ -11,6 +11,7 @@
  * | permission_request（toolCallId 已公布）   | tool_call_update（pending）                                      |
  * | permission_resolved（allow / allow_session）| tool_call_update（in_progress）                                |
  * | tool_execution_end                        | tool_call_update（completed / failed，`[diff?, text]`，locations[].line） |
+ * | subagent_update{kind:"report"}            | tool_call_update（只带 `_meta.ama.{taskId, report}`，挂在发起的 task 调用上；[#269]） |
  * | todo_updated                              | plan                                                             |
  * | message_end（助手）/ turn_end             | usage_update（上下文用量、窗口、会话累计美元；与上次同值不发）   |
  * | permission_mode_changed                   | current_mode_update + config_option_update                       |
@@ -57,6 +58,8 @@ export function permissionModes(currentModeId: string) {
 export class AcpEventMapper {
   /** 模型已发出、尚未执行完的工具调用（按工具名 + 参数匹配的后备）。 */
   private readonly pendingCalls: { id: string; name: string; args: string }[] = [];
+  /** [#269] 子 Agent 任务 → 发起它的 task 调用（ama 的 toolCallId）。 */
+  private readonly taskParents = new Map<string, string>();
   /** 已经以 `tool_call` 公布、尚未结束的调用：id → title（含 codemode 内层）。 */
   private readonly published = new Map<string, string>();
   /** 挂起的权限请求：requestId → 已公布的 toolCallId。 */
@@ -202,6 +205,22 @@ export class AcpEventMapper {
         this.permissionCalls.delete(event.requestId);
         // 拒绝时由随后的 tool_execution_end（failed）收口
         if (event.decision !== "deny" && this.published.has(id)) this.status(id, "in_progress");
+        return;
+      }
+      case "subagent_start":
+        this.taskParents.set(event.taskId, event.parentToolCallId);
+        return;
+      case "subagent_update": {
+        // [#269] 结构化报告只随 _meta 走：不改父 task 调用的状态与内容（后台任务的父调用可能早已结束）
+        if (event.kind !== "report" || event.report === undefined) return;
+        const parent = this.taskParents.get(event.taskId);
+        if (parent === undefined) return;
+        const meta: AcpAmaMeta = { taskId: event.taskId, report: event.report };
+        this.emit({
+          sessionUpdate: "tool_call_update",
+          toolCallId: this.wireId(parent),
+          _meta: { [ACP_META_KEY]: meta },
+        });
         return;
       }
       case "todo_updated":

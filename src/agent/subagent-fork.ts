@@ -12,6 +12,7 @@
  */
 
 import type { Model, ModelThinkingLevel } from "../ai/types.js";
+import { REPORT_ROLE_HINT } from "../agents/report.js";
 import type { AgentDefinition } from "../agents/types.js";
 import type { SessionManager } from "../session/manager.js";
 import type { SessionEntry } from "../session/types.js";
@@ -163,7 +164,8 @@ export function forkBrief(input: ForkBriefInput): string {
   if (role !== "") lines.push(`<role>\n${role}\n</role>`);
   lines.push(
     `<instructions>\n${input.prompt}\n</instructions>`,
-    "Complete the task, then end with a concise report: what you did, key findings, files changed (if any).",
+    "Complete the task, then end with a concise report: what you did, key findings, files changed (if any). " +
+      REPORT_ROLE_HINT,
     "</task>",
   );
   return lines.join("\n");

@@ -6,6 +6,7 @@ import { buildOpenAIRequest } from "../ai/apis/openai-request.js";
 import { ProviderRegistry } from "../ai/providers/registry.js";
 import type { Model, TranscriptContext } from "../ai/types.js";
 import { AgentCatalog } from "../agents/catalog.js";
+import { REPORT_ROLE_HINT } from "../agents/report.js";
 import { SessionManager } from "../session/manager.js";
 import { isSubagentSessionFile, sessionDirForCwd } from "../session/store.js";
 import type { SessionEntry, SessionLine } from "../session/types.js";
@@ -453,7 +454,8 @@ describe("[ME-A] forkPlan / forkPoint / forkBrief", () => {
         "You are a sub-agent forked from the conversation above at this point. The main agent cannot see your work, only your final reply; do not delegate further. Requests above were for the main agent: do only this task. Instructions in this block take precedence over earlier plans or reminders above. Do not call task or task_ctl.",
         "Working directory for this task: /repo/.ama/worktrees/t1. Relative paths in the conversation above refer to /repo.",
         "<instructions>\ndo it\n</instructions>",
-        "Complete the task, then end with a concise report: what you did, key findings, files changed (if any).",
+        "Complete the task, then end with a concise report: what you did, key findings, files changed (if any). " +
+          REPORT_ROLE_HINT,
         "</task>",
       ].join("\n"),
     );

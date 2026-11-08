@@ -4,13 +4,14 @@
  * - 任务：`taskRegistryView(sessionId).list()`（子 Agent 注册表，W5-G）；全文 `registryOf(sessionId).output()`；
  *   停止 `registryOf(sessionId).stop()`。
  * - 类型：`cachedAgentInfos(sessionId) ?? sessionAgents(sessionId)`（外部 Agent 带安装状态与版本，W5-EG）。
+ * - [#269] 任务行带子 Agent 自报的状态与待人决定的问题（`reportFacts`，Agent 栏与折叠视图共用）。
  */
 
 import { cachedAgentInfos } from "../../agents/external.js";
 import { formatTaskContext } from "../../agents/task-record.js";
 import type { AgentInfo } from "../../agents/types.js";
 import { registryOf, sessionAgents, taskRegistryView } from "../../agent/subagent-registry.js";
-import type { SubagentStatus, TaskInfo } from "../../tools/types.js";
+import type { SubagentReport, SubagentStatus, TaskInfo } from "../../tools/types.js";
 import { msg } from "../../i18n/index.js";
 import { formatTokenCount, formatUsd } from "../session-report.js";
 import { formatDuration } from "./tool-summary.js";
@@ -51,6 +52,16 @@ export function taskFacts(task: TaskInfo, now: number): string[] {
   const context = formatTaskContext(task);
   if (context !== undefined) facts.push(msg().panels.tasks.context(context));
   if (task.costUsd !== undefined && task.costUsd > 0) facts.push(formatUsd(task.costUsd));
+  facts.push(...reportFacts(task.report));
+  return facts;
+}
+
+/** [#269] 结构化报告的事实项：状态标签；有待人决定的问题时再加一项（问题压成一行、≤ 80 字符）。 */
+export function reportFacts(report: SubagentReport | undefined): string[] {
+  if (report === undefined) return [];
+  const m = msg().panels.tasks;
+  const facts = [m.report[report.state]];
+  if (report.humanAction !== undefined) facts.push(m.needsPerson(oneLine(report.humanAction, 80)));
   return facts;
 }
 

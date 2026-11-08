@@ -136,6 +136,42 @@ describe("AcpEventMapper", () => {
     expectValid(out);
   });
 
+  it("[#269] 子 Agent 的报告：挂在发起的 task 调用上，只带 _meta.ama.{taskId, report}；过 schema", () => {
+    const { m, out } = mapper();
+    m.onEvent(toolcallEnd("c1", "task", { prompt: "x", background: true }));
+    m.onEvent(start("c1", "task", { prompt: "x", background: true }));
+    m.onEvent(end("c1", "task", { content: "Started background task t1 (agent general)." }));
+    m.onEvent({
+      type: "subagent_start",
+      taskId: "t1",
+      parentToolCallId: "c1",
+      agent: "general",
+      runner: "ama",
+      description: "",
+      background: true,
+      cwd: CWD,
+    });
+    m.onEvent({ type: "subagent_update", taskId: "t1", kind: "tool", toolName: "read", turn: 1 });
+    const report = {
+      state: "blocked" as const,
+      summary: "Need an account.",
+      humanAction: "Which?",
+    };
+    m.onEvent({ type: "subagent_update", taskId: "t1", kind: "report", turn: 1, report });
+    // 未知任务（没收到 subagent_start）不发
+    m.onEvent({ type: "subagent_update", taskId: "t9", kind: "report", turn: 1, report });
+    const metas = out.filter((u) => u.sessionUpdate === "tool_call_update" && "_meta" in u);
+    expect(metas).toEqual([
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "c1",
+        _meta: { ama: { taskId: "t1", report } },
+      },
+    ]);
+    expect(statuses(out, "c1")).toEqual(["pending", "in_progress", "completed"]);
+    expectValid(out);
+  });
+
   it("回放：重复的工具调用 id 同样分开（客户端按 id 合并条目）", () => {
     const { m, out } = mapper();
     const call = (id: string, name: string) =>

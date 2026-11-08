@@ -17,6 +17,8 @@
  *   `SubagentResult` 加 `taskId / status / outputFile / sessionRef`（契约要求向后兼容，全部可选）；
  *   统一入口 `SubagentRunner / RunnerHandle / SubagentEvent`（ama 子会话、外部 CLI、宿主 runner）；
  *   `ToolContext.tasks` 为任务注册表的只读视图（W5-G 提供）。
+ * - （#269）子 Agent 的结构化报告：`SubagentReport`（`report` 工具的折叠结果）进 `SubagentResult.report` /
+ *   `TaskInfo.report`，runner 以 `SubagentEvent{type:"report"}` 上报；全部可选，没有报告时形状不变。
  */
 
 import type { ContentBlock, JsonSchema, ModelRef, ModelThinkingLevel, Usage } from "../ai/types.js";
@@ -128,6 +130,28 @@ export interface SubagentSessionRef {
   sessionFile?: string;
 }
 
+/**
+ * [#269] 子 Agent 自报的状态：`ready` 做完、`blocked` 没有某样东西就做不下去、`failed` 放弃、
+ * `waiting` 在等外部的事（长任务、别人的结果）。
+ */
+export type SubagentReportState = "ready" | "blocked" | "failed" | "waiting";
+
+/** [#269] 一次运行里 `report` 调用折叠后的报告（取最后状态与摘要；`humanAction` 是单槽）。 */
+export interface SubagentReport {
+  state: SubagentReportState;
+  /** ≤ 300 字符。 */
+  summary: string;
+  /** 只有人能决定的事（问题、选择）；≤ 300 字符。父会话必须原样转给用户，不得代答。 */
+  humanAction?: string;
+}
+
+/** [#269] `report` 工具的一次调用（`details.report`）：`humanAction` 给出替换、省略保持、`null` 清空。 */
+export interface SubagentReportUpdate {
+  state: SubagentReportState;
+  summary: string;
+  humanAction?: string | null;
+}
+
 export interface SubagentResult {
   /** 子会话最后一条助手文本。 */
   text: string;
@@ -149,6 +173,8 @@ export interface SubagentResult {
   sessionRef?: SubagentSessionRef;
   /** [ME-A] 请求了 `context: "fork"` 时的实际模式（回落为 `fresh`）；未请求 fork 时缺省。 */
   context?: "fork" | "fresh";
+  /** [#269] 这次运行里子 Agent 用 `report` 报告的状态（外部驱动按原生状态映射）；没报告时缺省。 */
+  report?: SubagentReport;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +212,9 @@ export type SubagentEvent =
     }
   | { type: "notice"; level: "info" | "warn"; text: string }
   /** [ME-A] ama 子会话请求了 `context: "fork"` 时的实际模式（注册表写进 `TaskInfo.context`）。 */
-  | { type: "context"; mode: "fork" | "fresh" };
+  | { type: "context"; mode: "fork" | "fresh" }
+  /** [#269] 这次运行当前折叠后的报告（每次 `report` 调用后发一次；注册表写进 `TaskInfo.report`）。 */
+  | { type: "report"; report: SubagentReport };
 
 export interface SubagentRunRequest {
   prompt: string;
@@ -244,6 +272,8 @@ export interface TaskInfo {
   sessionRef?: SubagentSessionRef;
   /** [ME-C0] 子会话的实际上下文模式（fork 回落为 fresh 时记 `fresh`）；外部 Agent 缺省。 */
   context?: "fork" | "fresh";
+  /** [#269] 最近一次运行的报告（运行开始清空、运行中随 `report` 调用更新）；没报告时缺省。 */
+  report?: SubagentReport;
 }
 
 /** [W5-C0] 任务注册表的只读视图（W5-G 的 `SubagentRegistry` 提供）。 */
