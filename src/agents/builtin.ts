@@ -6,13 +6,14 @@
  * 被拒绝且不弹审批（session-subagent.ts）。正文是追加到子会话系统提示末尾的角色说明（`role` 节）。
  */
 
+import { REPORT_ROLE_HINT } from "./report.js";
 import type { AgentDefinition } from "./types.js";
 
-/** 所有 ama 子会话共有的角色说明（类型正文追加在它后面）。 */
+/** 所有 ama 子会话共有的角色说明（类型正文追加在它后面）；[#269] 末句要求结束前用 `report` 报告状态。 */
 export const SUBAGENT_ROLE_PREAMBLE =
   "You are a sub-agent: the main agent delegated one task to you. It cannot see your work, only " +
   "your final reply. Complete the task directly; do not delegate further. End with a concise " +
-  "report: what you did, key findings, and files changed (if any).";
+  `report: what you did, key findings, and files changed (if any). ${REPORT_ROLE_HINT}`;
 
 function builtin(
   name: string,

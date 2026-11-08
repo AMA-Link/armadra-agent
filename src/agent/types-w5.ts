@@ -10,9 +10,9 @@
 
 import type { ModelRef, Usage } from "../ai/types.js";
 import type { PermissionMode } from "../permissions/types.js";
-import type { SubagentStatus } from "../tools/types.js";
+import type { SubagentReport, SubagentStatus } from "../tools/types.js";
 
-export type { SubagentStatus } from "../tools/types.js";
+export type { SubagentReport, SubagentReportState, SubagentStatus } from "../tools/types.js";
 
 // ---------------------------------------------------------------------------
 // 遥测（§1.3，W5-A）
@@ -67,12 +67,15 @@ export interface SubagentStartEvent {
 export interface SubagentUpdateEvent {
   type: "subagent_update";
   taskId: string;
-  kind: "tool" | "text" | "turn";
+  /** [#269] `report`：子 Agent 调用了 `report`，`report` 字段是这次运行当前折叠后的报告。 */
+  kind: "tool" | "text" | "turn" | "report";
   toolName?: string;
   /** 文本增量（节流 ≥ 250 ms 合并）。 */
   textDelta?: string;
   turn: number;
   usage?: Usage;
+  /** [#269] 只随 `kind: "report"`。 */
+  report?: SubagentReport;
 }
 
 export interface SubagentEndEvent {
@@ -85,6 +88,8 @@ export interface SubagentEndEvent {
   /** 全文结果（> 50 KB 截断时）。 */
   outputFile?: string;
   worktree?: { branch: string; changed: boolean };
+  /** [#269] 这次运行折叠后的报告；子 Agent 没报告时缺省。 */
+  report?: SubagentReport;
 }
 
 /**

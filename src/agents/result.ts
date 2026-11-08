@@ -8,13 +8,33 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { WorktreeOutcome } from "../agent/worktree.js";
 import type { Usage } from "../ai/types.js";
-import type { SubagentStatus } from "../tools/types.js";
+import type { SubagentReport, SubagentStatus } from "../tools/types.js";
+import { withReportLines } from "./report.js";
 
 export const TASK_RESULT_LIMIT_BYTES = 50 * 1024;
 const HEAD_SHARE = 0.7;
 
 export const MAX_TURNS_NOTE = "[Turn limit reached; the sub-agent's last output follows.]";
+
+/**
+ * 结果正文的装饰（注册表 `finish()`）：空文本占位 → 轮数耗尽说明 → [#269] 报告行（agents/report.ts）→
+ * 保留的 worktree 说明。没有报告、没保留 worktree、未耗尽时与原文相同。
+ */
+export function decorateTaskText(
+  capped: string,
+  status: SubagentStatus,
+  report: SubagentReport | undefined,
+  outcome: WorktreeOutcome | undefined,
+): string {
+  let text = capped.trim() === "" ? "(the sub-agent returned no text)" : capped;
+  if (status === "max_turns") text = `${MAX_TURNS_NOTE}\n\n${text}`;
+  text = withReportLines(text, report);
+  if (outcome?.changed === true)
+    text += `\n\n[worktree kept: branch ${outcome.branch} at ${outcome.path ?? "?"}]\n${outcome.diffStat ?? ""}`;
+  return text;
+}
 
 /** 去掉按字节切开时残留的半个字符（U+FFFD）。 */
 function trimReplacement(text: string, side: "start" | "end"): string {
@@ -67,6 +87,8 @@ export interface NotificationInput {
   turns?: number;
   usage?: Usage;
   outputFile?: string;
+  /** [#269] 结构化报告的状态（正文前已有 `[report]` 行；属性便于界面一眼看到）。 */
+  reportState?: SubagentReport["state"];
   /** 已按上限截断的最终报告。 */
   report: string;
 }
@@ -80,6 +102,7 @@ export function taskNotification(input: NotificationInput): string {
   if (input.turns !== undefined) attrs.push(`turns="${input.turns}"`);
   if (input.usage !== undefined) attrs.push(`tokens="${formatTokens(input.usage.totalTokens)}"`);
   if (input.outputFile !== undefined) attrs.push(`outputFile="${attr(input.outputFile)}"`);
+  if (input.reportState !== undefined) attrs.push(`report="${input.reportState}"`);
   return `<task-notification ${attrs.join(" ")}>\n${input.report}\n</task-notification>`;
 }
 

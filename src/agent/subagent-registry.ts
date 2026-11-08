@@ -14,6 +14,9 @@
  *   resume 时据此重建（未完成标 `interrupted`）。
  * - [W6-A] 子 Agent 视图的 `live()` / `message()`（实现在 subagent-direct.ts）。
  * - [W7-B1] 缺省后台、前台转后台 `background()`、通知投递与 `settled()`（subagent-background.ts）。
+ * - [#269] 结构化报告：运行开始清 `info.report`，runner 的 `report` 事件即时进快照并发 `subagent_update`，
+ *   结束时以结果里的报告为准，在正文前加 `[report]` / `[needs a person]` 行（agents/report.ts），
+ *   `subagent_end.report`。
  */
 
 import { tmpdir } from "node:os";
@@ -29,11 +32,13 @@ import type {
 } from "../tools/types.js";
 import { DEFAULT_AGENT } from "../agents/builtin.js";
 import { AgentCatalog, resolveAgentModel, type AgentModelConfig } from "../agents/catalog.js";
-import { MAX_TURNS_NOTE, capTaskText, writeTaskOutput } from "../agents/result.js";
+import { capTaskText, decorateTaskText, writeTaskOutput } from "../agents/result.js";
 import {
   SubagentPool,
   TASK_CUSTOM_TYPE,
+  TERMINAL_STATUSES,
   applyRunnerEvent,
+  failedResult as failed,
   flushText,
   newRecord,
   rebuildRecords,
@@ -52,7 +57,6 @@ import {
   type TaskControl,
 } from "../agents/task-control.js";
 import type { AgentDefinition, AgentInfo } from "../agents/types.js";
-import { ZERO_USAGE } from "./loop.js";
 import type { SessionCore } from "./session-core.js";
 import type { SessionTaskStats } from "./types.js";
 import { createWorktree, finishWorktree } from "./worktree.js";
@@ -132,18 +136,6 @@ export function subagentRegistryFor(
   registerTaskControl(host.manager.id, registry);
   return registry;
 }
-
-function failed(text: string): SubagentResult {
-  return { text, usage: { ...ZERO_USAGE }, stopReason: "error", isError: true, status: "failed" };
-}
-
-const TERMINAL: readonly SubagentStatus[] = [
-  "completed",
-  "failed",
-  "aborted",
-  "max_turns",
-  "interrupted",
-];
 
 export class SubagentRegistry implements TaskControl {
   readonly catalog: AgentCatalog;
@@ -331,6 +323,8 @@ export class SubagentRegistry implements TaskControl {
     record.info.status = "running";
     record.info.background = background;
     delete record.info.endedAt;
+    // [#269] 报告槽按运行划定：续聊开始时清空上一次运行的报告
+    delete record.info.report;
     record.text = "";
     if (background) delete record.onUpdate;
     else if (request.onUpdate !== undefined) record.onUpdate = request.onUpdate;
@@ -480,7 +474,7 @@ export class SubagentRegistry implements TaskControl {
     flushText(record, this.sink());
     const status: SubagentStatus = aborted
       ? "aborted"
-      : result.status !== undefined && TERMINAL.includes(result.status as SubagentStatus)
+      : result.status !== undefined && TERMINAL_STATUSES.includes(result.status as SubagentStatus)
         ? (result.status as SubagentStatus)
         : result.isError
           ? "failed"
@@ -505,20 +499,21 @@ export class SubagentRegistry implements TaskControl {
       outputFile = writeTaskOutput(this.outputDirectory(), this.outputName(info.taskId), full);
       if (outputFile !== undefined) info.outputFile = outputFile;
     }
-    let text = capped.text.trim() === "" ? "(the sub-agent returned no text)" : capped.text;
-    if (status === "max_turns") text = `${MAX_TURNS_NOTE}\n\n${text}`;
+    // [#269] 结构化报告：runner 给的为准（这次运行折叠后的值）；没有就清掉运行中记下的
+    const report = result.report;
+    if (report === undefined) delete info.report;
+    else info.report = report;
     const outcome = record.worktreeOutcome;
-    if (outcome?.changed === true)
-      text += `\n\n[worktree kept: branch ${outcome.branch} at ${outcome.path ?? "?"}]\n${outcome.diffStat ?? ""}`;
     const final: SubagentResult = {
       ...result,
-      text,
+      text: decorateTaskText(capped.text, status, report, outcome),
       taskId: info.taskId,
       status,
       isError: status === "failed" || status === "aborted",
     };
     if (outputFile !== undefined) final.outputFile = outputFile;
     if (info.sessionRef !== undefined) final.sessionRef = info.sessionRef;
+    if (report !== undefined) final.report = report;
     record.last = final;
     this.persist(record);
     const end: Extract<Parameters<RegistryHost["emit"]>[0], { type: "subagent_end" }> = {
@@ -530,6 +525,7 @@ export class SubagentRegistry implements TaskControl {
     if (result.cache !== undefined) end.cache = result.cache;
     if (outputFile !== undefined) end.outputFile = outputFile;
     if (outcome !== undefined) end.worktree = { branch: outcome.branch, changed: outcome.changed };
+    if (report !== undefined) end.report = report;
     this.host.emit(end);
     this.retain(info.taskId);
     return final;

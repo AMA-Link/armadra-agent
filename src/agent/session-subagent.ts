@@ -20,6 +20,9 @@
  *   [RW-B] 父的检查点钩子（worktree 里运行时不记）；[W3-C1b] 子会话命中与重计费汇总进父。
  * - [W6-A] 句柄外露 `observe` / `entries`（子 Agent 视图跟随）与 `message`（视图里直接发的消息，
  *   `origin: "direct"`：运行中 followUp，空闲开新一轮）；一轮收尾时才入队、没赶上的 followUp 接着再跑一轮。
+ * - [#269] `report` 工具总在子会话可用（`CHILD_ONLY_TOOLS`，白名单 / 黑名单与 fork 的 `unavailableTools`
+ *   都不去掉）；每次 `report` 调用（含 codemode 内层）按运行折叠成槽，发 `report` 进度事件，运行结束放进
+ *   `SubagentResult.report`（agents/report.ts）。
  */
 
 import type { CheckpointHooks } from "../checkpoints/types.js";
@@ -35,12 +38,16 @@ import type { AgentMessage } from "../session/types.js";
 import type { MessageOrigin } from "../ai/types.js";
 import type {
   RunnerHandle,
+  SubagentReport,
+  SubagentReportUpdate,
   SubagentRequest,
   SubagentResult,
   SubagentRunRequest,
   SubagentRunner,
 } from "../tools/types.js";
+import { REPORT_TOOL } from "../tools/report.js";
 import { agentRole } from "../agents/builtin.js";
+import { foldReport } from "../agents/report.js";
 import { ZERO_USAGE } from "./loop.js";
 import type { RequestRecord } from "../ai/cache/types.js";
 import type { AgentSessionOptions } from "./session-core.js";
@@ -60,6 +67,8 @@ export { DEFAULT_SUBAGENT_CONCURRENCY, SubagentPool, TASK_CUSTOM_TYPE };
 export const DEFAULT_SUBAGENT_MAX_TURNS = 30;
 /** 子会话里保留在工具表、运行时拒绝的名字（深度 ≤ 1）。 */
 export const PARENT_ONLY_TOOLS: readonly string[] = ["task", "task_ctl"];
+/** [#269] 子会话总是可用的工具（类型白名单 / 黑名单不能去掉；父会话里它运行时被拒）。 */
+export const CHILD_ONLY_TOOLS: readonly string[] = [REPORT_TOOL];
 
 export const FINAL_REPORT_PROMPT =
   "You have reached the turn limit for this task. Do not call any tools. Reply now with your " +
@@ -161,7 +170,10 @@ export async function runSubagent(
   return registry.run(request, (spec) => createAmaRunner(parent, spec, createChild));
 }
 
-/** 活动集：缺省 = 父活动集（含 task / task_ctl，工具表对齐）；白名单 / 黑名单时按名过滤。 */
+/**
+ * 活动集：缺省 = 父活动集（含 task / task_ctl，工具表对齐）；白名单 / 黑名单时按名过滤。
+ * [#269] `report` 只要父注册了就总在（白名单 / 黑名单都不能去掉）。
+ */
 function childToolNames(
   parent: SubagentParent,
   spec: AmaRunnerSpec,
@@ -170,12 +182,17 @@ function childToolNames(
   const available = new Set((parent.options.tools ?? []).map((tool) => tool.name));
   const all = [...(base ?? available)].filter((name) => available.has(name));
   const allow = spec.request.tools ?? spec.agent.tools;
-  if (allow !== undefined)
-    return allow.filter((name) => available.has(name) && !PARENT_ONLY_TOOLS.includes(name));
   const deny = spec.agent.disallowedTools;
-  if (deny !== undefined)
-    return all.filter((name) => !deny.includes(name) && !PARENT_ONLY_TOOLS.includes(name));
-  return all;
+  if (allow === undefined && deny === undefined) return all;
+  const picked =
+    allow !== undefined
+      ? allow.filter((name) => available.has(name) && !PARENT_ONLY_TOOLS.includes(name))
+      : all.filter(
+          (name) => !(deny as string[]).includes(name) && !PARENT_ONLY_TOOLS.includes(name),
+        );
+  for (const name of CHILD_ONLY_TOOLS)
+    if (available.has(name) && !picked.includes(name)) picked.push(name);
+  return picked;
 }
 
 /** ama 自己的子会话 runner（同进程）。 */
@@ -246,7 +263,10 @@ async function startAmaChild(
   // fork：工具表 = 父活动集（前缀不变），类型限制的工具在执行层拒绝
   const inherited = base.activeTools ?? (parent.options.tools ?? []).map((tool) => tool.name);
   const unavailable = inherited.filter(
-    (name) => !allowed.includes(name) && !PARENT_ONLY_TOOLS.includes(name),
+    (name) =>
+      !allowed.includes(name) &&
+      !PARENT_ONLY_TOOLS.includes(name) &&
+      !CHILD_ONLY_TOOLS.includes(name),
   );
   // #150：<task> 里也列出按深度拒绝的 task / task_ctl（执行层的拒绝文案不变）
   const briefUnavailable = [
@@ -281,10 +301,22 @@ async function startAmaChild(
 
   let turns = 0;
   let toolUse = false;
+  /** [#269] 这次运行的报告槽（runOnce 开始清空；codemode 内层调用的 report 同样折叠）。 */
+  let report: SubagentReport | undefined;
   const unsubscribe = child.subscribe((event) => {
     if (event.type === "tool_execution_start" && event.parentToolCallId === undefined)
       run.onEvent({ type: "tool", toolName: event.toolName, status: "started" });
-    else if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
+    else if (
+      event.type === "tool_execution_end" &&
+      event.toolName === REPORT_TOOL &&
+      !event.isError
+    ) {
+      const details = event.result.details as { report?: SubagentReportUpdate } | undefined;
+      if (details?.report !== undefined) {
+        report = foldReport(report, details.report);
+        run.onEvent({ type: "report", report });
+      }
+    } else if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
       run.onEvent({ type: "text", delta: event.assistantMessageEvent.delta });
     else if (event.type === "turn_end") {
       turns++;
@@ -309,6 +341,7 @@ async function startAmaChild(
   const runOnce = async (prompt: string, origin?: MessageOrigin): Promise<SubagentResult> => {
     const startTurns = turns;
     let error: string | undefined;
+    report = undefined;
     active = true;
     try {
       if (run.signal.aborted) throw new AmaError("aborted", "aborted");
@@ -338,6 +371,7 @@ async function startAmaChild(
     }
     const result = collect(child, error, exhausted, run.signal.aborted);
     if (mode !== undefined) result.context = mode;
+    if (report !== undefined) result.report = report;
     billed = addCache(parent, child.getStats(), billed);
     const file = manager.file();
     if (file !== undefined) result.sessionFile = file;

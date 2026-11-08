@@ -12,6 +12,7 @@ import { AgentCatalog } from "../../agents/catalog.js";
 import type { AgentDefinition } from "../../agents/types.js";
 import { createTaskTool } from "../../tools/task.js";
 import { createTaskCtlTool } from "../../tools/task-ctl.js";
+import { createReportTool } from "../../tools/report.js";
 import type { ToolDefinition } from "../../tools/types.js";
 import type { SubagentEnvironment } from "../subagent-registry.js";
 import { readFileSync } from "node:fs";
@@ -137,6 +138,7 @@ export function subagentHarness(options: SubagentHarnessOptions): Harness {
     tools: [
       createTaskTool() as ToolDefinition,
       createTaskCtlTool() as ToolDefinition,
+      createReportTool() as ToolDefinition, // [#269] task 的伴随工具，与真实装配一致
       stubTool({ name: "read" }) as ToolDefinition,
       stubTool({ name: "write", permission: "write" }) as ToolDefinition,
       stubTool({
