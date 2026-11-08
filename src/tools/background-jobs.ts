@@ -27,7 +27,7 @@ import {
   untrackProcessGroup,
   type ProcessDeps,
 } from "./process-tree.js";
-import { REAL_TIMERS, type TimeoutTimers } from "./timers.js";
+import { REAL_TIMERS, clampTimerMs, type TimeoutTimers } from "./timers.js";
 import { truncateTail, type TruncateOptions, type TruncateResult } from "./truncate.js";
 
 export type JobStatus = "running" | "exited" | "stopped";
@@ -220,7 +220,8 @@ export class BackgroundJobs {
     const entry = this.entries.get(id);
     if (entry === undefined) return { ok: false, reason: "unknown" };
     const { job } = entry;
-    if (job.status !== "running") return { ok: false, reason: "not_running" };
+    // 正在被杀（stop / 到点）的任务不能再续
+    if (job.status !== "running" || entry.stopping) return { ok: false, reason: "not_running" };
     const lifetime = job.lifetime;
     if (lifetime === undefined) return { ok: false, reason: "no_cap" };
     if (lifetime.extended) return { ok: false, reason: "already_extended" };
@@ -287,7 +288,7 @@ export class BackgroundJobs {
       // 到点按 stop 处理，但模型不知道：保留 notified = false，提醒通道会报「寿命上限」
       entry.job.expired = true;
       void this.kill(entry);
-    }, ms);
+    }, clampTimerMs(ms));
   }
 
   private clearLifetime(entry: Entry): void {

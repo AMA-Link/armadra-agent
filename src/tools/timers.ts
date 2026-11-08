@@ -5,6 +5,14 @@
  * 测试注入手动时钟（仓库约定：测试不靠墙钟）。codemode 的沙箱超时另有同形状的注入点（codemode/host-side.ts）。
  */
 
+/** Node 计时器能接受的最大延时（2^31 − 1 ms ≈ 24.8 天）；更大的值会被钳成 1 ms，等于立刻到期。 */
+export const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/** 把延时钳到 `MAX_TIMER_MS` 以内（寿命上限与续命相加可能超过）。 */
+export function clampTimerMs(ms: number): number {
+  return Math.min(Math.max(0, ms), MAX_TIMER_MS);
+}
+
 export interface TimeoutTimers {
   set(fn: () => void, ms: number): unknown;
   clear(handle: unknown): void;

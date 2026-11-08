@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualTimers } from "../../test/helpers/manual-timers.js";
+import { MAX_TIMER_MS } from "./timers.js";
 import { makeTmpDir, makeToolContext } from "../../test/helpers/tool-context.js";
 import { PermissionPipeline } from "../permissions/pipeline.js";
 import { BackgroundJobs, isBackgroundJobQuery, type JobChange } from "./background-jobs.js";
@@ -233,5 +234,43 @@ describe("[#266 / #267] adopt 与寿命上限（Node 子进程，跨平台）", 
     await jobs.stop(job.id);
     expect(jobs.extend(job.id)).toEqual({ ok: false, reason: "not_running" });
     expect(timers.pending()).toEqual([]);
+  });
+
+  it("extend：正在被杀（stop 进行中）的任务答 not_running；续命总量超过计时器能力时钳到 2^31−1", async () => {
+    const timers = manualTimers();
+    const job = jobs.start("node sleep", {
+      cwd: tmp.dir,
+      outputPath: join(tmp.dir, "stopping.log"),
+      spawn: (fd) =>
+        spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], {
+          stdio: ["ignore", fd, fd],
+          detached: process.platform !== "win32",
+        }),
+      maxMs: MAX_TIMER_MS,
+      timers,
+    });
+    expect(timers.delays).toEqual([MAX_TIMER_MS]);
+    expect(jobs.extend(job.id, MAX_TIMER_MS)).toEqual({
+      ok: true,
+      addedMs: MAX_TIMER_MS,
+      totalMs: MAX_TIMER_MS * 2,
+    });
+    expect(timers.delays[1]).toBeLessThanOrEqual(MAX_TIMER_MS);
+    const second = jobs.start("node sleep 2", {
+      cwd: tmp.dir,
+      outputPath: join(tmp.dir, "stopping2.log"),
+      spawn: (fd) =>
+        spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], {
+          stdio: ["ignore", fd, fd],
+          detached: process.platform !== "win32",
+        }),
+      maxMs: 60_000,
+      timers,
+      processDeps: { graceMs: 200 },
+    });
+    const stopping = jobs.stop(second.id); // stopping 同步置位，kill 还在进行
+    expect(jobs.extend(second.id)).toEqual({ ok: false, reason: "not_running" });
+    await stopping;
+    await jobs.stop(job.id);
   });
 });

@@ -176,11 +176,17 @@ export async function jobAction(
       structured: { jobId: id, status: job.status, exit_code: job.exitCode ?? null },
     };
   }
+  let capped = "";
   if (action === "wait") {
-    const waitMs = input.timeoutMs ?? defaultWaitMs;
-    if (!Number.isFinite(waitMs) || waitMs <= 0 || waitMs > maxWaitMs)
+    const wanted = input.timeoutMs ?? defaultWaitMs;
+    if (!Number.isFinite(wanted) || wanted <= 0 || wanted > maxWaitMs)
       return fail(`timeoutMs must be between 1 and ${maxWaitMs}`);
-    await jobs.wait(id, waitMs, ctx.signal);
+    // [#242] 协调者不阻塞：等待封顶（与 task_ctl wait 一致），被封顶时在回复里说明
+    const cap = Math.min(options.waitCapMs ?? maxWaitMs, maxWaitMs);
+    const waitMs = Math.min(wanted, cap);
+    const job = await jobs.wait(id, waitMs, ctx.signal);
+    if (wanted > waitMs && job?.status === "running")
+      capped = ` Waits are capped at ${Math.round(waitMs / 1000)}s here; do not block on it: keep working, you will be told when it exits.`;
   }
   const out = jobs.output(id, { maxBytes: toolOutputBytes(ctx.maxResultChars) });
   if (out === undefined) return fail(`Unknown background job ${id}`);
@@ -192,7 +198,7 @@ export async function jobAction(
       `[Output truncated: showing the last ${out.outputLines} of ${out.totalLines} lines ` +
         `(${formatSize(out.totalBytes)} total). Full output: ${job.outputPath}]`,
     );
-  parts.push(jobStatusLine(job));
+  parts.push(jobStatusLine(job) + capped);
   return {
     content: parts.join("\n\n"),
     isError: job.status === "exited" && job.exitCode !== 0,

@@ -3,7 +3,8 @@
  * 用手动时钟，只等待真实事件（输出、退出），不靠墙钟。
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { manualTimers } from "../../test/helpers/manual-timers.js";
 import { makeTmpDir, makeToolContext } from "../../test/helpers/tool-context.js";
@@ -19,6 +20,7 @@ import {
   type BackgroundStart,
   type BashStructured,
 } from "./bash.js";
+import { MAX_TIMER_MS } from "./timers.js";
 import type { ToolDefinition } from "./types.js";
 
 const posix = process.platform !== "win32";
@@ -146,6 +148,51 @@ describe.runIf(posix)("前台 bash 转后台（真子进程）", () => {
     expect(job).toMatchObject({ status: "exited", exitCode: 4 });
     expect(readFileSync(job?.outputPath as string, "utf8")).toBe("before\nafter\n");
     expect(jobs.takeExited().map((j) => j.id)).toEqual(["bg1"]);
+  });
+
+  it("落盘失败（输出目录不可建）：命令留在前台、记一条 warn、照常结束，不登记任务，不抛未捕获异常", async () => {
+    const timers = manualTimers();
+    const tool = createBashTool({ jobs: () => jobs, autoBackgroundAfterMs: 1000, timers });
+    writeFileSync(join(tmp.dir, "blocker"), ""); // 普通文件挡住 outputs 的父目录 → mkdirSync ENOTDIR
+    const ctx = makeToolContext(tmp.dir, { outputDir: join(tmp.dir, "blocker", "outputs") });
+    const gate = `${tmp.dir}/go`;
+    const running = tool.execute(
+      { command: `echo started; while [ ! -e ${gate} ]; do sleep 0.05; done; echo end` },
+      ctx,
+    );
+    await waitUntil(() => ctx.updates.some((u) => u.includes("started")), 5000);
+    timers.fire(0);
+    expect(ctx.logs.some((l) => l.includes("could not move the command to the background"))).toBe(
+      true,
+    );
+    expect(jobs.list()).toEqual([]);
+    writeFileSync(gate, "");
+    const result = await running;
+    expect(result.isError).toBe(false);
+    expect(result.content).toBe("started\nend\n");
+    expect((result.structured as BashStructured).exit_code).toBe(0);
+  });
+
+  it("[#242] waitCapMs：wait 的等待封顶（协调者 5 s），被封顶时说明不要阻塞；没封顶的照常", async () => {
+    const tool = createBashTool({ jobs: () => jobs, waitCapMs: 1000 });
+    const ctx = makeToolContext(tmp.dir, { outputDir: tmp.dir });
+    await tool.execute({ command: "sleep 30", background: true }, ctx);
+    const started = Date.now();
+    const waited = await tool.execute({ job: "bg1", action: "wait", timeoutMs: 60_000 }, ctx);
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(String(waited.content)).toContain("[job bg1 still running;");
+    expect(String(waited.content)).toContain("Waits are capped at 1s here; do not block on it");
+    const short = await tool.execute({ job: "bg1", action: "wait", timeoutMs: 50 }, ctx);
+    expect(String(short.content)).not.toContain("Waits are capped");
+  });
+
+  it("寿命上限超过计时器能力时钳到 2^31−1 ms，不会立刻到期", async () => {
+    const timers = manualTimers();
+    const tool = createBashTool({ jobs: () => jobs, backgroundMaxMs: MAX_TIMER_MS * 2, timers });
+    const ctx = makeToolContext(tmp.dir, { outputDir: tmp.dir });
+    await tool.execute({ command: "sleep 30", background: true }, ctx);
+    expect(timers.pending()).toEqual([{ ms: MAX_TIMER_MS }]);
+    expect(jobs.get("bg1")?.status).toBe("running");
   });
 
   it("超时比阈值先到：照旧杀掉并报超时，不转后台", async () => {

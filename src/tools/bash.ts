@@ -41,7 +41,7 @@ import {
   safeFileName,
   toolOutputBytes,
 } from "./truncate.js";
-import type { BackgroundJobs } from "./background-jobs.js";
+import type { BackgroundJobs, Job } from "./background-jobs.js";
 import {
   backgroundMaxMs,
   fail,
@@ -127,6 +127,8 @@ export interface BashToolOptions {
   backgroundMaxMs?: number;
   /** [#266 / #267] 阈值与寿命计时器（测试注入手动时钟）；缺省真实 setTimeout。 */
   timers?: TimeoutTimers;
+  /** [#242] `{job, action:"wait"}` 的等待上限（`coordinator` 预设下组装根给 5 s）；缺省 `MAX_BASH_TIMEOUT_MS`。 */
+  waitCapMs?: number;
   /** 测试注入：固定 shell 选择。 */
   shell?(): ShellConfig;
   /** 测试注入：杀树参数（宽限时间等）。 */
@@ -342,6 +344,27 @@ export async function executeBash(
     afterMs > 0
       ? timers.set(() => {
           if (moved || hasExited(child) || timedOut || aborted) return;
+          // 先落盘、登记，成功后才解绑前台的超时与 abort：persist / adopt 抛错（磁盘满、目录不可写）时命令
+          // 留在前台照常受超时约束，不能让异常逃出计时器回调（会成为 uncaughtException）
+          let job: Job;
+          try {
+            const outputPath = acc.persist();
+            job = jobsOf(ctx, options).adopt(command, {
+              cwd,
+              outputPath,
+              child,
+              startedAt: started,
+              maxMs: backgroundMaxMs(options),
+              ...(options.processDeps === undefined ? {} : { processDeps: options.processDeps }),
+              ...(options.timers === undefined ? {} : { timers: options.timers }),
+            });
+          } catch (err) {
+            ctx.log(
+              "warn",
+              `bash: could not move the command to the background, keeping it in the foreground: ${(err as Error).message}`,
+            );
+            return;
+          }
           moved = true;
           clearTimeout(timer);
           ctx.signal.removeEventListener("abort", onAbort);
@@ -349,16 +372,6 @@ export async function executeBash(
             clearTimeout(pendingUpdate);
             pendingUpdate = undefined;
           }
-          const outputPath = acc.persist();
-          const job = jobsOf(ctx, options).adopt(command, {
-            cwd,
-            outputPath,
-            child,
-            startedAt: started,
-            maxMs: backgroundMaxMs(options),
-            ...(options.processDeps === undefined ? {} : { processDeps: options.processDeps }),
-            ...(options.timers === undefined ? {} : { timers: options.timers }),
-          });
           resolveMoved?.(
             movedResult(job, acc.tail(DEFAULT_MAX_LINES), afterMs, sandbox !== undefined, command),
           );
