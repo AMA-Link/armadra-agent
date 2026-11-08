@@ -84,6 +84,26 @@ export interface ApprovalRequest {
    * 调用带外层调用的 `parentToolCallId`。由子会话包装的 broker 填入，缺省视为主会话。
    */
   context?: ApprovalRequestContext;
+  /**
+   * [#271] 切换权限模式时重新判定的入口：ama 自己的工具调用由 `gateToolCall` 填；外部 Agent 的权限请求
+   * 与首次运行确认没有（永不代答）。子会话浅拷贝请求时保留同一引用，链把结论写回 `outcome`。
+   */
+  reevaluation?: ApprovalReevaluation;
+}
+
+/** [#271] 待审批请求按当前模式的重判。 */
+export interface ApprovalReevaluation {
+  /** 以管线当前模式重判同一调用（Hook 决策沿用、不调分类器）。 */
+  check(): PermissionVerdict;
+  /** 被模式切换自动作答后由审批链写入（`permission_resolved.reason: "mode_changed"`）。 */
+  outcome?: ModeReevaluationOutcome;
+}
+
+export interface ModeReevaluationOutcome {
+  mode: PermissionMode;
+  decision: "allow" | "deny";
+  /** 拒绝时管线给的说明（给模型的文本里引用）。 */
+  message?: string;
 }
 
 export interface ApprovalRequestContext {
