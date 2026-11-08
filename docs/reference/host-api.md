@@ -1,6 +1,6 @@
 # 宿主适配器 API（@armadra/agent/host）
 
-宿主适配器是一个本地 JS 模块，ama 启动时加载它并交给它一个 `HostApi`：它可以注册工具、追加系统提示、观察事件、回答审批、注入用户消息、在界面上显示通知与状态。Armadra 画布就是以宿主适配器的形式接入的（画布工具 `canvas_*` / `context_*` 都由适配器注册）。类型定义在 `src/host/types.ts`，从 `@armadra/agent/host` 导出，`HOST_API_VERSION = 1`、`HOST_API_MINOR = 1`（host-api 1.1，见「版本」）。设计依据见 [design.md](../design/design.md) §6.2、§6.3、§11.1 第 13 步。
+宿主适配器是一个本地 JS 模块，ama 启动时加载它并交给它一个 `HostApi`：它可以注册工具、追加系统提示、观察事件、回答审批、注入用户消息、在界面上显示通知与状态。Armadra 画布就是以宿主适配器的形式接入的（画布工具 `canvas_*` / `context_*` 都由适配器注册）。类型定义在 `src/host/types.ts`，从 `@armadra/agent/host` 导出，`HOST_API_VERSION = 1`、`HOST_API_MINOR = 2`（host-api 1.2，见「版本」）。设计依据见 [design.md](../design/design.md) §6.2、§6.3、§11.1 第 13 步。
 
 ## 模块形状
 
@@ -55,31 +55,35 @@ export function create(api) {
 | 小版本 | ama 起始版本 | 新增                                                              |
 | ------ | ------------ | ----------------------------------------------------------------- |
 | 0      | —            | 现有全部成员（`cache?`、`runners?.provide` 等可选面同样要先判断） |
-| 1      | 未发布       | `minor`、`runners?.onDone`（见「runner 完成事件」）               |
+| 1      | 0.11.0       | `minor`、`runners?.onDone`（见「runner 完成事件」）               |
+| 2      | 未发布       | `resources?.register` / `resources?.list`（见「宿主资源」）       |
+| 3      | 未发布       | `session_start.uncleanEnd`（`reason: "resume"` 时，#268）         |
 
 ## HostApi
 
-| 成员                                            | 说明                                                                                                                                              |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`                                       | `HOST_API_VERSION`                                                                                                                                |
-| `agent`                                         | `{ name: "ama", version }`                                                                                                                        |
-| `env`                                           | 启动时环境变量的冻结副本                                                                                                                          |
-| `mode`                                          | `interactive` / `line` / `print` / `rpc`                                                                                                          |
-| `session.id()` / `file()` / `cwd()` / `model()` | 当前会话（换会话后跟随新会话）；`file()` 在首次请求落盘前为 `undefined`                                                                           |
-| `tools.register(tool)`                          | 注册工具（形状见下）；名字须匹配 `^[a-z][a-z0-9_]{1,63}$`，同名已存在抛 `tool_exists`。建议加前缀（`canvas_*`）                                   |
-| `tools.disable(name)`                           | 隐藏内置工具（如 Armadra 禁用 `task`），系统提示的工具节随之不再列它                                                                              |
-| `tools.list()`                                  | 当前全部工具名                                                                                                                                    |
-| `instructions.add(source)`                      | 追加到系统提示最后的 `host` 节；`{ kind: "file", path }` 或 `{ kind: "text", text, name? }`                                                       |
-| `events.on(name, handler)`                      | 观察事件（下表），返回注销函数                                                                                                                    |
-| `approvals.setBroker(broker)`                   | 设置审批回答者（见「审批」）                                                                                                                      |
-| `messages.sendUser(text, origin?)`              | 以 user 消息注入：空闲时开始一次运行（`"started"`），运行中按 steer 入队（`"queued"`）；`origin` 缺省 `"host"`，落盘在消息上，界面标 `↳ host`     |
-| `ui.notify(message, level?)`                    | 交互 / line 模式进消息区；rpc 模式变成 `notification` 事件（stderr 另有一份）；print 模式写 stderr                                                |
-| `ui.setStatus(key, text?)`                      | 状态栏的宿主项；`text` 为空或缺省则移除该键                                                                                                       |
-| `log(level, message, detail?)`                  | 日志；`warn` / `error` 写 stderr                                                                                                                  |
-| `cache?.onWarmingDecision(handler)`             | 缓存保温的否决钩子（见「缓存保温」）；可选面，旧版本运行时没有它，用前判断 `api.cache !== undefined`                                              |
-| `runners?.provide(runner)`                      | 注入子 Agent runner：`id` 即 `task(agent=<id>)` 的名字，`description` 进 task 工具描述；有宿主时 ama 不自起外部 CLI，只认这里注入的；返回注销函数 |
-| `runners?.onDone(handler)`                      | 宿主 runner 每轮结束时回调（见「runner 完成事件」），返回注销函数；host-api 1.1 起，用前判断 `typeof api.runners?.onDone === "function"`          |
-| `minor?`                                        | `HOST_API_MINOR`（见「版本」）；旧运行时缺省                                                                                                      |
+| 成员                                            | 说明                                                                                                                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `version`                                       | `HOST_API_VERSION`                                                                                                                                           |
+| `agent`                                         | `{ name: "ama", version }`                                                                                                                                   |
+| `env`                                           | 启动时环境变量的冻结副本                                                                                                                                     |
+| `mode`                                          | `interactive` / `line` / `print` / `rpc`                                                                                                                     |
+| `session.id()` / `file()` / `cwd()` / `model()` | 当前会话（换会话后跟随新会话）；`file()` 在首次请求落盘前为 `undefined`                                                                                      |
+| `tools.register(tool)`                          | 注册工具（形状见下）；名字须匹配 `^[a-z][a-z0-9_]{1,63}$`，同名已存在抛 `tool_exists`。建议加前缀（`canvas_*`）                                              |
+| `tools.disable(name)`                           | 隐藏内置工具（如 Armadra 禁用 `task`），系统提示的工具节随之不再列它                                                                                         |
+| `tools.list()`                                  | 当前全部工具名                                                                                                                                               |
+| `instructions.add(source)`                      | 追加到系统提示最后的 `host` 节；`{ kind: "file", path }` 或 `{ kind: "text", text, name? }`                                                                  |
+| `events.on(name, handler)`                      | 观察事件（下表），返回注销函数                                                                                                                               |
+| `approvals.setBroker(broker)`                   | 设置审批回答者（见「审批」）                                                                                                                                 |
+| `messages.sendUser(text, origin?)`              | 以 user 消息注入：空闲时开始一次运行（`"started"`），运行中按 steer 入队（`"queued"`）；`origin` 缺省 `"host"`，落盘在消息上，界面标 `↳ host`                |
+| `ui.notify(message, level?)`                    | 交互 / line 模式进消息区；rpc 模式变成 `notification` 事件（stderr 另有一份）；print 模式写 stderr                                                           |
+| `ui.setStatus(key, text?)`                      | 状态栏的宿主项；`text` 为空或缺省则移除该键                                                                                                                  |
+| `log(level, message, detail?)`                  | 日志；`warn` / `error` 写 stderr                                                                                                                             |
+| `cache?.onWarmingDecision(handler)`             | 缓存保温的否决钩子（见「缓存保温」）；可选面，旧版本运行时没有它，用前判断 `api.cache !== undefined`                                                         |
+| `runners?.provide(runner)`                      | 注入子 Agent runner：`id` 即 `task(agent=<id>)` 的名字，`description` 进 task 工具描述；有宿主时 ama 不自起外部 CLI，只认这里注入的；返回注销函数            |
+| `runners?.onDone(handler)`                      | 宿主 runner 每轮结束时回调（见「runner 完成事件」），返回注销函数；host-api 1.1 起，用前判断 `typeof api.runners?.onDone === "function"`                     |
+| `resources?.register(resource)`                 | 注册一个只读资源命名空间 `scheme://…`，内置 `read` 读它（见「宿主资源」）；只能在 `create()` 里调用；host-api 1.2 起，用前判断 `api.resources !== undefined` |
+| `resources?.list()`                             | 已注册的 scheme，按名排序                                                                                                                                    |
+| `minor?`                                        | `HOST_API_MINOR`（见「版本」）；旧运行时缺省                                                                                                                 |
 
 `create()` 期间会话还没组装完：`session.*` 返回启动时确定的值，`sendUser` 会以 `busy` 拒绝——要在启动时发消息，等 `session_start` 事件之后再调用。
 
@@ -119,24 +123,24 @@ interface ToolResult {
 
 `events.on` 的处理器只观察：抛错只记日志，不影响运行；处理器依次调用并等待，`session_shutdown` 被 await（退出前可以做清理）。
 
-| 事件                                                              | 载荷                                                                                              | 来源                                                                                         |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `session_start`                                                   | `sessionId`、`sessionFile?`、`cwd`、`reason: startup \| resume \| new \| fork`                    | 启动与换会话                                                                                 |
-| `before_agent_start`                                              | `prompt`                                                                                          | 用户提示展开后、运行开始前                                                                   |
-| `agent_start` / `turn_start` / `turn_end` / `agent_before_settle` | `{}`                                                                                              | 运行与回合                                                                                   |
-| `agent_end`                                                       | `stopReason`、`willRetry`                                                                         |                                                                                              |
-| `agent_settled`                                                   | `warning?`                                                                                        | 运行彻底结束                                                                                 |
-| `tool_call`                                                       | `toolCallId`、`toolName`、`input`                                                                 | 工具开始执行（已通过权限）                                                                   |
-| `tool_result`                                                     | `toolCallId`、`toolName`、`isError`                                                               | 工具执行结束                                                                                 |
-| `tool_approval_requested`                                         | `requestId`、`toolName`                                                                           | 需要审批                                                                                     |
-| `tool_approval_resolved`                                          | `requestId`、`decision`                                                                           | 审批结论                                                                                     |
-| `session_compact`                                                 | `tokensBefore`                                                                                    | 压缩成功                                                                                     |
-| `model_select`                                                    | `model: { provider, id }`                                                                         | 切换模型                                                                                     |
-| `hook_executed`                                                   | `event`、`command`、`exitCode`、`durationMs`                                                      | 每条命令式 Hook 结束                                                                         |
-| `cache_miss`                                                      | `missedTokens`、`missedCost?`、`reason`、`detail?`、`idleMs`                                      | 一次缓存未命中（含低于界面门槛的）                                                           |
-| `context_pressure`                                                | `percent`、`threshold: 70 \| 90`、`remainingTokens?`、`estimatedTurnsLeft?`                       | 上下文占用跨过 70% / 90%                                                                     |
-| `quota_update`                                                    | `provider`、`planType?`、`primary?`、`secondary?`（`{ usedPercent, resetsAt?, windowMinutes? }`） | ChatGPT 订阅配额更新（[W6-O]；配额耗尽另有错误码 `quota_exceeded`，登录失效 `auth_expired`） |
-| `session_shutdown`                                                | `{}`                                                                                              | 退出前（之后跑 SessionEnd Hook、`dispose`）                                                  |
+| 事件                                                              | 载荷                                                                                                                                                                                                                                                                                             | 来源                                                                                         |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `session_start`                                                   | `sessionId`、`sessionFile?`、`cwd`、`reason: startup \| resume \| new \| fork`、`uncleanEnd?`（host-api 1.3：只在 `reason: "resume"` 时出现，上一轮没有正常结束——悬空的工具调用、非人为的 `aborted`、回合没结束；判定只看会话文件，见 [session-format.md](session-format.md)「异常结束的判定」） | 启动与换会话                                                                                 |
+| `before_agent_start`                                              | `prompt`                                                                                                                                                                                                                                                                                         | 用户提示展开后、运行开始前                                                                   |
+| `agent_start` / `turn_start` / `turn_end` / `agent_before_settle` | `{}`                                                                                                                                                                                                                                                                                             | 运行与回合                                                                                   |
+| `agent_end`                                                       | `stopReason`、`willRetry`                                                                                                                                                                                                                                                                        |                                                                                              |
+| `agent_settled`                                                   | `warning?`                                                                                                                                                                                                                                                                                       | 运行彻底结束                                                                                 |
+| `tool_call`                                                       | `toolCallId`、`toolName`、`input`                                                                                                                                                                                                                                                                | 工具开始执行（已通过权限）                                                                   |
+| `tool_result`                                                     | `toolCallId`、`toolName`、`isError`                                                                                                                                                                                                                                                              | 工具执行结束                                                                                 |
+| `tool_approval_requested`                                         | `requestId`、`toolName`                                                                                                                                                                                                                                                                          | 需要审批                                                                                     |
+| `tool_approval_resolved`                                          | `requestId`、`decision`                                                                                                                                                                                                                                                                          | 审批结论                                                                                     |
+| `session_compact`                                                 | `tokensBefore`                                                                                                                                                                                                                                                                                   | 压缩成功                                                                                     |
+| `model_select`                                                    | `model: { provider, id }`                                                                                                                                                                                                                                                                        | 切换模型                                                                                     |
+| `hook_executed`                                                   | `event`、`command`、`exitCode`、`durationMs`                                                                                                                                                                                                                                                     | 每条命令式 Hook 结束                                                                         |
+| `cache_miss`                                                      | `missedTokens`、`missedCost?`、`reason`、`detail?`、`idleMs`                                                                                                                                                                                                                                     | 一次缓存未命中（含低于界面门槛的）                                                           |
+| `context_pressure`                                                | `percent`、`threshold: 70 \| 90`、`remainingTokens?`、`estimatedTurnsLeft?`                                                                                                                                                                                                                      | 上下文占用跨过 70% / 90%                                                                     |
+| `quota_update`                                                    | `provider`、`planType?`、`primary?`、`secondary?`（`{ usedPercent, resetsAt?, windowMinutes? }`）                                                                                                                                                                                                | ChatGPT 订阅配额更新（[W6-O]；配额耗尽另有错误码 `quota_exceeded`，登录失效 `auth_expired`） |
+| `session_shutdown`                                                | `{}`                                                                                                                                                                                                                                                                                             | 退出前（之后跑 SessionEnd Hook、`dispose`）                                                  |
 
 需要逐 token 的流式内容或完整事件流时用 RPC 或 SDK 的 `subscribe`，宿主事件是精简过的。
 
@@ -193,6 +197,29 @@ interface RunnerDoneEvent {
 - 同一轮里 ama 可能多次调用 `wait()`（任务入口与注册表各一次），事件只发一次；该轮落定后、没有新的 `send` / `interrupt` 时再调用 `wait()` 不再发。运行中的 `interrupt` 由当前这一轮跟到结束，不另起一轮。
 - 只覆盖宿主注入的 runner；ama 自己的子会话（`general` / `explore` / `plan`）仍看 `subagent_start` / `subagent_end` 事件。
 - 用途：宿主不必轮询「协调者是否还在等这个任务」——收到事件即知道 ama 这一侧的任务结束了。
+
+## 宿主资源
+
+`api.resources.register({ scheme, describe, read })`（host-api 1.2）：宿主把自己的数据（工作项、事件、来源原文……）暴露成一个只读命名空间，模型用内置 `read` 以 `scheme://path` 读取——不用为每种数据注册一个工具，工具表与前缀不随数据种类增长，分页、截断、续读都由 ama 统一处理。
+
+```ts
+api.resources.register({
+  scheme: "demo", // ^[a-z][a-z0-9+.-]{1,31}$；http / https / file / data 等保留字不可用
+  describe: "Work items: demo://items, demo://items/<id>", // 单行 ≤ 120 字符，进系统提示
+  read(path, { offset, limit, signal }) {
+    // path 是 "://" 之后的原文；offset 是 1 起的首行，limit 是最多行数（可缺省）
+    if (path !== "items") return undefined; // 没有这个路径
+    return pageResourceText(allItemsText, { offset, limit }); // { text, next?, total? }
+  },
+});
+```
+
+- **调用口径**：`read` 收到 `scheme://path` 且该 scheme 已注册时，先按 `read` 的规则校验 `offset` / `limit`（整数 ≥ 1），再调宿主 `read(path, { offset, limit, signal })`。返回 `{ text, next?, total? }`：`text` 是从第 `offset` 行起的文本（只收文本，含 NUL 按二进制拒绝）；`next` 是还有更多时下一页的行号；`total` 是总行数（已知时）。返回 `undefined` 表示没有这个路径。`@armadra/agent/host` 导出 `pageResourceText(text, { offset, limit })` 做这个切分。
+- **结果形状**：首行固定 `Content read from demo://items (untrusted):`（与 `web_fetch` 同一套标注——宿主数据按资料对待，不是指令），随后 `cat -n` 编号的行；超过 2000 行或会话结果上限时头截断，并提示 `Use offset=N to continue`。宿主多给的行按 `limit` 丢弃。
+- **权限**：这是 `read` 工具的一次调用，权限类 `read`——所有模式放行，从不询问，auto 规则层不对它做机密路径检查。因此宿主的 `read` **必须没有副作用**，并且可能被并行、子 Agent 与 codemode 脚本（`tools.read({ path: "demo://…" })`）调用。权限规则 `read(demo://**)` 对规范化后的引用（scheme 小写）做 glob，规则里的 scheme 也不分大小写，可以用 deny 规则挡住某个 scheme；只有**已注册**的 scheme 才按资源引用处理，其它 `xx://` 一律按文件路径走机密路径检查与文件规则。Hook matcher `read(demo://*)` 对 `input.path` 原文匹配。
+- **出错**：宿主抛错、超过 30 秒未返回、返回形状不对、未注册的 scheme（错误里列出已注册的；`http(s)://` 另提示用 `web_fetch`）都以 `isError` 的工具结果回给模型，不影响会话。`signal` 在会话中断或超时时 abort。
+- **时机与稳定性**：只能在 `create()` 里注册，宿主激活后列表冻结（再注册抛 `invalid_arguments`）；最多 12 个 scheme。系统提示工具节多一行 `Host resources (pass "scheme://path" to read; …): demo:// <describe>; …`，按 scheme 排序，会话开始时固定；没有注册资源的运行零字节变化。
+- 没有注册任何资源时，`read` 不解析 `scheme://`，仍按文件路径处理。
 
 ## 退出
 

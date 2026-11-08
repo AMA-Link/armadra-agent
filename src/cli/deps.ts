@@ -23,6 +23,7 @@ import type { ApprovalBroker, HostAdapterHandle, InstructionSource } from "../ho
 import type { PermissionMode, PermissionPipelineApi } from "../permissions/types.js";
 import type { SessionEntry, SessionListItem, SessionManagerApi } from "../session/types.js";
 import type { ToolRegistryApi } from "../tools/types.js";
+import type { HostResourceLookup } from "../tools/resource-ref.js";
 import type {
   LoadedResources,
   ResolvedPaths,
@@ -99,6 +100,8 @@ export interface SessionAssembly {
     instructions: readonly InstructionSource[];
     /** [W3-C1b] 宿主 `cache.onWarmingDecision` 的当前处理器（每次保温前现取）。 */
     warmingDecider?(): WarmingDecisionHandler | undefined;
+    /** [#270] 宿主注册的资源（系统提示 tools 节的资源行）；会话开始时已冻结。 */
+    resources?: readonly { scheme: string; describe: string }[];
   };
   /** `Runtime.approvals.setUiBroker` 设置的 UI broker（链尾）；每次审批现取，未设置为 undefined。 */
   uiBroker(): ApprovalBroker | undefined;
@@ -198,6 +201,8 @@ export interface RuntimeDeps {
       memory?: MemoryRuntime | undefined;
       /** [#266] 嵌入宿主（有 profile）：bash 自动转后台缺省开启。 */
       embedded?: boolean;
+      /** [#270] 宿主资源注册表（read 工具据此认 `scheme://path`）；SDK 不给。 */
+      resources?: HostResourceLookup | undefined;
     }): ToolRegistryApi;
   };
   /** B3：权限管线。 */
@@ -212,6 +217,8 @@ export interface RuntimeDeps {
       builtinDeny?: boolean | string[];
       /** config `permission.autoSafeCommands`（auto 模式安全名单追加）。 */
       autoSafeCommands?: string[];
+      /** [#270] 宿主资源注册表（已冻结）：只有已注册的 scheme 才按资源引用匹配规则。 */
+      resources?: HostResourceLookup | undefined;
     }): PermissionPipelineApi;
   };
   /** B3：skills / prompts 发现；缺省为空。 */

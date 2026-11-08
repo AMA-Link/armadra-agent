@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeToolContext } from "../../test/helpers/tool-context.js";
 import type { ToolResultMessage } from "../ai/types.js";
@@ -20,6 +23,7 @@ import type { TaskInfo } from "./types.js";
 import {
   COORDINATOR_WAIT_MAX_MS,
   DEFAULT_WAIT_MS,
+  INTERRUPTED_TASK_NOTE,
   MAX_WAIT_MS,
   bindTaskCtlWaitCap,
   createTaskCtlTool,
@@ -117,6 +121,56 @@ describe("task_ctl", () => {
     expect(await tool.execute({ action: "list" }, top)).toEqual({ content: "No sub-agent tasks." });
     expect((await tool.execute({ action: "wait" }, top)).content).toBe("wait needs taskId");
     expect(tool.annotations?.pollable).toBe(true);
+  });
+});
+
+describe("[#268] resume 后被打断的任务", () => {
+  it("list / output / wait 对 interrupted 任务都附同一句说明", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ama-task-ctl-"));
+    try {
+      const first = subagentHarness({ dir, script: () => ({ text: "noop" }) });
+      await first.session.prompt("warm");
+      await first.session.dispose();
+      const file = first.manager.file() as string;
+      const crashed = subagentHarness({ file, script: () => ({ text: "noop" }) });
+      crashed.manager.append({
+        type: "custom",
+        customType: "ama.task",
+        data: {
+          taskId: "t1",
+          agent: "explore",
+          runner: "ama",
+          description: "dig",
+          background: true,
+          status: "running",
+          startedAt: 1,
+        },
+      });
+      await crashed.session.dispose();
+      const parent: Record<string, ScriptStep> = {
+        list: ctl({ action: "list" }),
+        output: ctl({ action: "output", taskId: "t1" }),
+        wait: ctl({ action: "wait", taskId: "t1", timeoutMs: 10 }),
+      };
+      const h = subagentHarness({
+        file,
+        script: (call) =>
+          lastIsToolResult(call) ? { text: "ok" } : (parent[lastUser(call)] ?? { text: "?" }),
+      });
+      for (const step of ["list", "output", "wait"]) await say(h, step);
+      const contents = results(h).map((r) => String(r.content));
+      expect(contents[0]).toMatch(
+        /^t1 · explore · interrupted · \d+s · background — dig \(it was interrupted/,
+      );
+      expect(contents[0]).toContain(INTERRUPTED_TASK_NOTE);
+      expect(contents[1]).toBe(
+        `Task t1 was interrupted (${INTERRUPTED_TASK_NOTE}); output so far:\n(no output yet)`,
+      );
+      expect(contents[2]).toBe(`Task t1 was interrupted (${INTERRUPTED_TASK_NOTE}).`);
+      await h.session.dispose();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

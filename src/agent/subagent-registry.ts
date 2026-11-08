@@ -98,7 +98,6 @@ export interface SubagentEnvironment {
   autoBackgroundAfterMs?: number;
   /** [#267] 后台任务寿命上限（`subagents.backgroundMaxMs`，组装根给缺省 1 小时）；0 / 不设不限。 */
   backgroundMaxMs?: number;
-  /** [#267] 寿命计时器（测试注入手动时钟）。 */
   timers?: TimeoutTimers;
 }
 

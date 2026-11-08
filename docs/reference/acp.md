@@ -79,7 +79,7 @@ diff 的改前 / 改后全文只随实时事件走，不写进会话文件：任
 
 ### 审批
 
-ama 需要询问的调用经 `session/request_permission` 交给客户端，三个选项：`allow_once`（允许）、`allow_always`（本会话允许）、`reject_once`（拒绝）。`toolCall.toolCallId` 关联到先前 `tool_call` 的 id——codemode 内层调用也是，指向那条内层 `tool_call`，不是外层 `codemode`。询问期间该调用的状态回到 `pending`，允许后再 `in_progress`（所以有审批的调用依次是 `pending → in_progress → pending → in_progress → completed`）；拒绝时直接 `failed`。客户端回 `cancelled`、连接断开或回合被中断时，按无人作答处理（拒绝）。ama 这边不再需要答复时（回合被 `session/cancel` / `$/cancel_request` 中断、审批 10 分钟超时），以 `$/cancel_request { requestId }` 撤回挂起的 `session/request_permission`，客户端可以关掉对话框。auto 模式下 ama 自己的分类器照常工作——这只影响 ama 自己的工具；ama 驱动的外部 Agent 发来的请求只交给人（见 [agents.md](../guides/agents.md)）。
+ama 需要询问的调用经 `session/request_permission` 交给客户端，三个选项：`allow_once`（允许）、`allow_always`（本会话允许）、`reject_once`（拒绝）。`toolCall.toolCallId` 关联到先前 `tool_call` 的 id——codemode 内层调用也是，指向那条内层 `tool_call`，不是外层 `codemode`。询问期间该调用的状态回到 `pending`，允许后再 `in_progress`（所以有审批的调用依次是 `pending → in_progress → pending → in_progress → completed`）；拒绝时直接 `failed`。客户端回 `cancelled`、连接断开或回合被中断时，按无人作答处理（拒绝）。ama 这边不再需要答复时（回合被 `session/cancel` / `$/cancel_request` 中断、审批 10 分钟超时、`session/set_mode` 切到的新模式已经替这条调用做了决定——放行则随后 `in_progress`，拒绝则 `failed`，见 [permissions.md](../guides/permissions.md)「切换模式时的待审批」），以 `$/cancel_request { requestId }` 撤回挂起的 `session/request_permission`，客户端可以关掉对话框。auto 模式下 ama 自己的分类器照常工作——这只影响 ama 自己的工具；ama 驱动的外部 Agent 发来的请求只交给人（见 [agents.md](../guides/agents.md)）。
 
 ### 无模型时
 

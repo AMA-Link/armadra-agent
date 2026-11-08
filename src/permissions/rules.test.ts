@@ -7,6 +7,7 @@ import {
   findAllowRule,
   findDenyRule,
   hasCommandSubstitution,
+  inputPath,
   parseRule,
   pathMatches,
   resolvePermissionLayers,
@@ -168,5 +169,60 @@ describe("来源合并：项目级只能收紧", () => {
     expect(partial.rules.map((r) => r.raw)).not.toContain("read(**/.ssh/**)");
     const bad = resolvePermissionLayers([{ source: "user", deny: ["bash("] }]);
     expect(bad.warnings[0]).toMatch(/Invalid permission rule/);
+  });
+});
+
+describe("[#270] 宿主资源引用的规则匹配", () => {
+  const read = (path: string) => ({ path });
+  /** 只注册 demo 的查找。 */
+  const demo = { get: (scheme: string) => (scheme === "demo" ? { scheme } : undefined) };
+
+  it("pathMatches：模式对规范引用做 glob（** 跨 /，* 不跨），模式里的 scheme 不分大小写", () => {
+    expect(pathMatches("demo://**", "demo://items/1", cwd)).toBe(true);
+    expect(pathMatches("DEMO://**", "demo://items/1", cwd)).toBe(true);
+    expect(pathMatches("demo://items/*", "demo://items/1", cwd)).toBe(true);
+    expect(pathMatches("demo://items/*", "demo://items/a/b", cwd)).toBe(false);
+    expect(pathMatches("notes://**", "demo://items", cwd)).toBe(false);
+    expect(pathMatches("**", "demo://items", cwd)).toBe(true);
+  });
+
+  it("inputPath：已注册的引用规范成小写 scheme://path；未注册或没有注册表时按 cwd 下的文件路径", () => {
+    expect(inputPath("read", read("DEMO://Items/1"), cwd, demo)).toBe("demo://Items/1");
+    expect(inputPath("read", read("demo://items"), cwd)).toBe(resolve(cwd, "demo:/items"));
+    expect(inputPath("read", read("other://items"), cwd, demo)).toBe(resolve(cwd, "other:/items"));
+  });
+
+  it("deny read(demo://**) 命中资源读取（含大小写混写的 DEMO://），不命中同名真实文件；allow 同理", () => {
+    const deny = [parseRule("read(demo://**)", "deny", "user")];
+    expect(findDenyRule(deny, "read", read("demo://items"), cwd, demo)?.raw).toBe(
+      "read(demo://**)",
+    );
+    expect(findDenyRule(deny, "read", read("DEMO://a"), cwd, demo)?.raw).toBe("read(demo://**)");
+    expect(findDenyRule(deny, "read", read("Demo://a/b"), cwd, demo)?.raw).toBe("read(demo://**)");
+    expect(findDenyRule(deny, "read", read("demo/items"), cwd, demo)).toBeUndefined();
+    const allow = [parseRule("read(demo://items/*)", "allow", "user")];
+    expect(findAllowRule(allow, "read", read("demo://items/7"), cwd, demo)?.raw).toBe(
+      "read(demo://items/*)",
+    );
+    expect(findAllowRule(allow, "read", read("DEMO://items/7"), cwd, demo)?.raw).toBe(
+      "read(demo://items/*)",
+    );
+    expect(findAllowRule(allow, "read", read("demo://events"), cwd, demo)).toBeUndefined();
+  });
+
+  it("未注册的 scheme 一律按文件路径：资源规则不命中，文件 deny 规则照常命中", () => {
+    const builtin = BUILTIN_DENY_RULES.map((r) => parseRule(r, "deny", "builtin"));
+    const resourceDeny = [parseRule("read(ab://**)", "deny", "user")];
+    // cwd 下 `ab:` 目录里的 .ssh/id_rsa：按文件匹配，内置 .ssh 规则挡住
+    expect(findDenyRule(builtin, "read", read("ab://.ssh/id_rsa"), cwd, demo)?.raw).toBe(
+      "read(**/.ssh/**)",
+    );
+    expect(findDenyRule(builtin, "read", read("ab://.ssh/id_rsa"), cwd)?.raw).toBe(
+      "read(**/.ssh/**)",
+    );
+    expect(findDenyRule(resourceDeny, "read", read("ab://x"), cwd, demo)).toBeUndefined();
+    // 已注册的引用：内置 .ssh 规则只会多拒不会多放
+    expect(findDenyRule(builtin, "read", read("demo://home/.ssh/id_rsa"), cwd, demo)).toBeDefined();
+    expect(findDenyRule(builtin, "read", read("demo://items"), cwd, demo)).toBeUndefined();
   });
 });

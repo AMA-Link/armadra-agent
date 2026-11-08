@@ -146,3 +146,72 @@ describe("Ctrl+B 不再进栏", () => {
     expect(keys.actionsFor(CTRL_B)).toEqual(["tui.editor.cursorLeft", "app.tasks.background"]);
   });
 });
+
+/** [#271] 审批对话框打开时 Shift+Tab 仍切模式；Tab 与其它键归对话框。 */
+describe("审批对话框打开时的循环键", () => {
+  const SHIFT_TAB = "\x1b[Z";
+  function fixture(confirm?: () => Promise<boolean>) {
+    const editor = new Editor({ theme: plainTheme() });
+    let mode = "default";
+    const set: string[] = [];
+    let approvalOpen = true;
+    const dispatch = createKeyDispatch({
+      keys: new Keybindings(),
+      editor,
+      tools: {} as ToolTracker,
+      status: { refresh: () => undefined } as unknown as StatusBar,
+      session: () =>
+        ({
+          get state() {
+            return { permissionMode: mode };
+          },
+          setPermissionMode: (next: string) => {
+            mode = next;
+            set.push(next);
+          },
+        }) as unknown as AgentSession,
+      inactive: () => true,
+      approvalOpen: () => approvalOpen,
+      busy: () => true,
+      now: () => 0,
+      showHint: () => undefined,
+      submit: () => undefined,
+      runCommand: () => undefined,
+      exit: () => undefined,
+      ...(confirm !== undefined
+        ? { confirmMode: (m) => (m === "full-auto" ? confirm() : true) }
+        : {}),
+    });
+    return { dispatch, set, close: () => (approvalOpen = false) };
+  }
+
+  it("Shift+Tab 切到下一个模式并消费按键；Tab、y、Esc 不处理（归对话框）", () => {
+    const f = fixture();
+    expect(f.dispatch("\t")).toBe(false);
+    expect(f.dispatch("y")).toBe(false);
+    expect(f.dispatch("\x1b")).toBe(false);
+    expect(f.set).toEqual([]);
+    expect(f.dispatch(SHIFT_TAB)).toBe(true);
+    expect(f.set).toEqual(["auto-edit"]);
+    f.close();
+    // 对话框关了、别的覆盖层开着：照旧不处理
+    expect(f.dispatch(SHIFT_TAB)).toBe(false);
+  });
+
+  it("切到 Bypass 先过确认；确认期间再按不重复触发；取消则跳到 Manual", async () => {
+    let answer!: (ok: boolean) => void;
+    const f = fixture(() => new Promise((r) => (answer = r)));
+    for (let i = 0; i < 3; i++) f.dispatch(SHIFT_TAB);
+    expect(f.set).toEqual(["auto-edit", "plan", "auto"]);
+    expect(f.dispatch(SHIFT_TAB)).toBe(true);
+    expect(f.dispatch(SHIFT_TAB)).toBe(true);
+    expect(f.set).toHaveLength(3);
+    answer(false);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(f.set.at(-1)).toBe("default");
+    for (let i = 0; i < 4; i++) f.dispatch(SHIFT_TAB);
+    answer(true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(f.set.at(-1)).toBe("full-auto");
+  });
+});

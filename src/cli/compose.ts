@@ -46,6 +46,7 @@ import { DEFAULT_BASH_AUTO_BACKGROUND_MS } from "../tools/bash-jobs.js";
 import { COORDINATOR_WAIT_MAX_MS } from "../tools/task-ctl.js";
 import { builtinTools } from "../tools/registry.js";
 import type { WebFetchOptions } from "../tools/web/fetch.js";
+import type { HostResourceLookup } from "../tools/resource-ref.js";
 import type { MemoryRuntime } from "../memory/runtime.js";
 import { MEMORY_TOOL, createMemoryTool } from "../memory/tool.js";
 import type { ToolDefinition, ToolRegistryApi } from "../tools/types.js";
@@ -158,6 +159,7 @@ export function createTools(
     paths?: { configDir: string; dataDir: string } | undefined;
     memory?: MemoryRuntime | undefined;
     embedded?: boolean | undefined;
+    resources?: HostResourceLookup | undefined;
   },
   options: ComposeOptions,
   state: ComposeState,
@@ -198,6 +200,8 @@ export function createTools(
     read: {
       supportsImages: (ctx) => modelAcceptsImages(state, ctx.model),
       imageOptions: (ctx) => imageFitOptionsFor(state.providers, ctx.model, input.config.images),
+      // [#270] 宿主资源：注册表先于宿主激活建好，read 工具执行期才读它
+      ...(input.resources !== undefined ? { resources: input.resources } : {}),
     },
   });
   const ctx: ToolFactoryContext = {
@@ -343,6 +347,7 @@ export function createRuntimeDeps(
             ? { autoSafeCommands: input.autoSafeCommands }
             : {}),
           ...(state.bashSandbox?.active === true ? { bashSandbox: state.bashSandbox } : {}),
+          ...(input.resources !== undefined ? { resources: input.resources } : {}),
         }),
     },
     resources: {

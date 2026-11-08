@@ -27,6 +27,11 @@ const LINE_SLACK = 64;
 const LF = 0x0a;
 const CR = 0x0d;
 
+/** `cat -n` 形状（行号右对齐 6 位 + Tab）；文件分支与宿主资源分支共用。 */
+export function numberLines(lines: readonly string[], firstLine: number): string {
+  return lines.map((line, i) => `${String(firstLine + i).padStart(6)}\t${line}`).join("\n");
+}
+
 export interface LineWindow {
   /** 窗口内的行：首行已去 BOM、已按 LF 切分、已去行尾 `\r`。 */
   lines: string[];

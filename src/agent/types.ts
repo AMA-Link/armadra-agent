@@ -291,8 +291,19 @@ export type SessionEvent =
        */
       context?: PermissionRequestContext;
     }
-  | { type: "permission_resolved"; requestId: string; decision: ApprovalDecision }
-  | { type: "permission_mode_changed"; mode: PermissionMode }
+  | {
+      type: "permission_resolved";
+      requestId: string;
+      decision: ApprovalDecision;
+      /** [#271] 切换权限模式时按新模式自动作答（客户端据此收起审批界面）。 */
+      reason?: "mode_changed";
+    }
+  | {
+      type: "permission_mode_changed";
+      mode: PermissionMode;
+      /** [#271] 切换时按新模式自动放行 / 拒绝的待审批条数；都为 0 时不带。 */
+      reevaluated?: { allowed: number; denied: number };
+    }
   | { type: "entry_appended"; entry: SessionEntry }
   | {
       type: "hook_executed";

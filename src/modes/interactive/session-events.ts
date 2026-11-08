@@ -10,6 +10,7 @@
 import { msg } from "../../i18n/index.js";
 import type { AgentSession, SessionEvent } from "../../agent/types.js";
 import { formatModelRef } from "../../ai/providers/channels.js";
+import { permissionModeLabel } from "../../permissions/modes.js";
 import { cacheEventNotice, cacheNoticesEnabled } from "../session-report.js";
 import type { AgentUi } from "./agent-ui.js";
 import { compactionErrorText, ImageBudgetNotices, LIMIT_WARNING } from "./event-notices.js";
@@ -120,8 +121,19 @@ export function createSessionEventHandler(deps: SessionEventDeps): (event: Sessi
         render();
         return;
       }
+      case "permission_mode_changed": {
+        // [#271] 切换时被自动放行 / 拒绝的待审批：消息区各一行
+        const label = permissionModeLabel(event.mode);
+        const m = msg().approval.reevaluated;
+        if ((event.reevaluated?.allowed ?? 0) > 0)
+          view.addNotice("info", m.allowed(event.reevaluated!.allowed, label));
+        if ((event.reevaluated?.denied ?? 0) > 0)
+          view.addNotice("info", m.denied(event.reevaluated!.denied, label));
+        refresh();
+        render();
+        return;
+      }
       case "cache_warm":
-      case "permission_mode_changed":
       case "model_changed":
       case "thinking_level_changed":
       case "session_changed":

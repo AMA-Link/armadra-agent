@@ -465,6 +465,8 @@ export function runInteractiveMode(
 
   // ---- 键位 -----------------------------------------------------------------
 
+  // [#271] 审批对话框打开时 Shift+Tab 仍切模式（approvalUi 晚绑定）
+  let approvalOpen: () => boolean = () => false;
   tui.addInputListener(
     createKeyDispatch({
       keys,
@@ -473,6 +475,7 @@ export function runInteractiveMode(
       status,
       session: () => session,
       inactive: () => finished || tui.hasOverlay,
+      approvalOpen: () => approvalOpen(),
       busy: () => indicator.busy,
       now,
       showHint,
@@ -523,11 +526,13 @@ export function runInteractiveMode(
     area,
   });
   indicator.agents = () => agentUi.reachable;
-  const { broker, dock } = createApprovalUi({
+  const approvalUi = createApprovalUi({
     ...{ theme, keys, tui, editor, indicator, agentUi, notice, render },
     hooks: overlayHooks,
     session: () => session,
   });
+  const { broker, dock } = approvalUi;
+  approvalOpen = approvalUi.approvalOpen;
   indicator.background = () => blockingTasks(session).length > 0;
 
   // ---- 启动与退出 -----------------------------------------------------------

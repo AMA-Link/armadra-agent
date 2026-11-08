@@ -19,6 +19,9 @@
  * [打断并发送] 运行中 Enter 缺省排队（steer）；`app.message.interrupt`（缺省 `Ctrl+Enter`，回退 `Ctrl+X`）= 打断当前回合并立即
  * 以输入框的文字（连同排队的插话）开新回合（`prompt{interrupt:true}`）。`ui.enterWhileRunning: "interrupt"`
  * 时两者互换。补全打开、有覆盖层（审批 / 选择器）时不触发；斜杠命令照常当命令；空闲时专用键等同 Enter。
+ * [#271] 审批对话框打开时（`approvalOpen`）其它键都归对话框，只有 `app.permission.cycle` 里不是 Tab 的键
+ * （缺省 Shift+Tab；Tab 留给对话框 / 选择列表）仍循环权限模式；切到 Bypass 照旧先过 `confirmMode`，确认期间
+ * 不再响应循环键。切换后会话按新模式重判在等的审批（对话框可能随之收起）。
  */
 
 import { msg } from "../../i18n/index.js";
@@ -59,6 +62,8 @@ export interface KeyDispatchDeps {
   session(): AgentSession;
   /** 已退出或有覆盖层（审批 / 选择器）时不处理。 */
   inactive(): boolean;
+  /** [#271] 审批对话框正开着：此时仍放行 Shift+Tab 切模式（晚绑定）。 */
+  approvalOpen?(): boolean;
   /** 运行或压缩中（Esc 才中断）。 */
   busy(): boolean;
   now(): number;
@@ -105,6 +110,8 @@ export function createKeyDispatch(deps: KeyDispatchDeps): (data: string) => bool
   let busyInputHinted = false;
   /** 底部正显示着进栏落空提示（进栏后撤掉）。 */
   let focusHintShown = false;
+  /** [#271] 进入 Bypass 的确认框开着：不再响应循环键。 */
+  let confirming = false;
 
   const doubleEscape = (): void => {
     switch (esc.press(deps.now(), editor.isEmpty())) {
@@ -161,13 +168,29 @@ export function createKeyDispatch(deps: KeyDispatchDeps): (data: string) => bool
   };
 
   const cyclePermission = (): void => {
+    if (confirming) return;
     const next = nextCycleMode(deps.session().state.permissionMode);
     // 取消进入 Bypass：跳过它继续循环（回到起点 Manual），而不是停在原模式——否则不进 Bypass 就绕不回去
-    const settle = (ok: boolean): void =>
-      ok ? applyMode(next, false) : applyMode(nextCycleMode(next), true);
+    const settle = (ok: boolean): void => {
+      confirming = false;
+      if (ok) applyMode(next, false);
+      else applyMode(nextCycleMode(next), true);
+    };
     const answer = deps.confirmMode?.(next) ?? true;
     if (typeof answer === "boolean") settle(answer);
-    else void answer.then(settle);
+    else {
+      confirming = true;
+      void answer.then(settle, () => (confirming = false));
+    }
+  };
+
+  /** [#271] 审批对话框打开时：只有不是 Tab 的循环键（Shift+Tab）切模式，其余键归对话框。 */
+  const cycleOverApproval = (data: string): boolean => {
+    if (deps.approvalOpen?.() !== true || !keys.matches(data, "app.permission.cycle")) return false;
+    if (keys.matches(data, "tui.editor.complete") || keys.matches(data, "tui.select.confirm"))
+      return false;
+    cyclePermission();
+    return true;
   };
 
   /**
@@ -226,7 +249,7 @@ export function createKeyDispatch(deps: KeyDispatchDeps): (data: string) => bool
   };
 
   return (data) => {
-    if (deps.inactive()) return false;
+    if (deps.inactive()) return cycleOverApproval(data);
     if (editor.isEmpty()) busyInputHinted = false;
     const is = (action: Parameters<Keybindings["matches"]>[1]): boolean =>
       keys.matches(data, action);

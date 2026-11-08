@@ -19,8 +19,12 @@
  *    「后台命令 bgN 已退出（码 N）」；[#267] 到达寿命上限被停止的后台命令与后台子 Agent也在这里报告
  *    （发起停止的不是模型，所以不像 stop 那样视为已知）。
  *
+ * 6. 异常中断恢复（#268，recovery-reminder.ts，不可关）：resume 时上一轮没有正常结束（判定见
+ *    session/unclean-end.ts）→ 第一次新提示前提醒一次，列出上一轮的工具与目标，要求先核实现场再重复
+ *    外部动作；消息带 `details.recovery`，第二次 resume 据此不重复。
+ *
  * 后台任务表的生命周期也挂在这里：任务事件转成 `background_job`，会话 dispose 时回收进程树。
- * task 子会话（depth > 0）只装后台任务部分。
+ * task 子会话（depth > 0）只装后台任务与恢复提醒。
  */
 
 import { execFileSync } from "node:child_process";
@@ -36,6 +40,7 @@ import { TODO_CUSTOM_TYPE, parseTodoState, renderTodoList } from "../tools/todo.
 import { budgetOf } from "./limits.js";
 import { expiredTaskText } from "./subagent-lifetime.js";
 import { minutesOf } from "../tools/timers.js";
+import { RECOVERY_DETAILS, RecoveryReminder } from "./recovery-reminder.js";
 import type { SessionCore } from "./session-core.js";
 import type { SessionExtension } from "./session-extensions.js";
 import { setBatchSuffixSource } from "./tool-runner.js";
@@ -130,6 +135,8 @@ class Reminders {
   private readonly baseline = new Map<string, { mtimeMs: number; size: number } | undefined>();
   /** toolCallId → 文件工具的绝对路径。 */
   private readonly pendingPaths = new Map<string, string>();
+  /** [#268] resume 后的一次性恢复提醒。 */
+  private readonly recovery: RecoveryReminder;
 
   constructor(
     private readonly core: SessionCore,
@@ -146,6 +153,7 @@ class Reminders {
     this.todoEvery = settings.todoEvery ?? DEFAULT_TODO_REMINDER_TURNS;
     this.stat = deps.stat ?? defaultStat;
     this.diffStat = deps.diffStat ?? defaultDiffStat;
+    this.recovery = new RecoveryReminder(core.manager);
   }
 
   onEvent(event: SessionEvent): void {
@@ -155,7 +163,7 @@ class Reminders {
         return;
       case "agent_start": {
         const signal = this.core.agent.signal;
-        if (signal !== undefined) setBatchSuffixSource(signal, () => this.collect(true));
+        if (signal !== undefined) setBatchSuffixSource(signal, () => this.collect(true)?.text);
         return;
       }
       case "message_end":
@@ -194,17 +202,22 @@ class Reminders {
     }
   }
 
-  /** 到期提醒的正文（没有返回 undefined）；`inRun` = 工具批次尾部（预算提醒只在 run 中有意义）。 */
-  collect(inRun: boolean): string | undefined {
+  /**
+   * 到期提醒的正文（没有返回 undefined）；`inRun` = 工具批次尾部（预算提醒只在 run 中有意义，
+   * 恢复提醒只在新提示前）。`recovery` 表示正文含恢复提醒（消息要带 `details.recovery`）。
+   */
+  collect(inRun: boolean): { text: string; recovery: boolean } | undefined {
     const lines: string[] = [];
+    const recovery = inRun ? undefined : this.recovery.take();
     const jobs = this.jobLines();
     const todo = this.todoLine();
     const files = this.fileLine();
     const context = this.contextLine();
     const budget = inRun ? this.budgetLine() : undefined;
-    for (const line of [jobs, todo, files, context, budget])
+    for (const line of [recovery, jobs, todo, files, context, budget])
       if (line !== undefined) lines.push(line);
-    return lines.length === 0 ? undefined : wrap(lines);
+    if (lines.length === 0) return undefined;
+    return { text: wrap(lines), recovery: recovery !== undefined };
   }
 
   private jobLines(): string | undefined {
@@ -323,18 +336,28 @@ export function jobExitText(job: Job): string {
   return `Background job ${job.id} (\`${job.command}\`) ${how}; output: ${job.outputPath} (bash {"job":"${job.id}","action":"output"}).`;
 }
 
-export function reminderMessage(text: string): AgentMessage {
+export function reminderMessage(text: string, details?: unknown): AgentMessage {
   return {
     role: "custom",
     customType: REMINDER_CUSTOM_TYPE,
     content: text,
     display: false,
+    ...(details === undefined ? {} : { details }),
     timestamp: Date.now(),
   };
 }
 
+/** [#268] 把 `collect(false)` 的结果变成要追加的消息（含恢复提醒时带 `details.recovery`）。 */
+function promptReminders(
+  collected: { text: string; recovery: boolean } | undefined,
+): AgentMessage[] {
+  if (collected === undefined) return [];
+  return [reminderMessage(collected.text, collected.recovery ? RECOVERY_DETAILS : undefined)];
+}
+
 /**
- * 提醒扩展。主会话：全部提醒 + 后台任务生命周期；子会话：只管后台任务（事件与回收）。
+ * 提醒扩展。主会话：全部提醒 + 后台任务生命周期；子会话：只管后台任务（事件与回收）与恢复提醒
+ * （`taskId` 续聊重开被打断的子会话时，子会话自己拿到它）。
  */
 export function createRemindersExtension(
   core: SessionCore,
@@ -358,15 +381,24 @@ export function createRemindersExtension(
     offJobs();
     void disposeSessionJobs(sessionId);
   };
-  if (core.depth > 0) return { id: "reminders", dispose };
+  if (core.depth > 0) {
+    const recovery = new RecoveryReminder(core.manager);
+    return {
+      id: "reminders",
+      beforePrompts(): AgentMessage[] {
+        const text = recovery.take();
+        return promptReminders(
+          text === undefined ? undefined : { text: wrap([text]), recovery: true },
+        );
+      },
+      dispose,
+    };
+  }
   const reminders = new Reminders(core, settings, deps);
   return {
     id: "reminders",
     onEvent: (event) => reminders.onEvent(event),
-    beforePrompts(): AgentMessage[] {
-      const text = reminders.collect(false);
-      return text === undefined ? [] : [reminderMessage(text)];
-    },
+    beforePrompts: () => promptReminders(reminders.collect(false)),
     dispose,
   };
 }

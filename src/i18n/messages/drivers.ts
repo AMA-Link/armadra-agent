@@ -81,6 +81,18 @@ export const en = {
     warmingNeedsFunction: "cache.onWarmingDecision: needs a function",
     runnerNeedsIdStart: "runners.provide: needs a runner with id and start",
     runnerDoneNeedsFunction: "runners.onDone: needs a function",
+    resourceFrozen:
+      "resources.register: resources must be registered inside create(); the list is fixed once the session starts",
+    resourceNotObject: "resources.register: the resource must be an object",
+    resourceBadScheme: (scheme: string) =>
+      `resources.register: invalid scheme ${scheme} (expected ^[a-z][a-z0-9+.-]{1,31}$)`,
+    resourceReserved: (scheme: string) =>
+      `resources.register: scheme ${scheme} is reserved (URLs go through web_fetch, files through read)`,
+    resourceBadDescribe: (scheme: string) =>
+      `resources.register: ${scheme} needs a single-line describe of at most 120 characters`,
+    resourceNoRead: (scheme: string) => `resources.register: ${scheme} is missing read()`,
+    resourceExists: (scheme: string) => `resources.register: scheme ${scheme} already exists`,
+    resourceTooMany: (max: number) => `resources.register: at most ${max} resource schemes`,
     notAdapter: (label: string) =>
       `${label}: not a host adapter module (missing hostApi / create export)`,
     versionMismatch: (label: string, found: string, needed: number) =>
@@ -151,6 +163,17 @@ export const zh = {
     warmingNeedsFunction: "cache.onWarmingDecision：需要函数",
     runnerNeedsIdStart: "runners.provide：需要带 id 与 start 的 runner",
     runnerDoneNeedsFunction: "runners.onDone：需要函数",
+    resourceFrozen: "resources.register：资源只能在 create() 里注册，会话开始后列表已固定",
+    resourceNotObject: "resources.register：资源应为对象",
+    resourceBadScheme: (scheme) =>
+      `resources.register：scheme 不合法：${scheme}（应匹配 ^[a-z][a-z0-9+.-]{1,31}$）`,
+    resourceReserved: (scheme) =>
+      `resources.register：scheme ${scheme} 是保留字（URL 走 web_fetch，文件走 read）`,
+    resourceBadDescribe: (scheme) =>
+      `resources.register：${scheme} 需要单行、不超过 120 字符的 describe`,
+    resourceNoRead: (scheme) => `resources.register：${scheme} 缺少 read()`,
+    resourceExists: (scheme) => `resources.register：scheme ${scheme} 已存在`,
+    resourceTooMany: (max) => `resources.register：最多 ${max} 个资源 scheme`,
     notAdapter: (label) => `${label}: 不是宿主适配器模块（缺少 hostApi / create 导出）`,
     versionMismatch: (label, found, needed) =>
       `${label}: 宿主适配器 hostApi=${found}，ama 需要 ${needed}`,

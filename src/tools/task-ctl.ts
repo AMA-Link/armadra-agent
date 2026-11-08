@@ -13,6 +13,8 @@
  *   文案，要求模型不要再等。
  * - [#267] `extend` = 给后台任务续命一次（`timeoutMs` 为增量，缺省与 `subagents.backgroundMaxMs` 相同，封顶一个
  *   上限）；到点被停止的任务经提醒通道告知模型（agent/subagent-lifetime.ts）。
+ * - [#268] resume 后重建为 `interrupted` 的任务：`list` 行、`output` 头部与 `wait` 都附同一句（上一次运行
+ *   没结束就停了，副作用可能只做了一半，重复外部动作前先核实）。
  */
 
 import { extendTaskText } from "../agent/subagent-lifetime.js";
@@ -28,6 +30,11 @@ export const MAX_WAIT_MS = 600_000;
 export const COORDINATOR_WAIT_MAX_MS = 5_000;
 
 const waitCaps = new WeakMap<object, number>();
+
+/** [#268] 被打断（上一次运行异常结束）的任务：固定英文，`list` / `output` / `wait` 共用。 */
+export const INTERRUPTED_TASK_NOTE =
+  "it was interrupted when a previous run of this session ended abruptly, so its side effects may be " +
+  "partial; inspect the workspace, git history and external state before repeating any of its actions";
 
 /**
  * [#242] 组装根把 `wait` 的超时上限绑到 `task_ctl` 工具（`coordinator` 预设）；没绑定按 `MAX_WAIT_MS`。
@@ -57,7 +64,8 @@ function line(task: TaskInfo, now: number): string {
   parts.push(`${Math.round(((task.endedAt ?? now) - task.startedAt) / 1000)}s`);
   if (task.background) parts.push("background");
   const text = parts.join(" · ");
-  return task.description === "" ? text : `${text} — ${task.description}`;
+  const described = task.description === "" ? text : `${text} — ${task.description}`;
+  return task.status === "interrupted" ? `${described} (${INTERRUPTED_TASK_NOTE})` : described;
 }
 
 async function send(input: TaskCtlInput, ctx: ToolContext): Promise<ToolResult> {
@@ -120,7 +128,12 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
           return send(input, ctx);
         case "output": {
           const text = control.output(taskId) ?? "";
-          const head = info.status === "running" ? `Task ${taskId} is running; output so far:` : "";
+          const head =
+            info.status === "running"
+              ? `Task ${taskId} is running; output so far:`
+              : info.status === "interrupted"
+                ? `Task ${taskId} was interrupted (${INTERRUPTED_TASK_NOTE}); output so far:`
+                : "";
           const body = capTaskText(text, info.outputFile).text || "(no output yet)";
           return { content: head === "" ? body : `${head}\n${body}` };
         }
@@ -144,6 +157,8 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
           const signal = control.detachSignal(taskId);
           const result = await control.wait(taskId, timeout, { signal });
           if (result === undefined && signal.aborted) return { content: waitDetachedText(taskId) };
+          if (result === undefined && control.get(taskId)?.status === "interrupted")
+            return { content: `Task ${taskId} was interrupted (${INTERRUPTED_TASK_NOTE}).` };
           if (result === undefined) {
             const turns = control.get(taskId)?.turns ?? 0;
             const capped =
