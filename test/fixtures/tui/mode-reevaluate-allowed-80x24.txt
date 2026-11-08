@@ -1,0 +1,25 @@
+# shift-tab · viewport 80x24
+|✻ ama <version> · fake/echo · Manual · /help
+|
+|› 做吧
+|
+|⏺ write note.txt
+|  ⎿ 新建 · 1 行
+|    Created note.txt (3 bytes)
+|
+|已按 Accept edits 自动允许 1 个待审批
+|
+|结束
+|
+|────────────────────────────────────────────────────────────────────────────────
+|› 输入消息，/ 命令，@ 文件，Shift+Enter 换行
+|────────────────────────────────────────────────────────────────────────────────
+|权限模式：Accept edits
+|Accept edits          echo · medium · ↑<n> ↓<n> · cache — · ctx 0.4% · work · <t>
+|
+|
+|
+|
+|
+|
+|

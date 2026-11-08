@@ -63,6 +63,13 @@ export const en = {
   /** 通用确认框的按键行。 */
   choiceHint: (arrows: string, n: number) =>
     `${arrows} select · Enter confirm · 1-${n} pick · Esc cancel`,
+  /** [#271] 切换权限模式时按新模式自动作答的待审批（消息区一行）。 */
+  reevaluated: {
+    allowed: (n: number, mode: string) =>
+      `Auto-allowed ${plural(n, "pending approval")} under ${mode}`,
+    denied: (n: number, mode: string) =>
+      `Auto-denied ${plural(n, "pending approval")} under ${mode}`,
+  },
 };
 
 export const zh = {
@@ -110,4 +117,8 @@ export const zh = {
     cancelled: (what) => `审批已取消（超时或中断）：${what}`,
   },
   choiceHint: (arrows, n) => `${arrows} 选择 · Enter 确认 · 1-${n} 直接选 · Esc 取消`,
+  reevaluated: {
+    allowed: (n, mode) => `已按 ${mode} 自动允许 ${n} 个待审批`,
+    denied: (n, mode) => `已按 ${mode} 自动拒绝 ${n} 个待审批`,
+  },
 } satisfies Messages<typeof en>;
