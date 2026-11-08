@@ -577,3 +577,35 @@ describe("[W5-F] plan 模式细化与 allowlist 同步（docs/history/wave5-plan
     }
   });
 });
+
+describe("[#270] 宿主资源读取按 read 类放行", () => {
+  const call = (path: string): PermissionCheckInput => ({
+    toolName: "read",
+    permission: "read",
+    input: { path },
+    unattended: false,
+  });
+
+  it("六个模式都放行；auto 下不做机密路径检查（demo://.env 不询问），静态层记 read-only", () => {
+    for (const mode of MODES) {
+      expect(pipeline(mode).check(call("demo://items")).decision, mode).toBe("allow");
+    }
+    const auto = pipeline("auto").check(call("demo://secrets/.env"));
+    expect(auto.decision).toBe("allow");
+    expect(auto.auto).toEqual({ layer: "static", decision: "allow", reason: "read-only tool" });
+    // 真实文件 .env 仍然询问
+    expect(pipeline("auto").check(call(".env")).decision).toBe("ask");
+  });
+
+  it("deny 规则仍能挡住资源读取；会话记忆按 scheme:// 前缀", () => {
+    const denied = pipeline("default", ["read(demo://**)"]).check(call("demo://items"));
+    expect(denied.decision).toBe("deny");
+    expect(denied.step).toBe("deny-rule");
+    const p = pipeline("default");
+    p.rememberForSession("read", { path: "demo://items" });
+    const hookAsk: PermissionCheckInput = { ...call("demo://events"), hookDecision: "ask" };
+    // Hook ask 总是 ask（记忆不越过 Hook），但记忆本身覆盖同 scheme
+    expect(p.check(hookAsk).decision).toBe("ask");
+    expect(p.check(call("Demo://other")).decision).toBe("allow");
+  });
+});

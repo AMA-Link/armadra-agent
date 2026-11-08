@@ -59,6 +59,8 @@ import {
   findDenyRule,
   inputCommand,
   inputPath,
+  inputResourcePrefix,
+  inputResourceRef,
   normalizeCommand,
   splitShellSegments,
 } from "./rules.js";
@@ -156,7 +158,8 @@ function auditSummary(toolName: string, input: unknown): string {
 
 interface SessionGrant {
   toolName: string;
-  kind: "command" | "dir" | "host" | "any";
+  /** [#270] `resource`：本会话允许该 scheme（前缀 `scheme://`）。 */
+  kind: "command" | "dir" | "host" | "resource" | "any";
   prefix: string;
 }
 
@@ -164,6 +167,8 @@ export function sessionGrantFor(toolName: string, input: unknown, cwd: string): 
   if (toolName === "memory") return { toolName, kind: "any", prefix: "" }; // [W6-M] 本会话允许全部写命令
   const host = networkGrantHost(input); // web_fetch：本会话允许该主机
   if (host !== undefined) return { toolName, kind: "host", prefix: host };
+  const resource = inputResourcePrefix(input); // [#270] 资源读取：本会话允许该 scheme
+  if (resource !== undefined) return { toolName, kind: "resource", prefix: resource };
   const command = inputCommand(input);
   if (command !== undefined) {
     const words = normalizeCommand(command).split(" ").slice(0, 2);
@@ -178,6 +183,7 @@ function grantCovers(grant: SessionGrant, toolName: string, input: unknown, cwd:
   if (grant.toolName !== toolName) return false;
   if (grant.kind === "any") return true;
   if (grant.kind === "host") return networkGrantHost(input) === grant.prefix;
+  if (grant.kind === "resource") return inputResourcePrefix(input) === grant.prefix;
   if (grant.kind === "command") {
     const command = inputCommand(input);
     if (command === undefined || /\$\(|`/.test(command)) return false;
@@ -470,6 +476,8 @@ export class PermissionPipeline implements PermissionPipelineApi {
         ? (input.input as Record<string, unknown>)["path"]
         : undefined;
     if (typeof raw !== "string" && input.permission !== "write") return {};
+    // [#270] 资源引用不是文件路径：read 类不做机密路径检查（宿主资源按 read 放行）
+    if (input.permission === "read" && inputResourceRef(input.input) !== undefined) return {};
     const path = inputPath(input.toolName, input.input, this.cwd);
     if (path === undefined) return {};
     const secret = secretPathReason(path);

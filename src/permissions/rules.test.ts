@@ -170,3 +170,32 @@ describe("来源合并：项目级只能收紧", () => {
     expect(bad.warnings[0]).toMatch(/Invalid permission rule/);
   });
 });
+
+describe("[#270] 宿主资源引用的规则匹配", () => {
+  const read = (path: string) => ({ path });
+
+  it("pattern 对原始引用做 glob：** 跨 /，* 不跨；不按文件路径解析", () => {
+    expect(pathMatches("demo://**", "demo://items/1", cwd)).toBe(true);
+    expect(pathMatches("demo://items/*", "demo://items/1", cwd)).toBe(true);
+    expect(pathMatches("demo://items/*", "demo://items/a/b", cwd)).toBe(false);
+    expect(pathMatches("notes://**", "demo://items", cwd)).toBe(false);
+    expect(pathMatches("**", "demo://items", cwd)).toBe(true);
+  });
+
+  it("deny read(demo://**) 命中资源读取，不命中同名真实文件；allow 同理", () => {
+    const deny = [parseRule("read(demo://**)", "deny", "user")];
+    expect(findDenyRule(deny, "read", read("demo://items"), cwd)?.raw).toBe("read(demo://**)");
+    expect(findDenyRule(deny, "read", read("demo/items"), cwd)).toBeUndefined();
+    const allow = [parseRule("read(demo://items/*)", "allow", "user")];
+    expect(findAllowRule(allow, "read", read("demo://items/7"), cwd)?.raw).toBe(
+      "read(demo://items/*)",
+    );
+    expect(findAllowRule(allow, "read", read("demo://events"), cwd)).toBeUndefined();
+  });
+
+  it("内置 deny read(**/.ssh/**) 对资源引用只会多拒不会多放", () => {
+    const builtin = BUILTIN_DENY_RULES.map((r) => parseRule(r, "deny", "builtin"));
+    expect(findDenyRule(builtin, "read", read("demo://home/.ssh/id_rsa"), cwd)).toBeDefined();
+    expect(findDenyRule(builtin, "read", read("demo://items"), cwd)).toBeUndefined();
+  });
+});

@@ -6,6 +6,8 @@
  * - 带 `path` 的工具（read / write / edit / ls / grep / glob 及宿主工具）：对路径做 glob（`**`）。
  *   相对模式匹配 cwd 内的相对路径；以 `**` 开头的模式也匹配绝对路径（例如 .ssh 目录规则命中 ~/.ssh 下的文件）；
  *   绝对模式（`/…`、`~/…`）匹配绝对路径。缺 path 的调用以 cwd 为路径。
+ * - [#270] `path` 是宿主资源引用（`scheme://path`，tools/resource-ref.ts）时不按文件路径解析，模式对
+ *   原始引用字符串做同一套 glob（`read(demo://**)`、`read(demo://items/*)`）；
  * - 带 `url` 的工具（web_fetch）：对 `host/path` 匹配，裸域名含子域（network-class.ts）；
  * - 其它工具带 pattern 的规则不匹配（无可比对的对象）。
  *
@@ -21,6 +23,7 @@ import type { PermissionMode, Rule, RuleSource } from "./types.js";
 import { PERMISSION_MODES_STRICT_FIRST } from "./types.js";
 import { globBody } from "../tools/glob.js";
 import { expandHome, resolvePath, toPosix } from "../tools/paths.js";
+import { parseResourceRef } from "../tools/resource-ref.js";
 import { memoryRuleMatches } from "./memory-class.js";
 import { networkRuleMatches } from "./network-class.js";
 
@@ -109,13 +112,29 @@ function pathGlob(pattern: string): RegExp {
   return new RegExp(`^${globBody(pattern, { braces: true })}$`);
 }
 
-/** 输入里的路径（绝对）；没有 path 字段的工具返回 undefined。 */
+/** [#270] 输入里的 `path` 若是宿主资源引用（`scheme://path`）返回原文；否则 undefined。 */
+export function inputResourceRef(input: unknown): string | undefined {
+  const raw =
+    typeof input === "object" && input !== null
+      ? (input as Record<string, unknown>)["path"]
+      : undefined;
+  return typeof raw === "string" && parseResourceRef(raw) !== undefined ? raw : undefined;
+}
+
+/** [#270] 资源引用的会话记忆前缀：小写 `scheme://`；不是资源引用返回 undefined。 */
+export function inputResourcePrefix(input: unknown): string | undefined {
+  const ref = inputResourceRef(input);
+  return ref === undefined ? undefined : `${ref.slice(0, ref.indexOf("://")).toLowerCase()}://`;
+}
+
+/** 输入里的路径（绝对；[#270] 资源引用原样返回）；没有 path 字段的工具返回 undefined。 */
 export function inputPath(toolName: string, input: unknown, cwd: string): string | undefined {
   const raw =
     typeof input === "object" && input !== null
       ? (input as Record<string, unknown>)["path"]
       : undefined;
   if (typeof raw === "string") {
+    if (parseResourceRef(raw) !== undefined) return raw;
     try {
       return resolvePath(raw, cwd);
     } catch {
@@ -136,6 +155,8 @@ export function inputCommand(input: unknown): string | undefined {
 }
 
 export function pathMatches(pattern: string, absPath: string, cwd: string): boolean {
+  // [#270] 资源引用：模式对原文做 glob（`**` 跨 `/`），不展开 `~`、不解析 cwd
+  if (parseResourceRef(absPath) !== undefined) return pathGlob(pattern).test(absPath);
   const absPosix = toPosix(absPath);
   const expanded = expandHome(pattern);
   if (isAbsolute(expanded)) return pathGlob(toPosix(resolve(expanded))).test(absPosix);
