@@ -43,6 +43,7 @@ import { join } from "node:path";
 import { AUTH_FILE } from "../config/paths.js";
 import { PresetToolRegistry, isCoordinatorPreset, resolvePreset } from "../tools/presets.js";
 import { DEFAULT_BASH_AUTO_BACKGROUND_MS } from "../tools/bash-jobs.js";
+import { COORDINATOR_WAIT_MAX_MS } from "../tools/task-ctl.js";
 import { builtinTools } from "../tools/registry.js";
 import type { WebFetchOptions } from "../tools/web/fetch.js";
 import type { MemoryRuntime } from "../memory/runtime.js";
@@ -187,6 +188,8 @@ export function createTools(
     ...(input.config.tools?.bashBackgroundMaxMs !== undefined
       ? { backgroundMaxMs: input.config.tools.bashBackgroundMaxMs }
       : {}),
+    // [#242] 协调者不阻塞：bash {job, action:"wait"} 与 task_ctl wait 同样封顶 5 s
+    ...(isCoordinatorPreset(input.config) ? { waitCapMs: COORDINATOR_WAIT_MAX_MS } : {}),
     ...(bashSandbox.active ? { sandbox: bashSandbox } : {}),
   };
   const builtins = builtinTools({

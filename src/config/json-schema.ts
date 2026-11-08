@@ -10,6 +10,7 @@
 import { WARMING_MODES } from "../ai/cache/types.js";
 import { PERMISSION_MODES_STRICT_FIRST } from "../permissions/types.js";
 import { msg } from "../i18n/index.js";
+import { MAX_TIMER_MS } from "../tools/timers.js";
 import { defaultFor, isDynamicDefault, keyDoc } from "./key-docs.js";
 import { HOOK_TIMEOUT_MAX_MS, THINKING_LEVELS } from "./schema.js";
 import {
@@ -197,7 +198,7 @@ function w5Sections(): Record<string, Schema> {
       defaultModel: str(),
       background: oneOf(SUBAGENT_BACKGROUND_MODES),
       autoBackgroundAfterMs: num(0),
-      backgroundMaxMs: num(0),
+      backgroundMaxMs: num(0, MAX_TIMER_MS),
       retainSessions: num(0),
       forkMaxContextRatio: num(0.05, 0.95),
     }),
@@ -308,8 +309,8 @@ function buildBaseSchema(): Schema {
         default: strings,
         maxToolResultChars: num(1),
         bashTimeoutMs: num(1),
-        bashAutoBackgroundAfterMs: num(0),
-        bashBackgroundMaxMs: num(0),
+        bashAutoBackgroundAfterMs: num(0, MAX_TIMER_MS),
+        bashBackgroundMaxMs: num(0, MAX_TIMER_MS),
         disabled: strings,
       }),
       codemode: object({

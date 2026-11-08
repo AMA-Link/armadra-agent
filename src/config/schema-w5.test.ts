@@ -188,6 +188,17 @@ describe("[#266 / #267] 长命令转后台与后台寿命的键", () => {
       ["error", "tools.bashBackgroundMaxMs"],
       ["error", "subagents.backgroundMaxMs"],
     ]);
+    // 上限 2^31 − 1 ms：更大的值 Node 会钳成 1 ms，等于立刻到期
+    const huge = validateConfig({
+      version: 1,
+      tools: { bashBackgroundMaxMs: 2 ** 31 },
+      subagents: { backgroundMaxMs: 2 ** 31 },
+    });
+    expect(huge.map((d) => d.path)).toEqual([
+      "tools.bashBackgroundMaxMs",
+      "subagents.backgroundMaxMs",
+    ]);
+    expect(validateConfig({ version: 1, tools: { bashBackgroundMaxMs: 2 ** 31 - 1 } })).toEqual([]);
   });
 
   it("只认用户级：项目级写了被忽略并 warning，用户级的值保留", () => {
