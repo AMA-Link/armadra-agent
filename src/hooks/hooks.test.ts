@@ -94,6 +94,31 @@ describe("matcher", () => {
   });
 });
 
+describe("matcher：read 括号里的 scheme 不分大小写（#277）", () => {
+  it("read(DEMO://*) / read(Demo://*) 都命中 DEMO://x 与 demo://x；路径部分仍区分大小写", () => {
+    for (const pattern of ["read(DEMO://*)", "read(Demo://*)", "read(demo://*)"]) {
+      const m = compileMatcher(pattern);
+      expect(m("read", { path: "demo://x" }), pattern).toBe(true);
+      // dispatcher 未注入 normalizePath 时 path 原文：pattern 的 scheme 小写化不能反过来放宽 path
+      expect(m("read", { path: "DEMO://x" }), pattern).toBe(false);
+    }
+    const items = compileMatcher("read(DEMO://Items)");
+    expect(items("read", { path: "demo://Items" })).toBe(true);
+    expect(items("read", { path: "demo://items" })).toBe(false);
+  });
+
+  it("普通路径 glob 与其它工具的大小写语义不变", () => {
+    expect(compileMatcher("read(SRC/*)")("read", { path: "src/a.ts" })).toBe(false);
+    expect(compileMatcher("read(src/*)")("read", { path: "SRC/a.ts" })).toBe(false);
+    expect(compileMatcher("read(docs/a://*)")("read", { path: "docs/a://b" })).toBe(true);
+    expect(compileMatcher("write(DEMO://*)")("write", { path: "DEMO://x" })).toBe(true);
+    expect(compileMatcher("write(DEMO://*)")("write", { path: "demo://x" })).toBe(false);
+    expect(
+      compileMatcher("web_fetch(HTTPS://a.example/*)")("web_fetch", { url: "https://a.example/" }),
+    ).toBe(false);
+  });
+});
+
 describe("protocol", () => {
   it("stdout：空 / 非 JSON → 无决策；字段校验", () => {
     expect(parseHookOutput("").output).toBeUndefined();
@@ -310,6 +335,17 @@ describe("dispatcher：read 的资源引用规范化后再匹配（#277）", () 
       dispatcher.run(event, { toolCallId: "t", toolName, toolInput, viaCodemode: true });
     expect((await run("read", { path: "DEMO://x" })).results).toHaveLength(1);
     expect((await run("read", { path: "Demo://x", offset: 2 })).results).toHaveLength(1);
+    // 老写法 read(DEMO://*) 在 path 规范化后仍命中（pattern 的 scheme 也小写化）
+    const upper = new HookDispatcher({
+      hooks: [hook("PreToolUse", "c", { matcher: "read(DEMO://*)" })],
+      context,
+      executor,
+      normalizePath,
+    });
+    for (const path of ["DEMO://x", "demo://x"]) {
+      const out = await upper.run("PreToolUse", { toolName: "read", toolInput: { path } });
+      expect(out.results, path).toHaveLength(1);
+    }
     expect((await run("read", { path: "demo://x" }, "PostToolUse")).results).toHaveLength(1);
     expect((await run("read", { path: "ab://x" })).results).toHaveLength(0);
     expect((await run("read", { path: "src/demo.ts" })).results).toHaveLength(0);

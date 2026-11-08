@@ -5,6 +5,10 @@
  * `bash(git push*)` 先匹配工具名，再对参数文本做 glob；`/regex/flags` 对工具名做正则。
  * 括号内的文本：bash → `input.command`；文件类工具 → `input.path`（或 `file_path` / `pattern`）；
  * web_fetch → `input.url`（整个 URL，与权限规则的 `host/path` 语义不同）；其它工具 → 输入 JSON 文本。`|` 只在括号外分隔候选。只在 Pre/PostToolUse 生效。
+ *
+ * [#277] `read` 的括号文本若以 `scheme://` 开头，scheme 先转小写再 glob：dispatcher 已把已注册资源引用的
+ * `path` 规范成小写 scheme，`read(DEMO://*)` 与 `read(demo://*)` 都命中 `DEMO://x` / `demo://x`（与权限规则
+ * 对 pattern 的处理一致）。只动 scheme 部分，路径部分与普通路径 glob 仍区分大小写；其它工具不做此处理。
  */
 
 export type ToolMatcher = (toolName: string, input: unknown) => boolean;
@@ -59,6 +63,15 @@ export function argumentText(toolName: string, input: unknown): string {
 
 const REGEX_FORM = /^\/(.+)\/([a-z]*)$/s;
 const CALL_FORM = /^([^()]+)\((.*)\)$/s;
+/** 资源引用形状的前缀（与 tools/resource-ref.ts 一致；hooks 不 import tools）。 */
+const SCHEME_PREFIX_RE = /^([A-Za-z][A-Za-z0-9+.-]{1,31}):\/\//;
+/** 只有内置 `read` 读宿主资源。 */
+const RESOURCE_TOOL = "read";
+
+/** [#277] 括号文本以 `scheme://` 开头时把 scheme 转小写，其余原样。 */
+function lowerSchemePrefix(text: string): string {
+  return text.replace(SCHEME_PREFIX_RE, (_m, scheme: string) => `${scheme.toLowerCase()}://`);
+}
 
 function compileAlternative(alt: string, nameOnly = false): ToolMatcher {
   const regex = REGEX_FORM.exec(alt);
@@ -69,9 +82,15 @@ function compileAlternative(alt: string, nameOnly = false): ToolMatcher {
   const call = CALL_FORM.exec(alt);
   if (call !== null) {
     const name = globToRegExp((call[1] ?? "").trim());
-    const arg = globToRegExp((call[2] ?? "").trim());
+    const argText = (call[2] ?? "").trim();
+    const arg = globToRegExp(argText);
+    const loweredText = lowerSchemePrefix(argText);
+    // read 用 scheme 小写化后的 pattern（已注册资源的 path 已被规范成小写 scheme）
+    const argForRead = loweredText === argText ? arg : globToRegExp(loweredText);
     if (nameOnly) return (toolName) => name.test(toolName);
-    return (toolName, input) => name.test(toolName) && arg.test(argumentText(toolName, input));
+    return (toolName, input) =>
+      name.test(toolName) &&
+      (toolName === RESOURCE_TOOL ? argForRead : arg).test(argumentText(toolName, input));
   }
   const name = globToRegExp(alt);
   return (toolName) => name.test(toolName);
