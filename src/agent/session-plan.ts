@@ -64,6 +64,7 @@ import type { AgentMessage } from "../session/types.js";
 import { TODO_CUSTOM_TYPE, type TodoItem } from "../tools/todo.js";
 import type { SessionCore } from "./session-core.js";
 import type { SessionExtension, SessionExtensionFactory } from "./session-extensions.js";
+import { applyPermissionMode } from "./session-settings.js";
 import { msg } from "../i18n/index.js";
 import type {
   PlanData,
@@ -487,10 +488,7 @@ class PlanExtension implements SessionExtension, PlanController {
       if (this.inPlan) {
         const session = this.handle();
         if (session !== undefined) session.setPermissionMode(mode);
-        else {
-          this.permission?.setMode(mode);
-          this.core.emit({ type: "permission_mode_changed", mode });
-        }
+        else applyPermissionMode(this.core.options, mode, this.core);
       }
     } finally {
       this.approving = false;
