@@ -7,6 +7,7 @@
  * 与 `--image` / `@图片` 共用 image-file.ts；模型不支持图片、超过当前端点的单图上限（base64 后，
  * [W5-I] 按端点分档）或任一边 > 8000 px 时只给路径与尺寸）；成功后 `ctx.markRead(abs)`。
  * [M-E] 超过 1 MiB 的文本按字节窗口读（read-lines.ts），输出与整读逐字节相同。
+ * [#270] 宿主注册过资源时，`scheme://path` 交给宿主读（read-resource.ts），同一套分页与截断。
  */
 
 import { readFile, stat } from "node:fs/promises";
@@ -16,7 +17,14 @@ import type { ToolContext, ToolDefinition, ToolResult } from "./types.js";
 import { displayPath, resolvePath } from "./paths.js";
 import { DEFAULT_MAX_LINES, formatSize, toolOutputBytes, truncateHead } from "./truncate.js";
 import { normalizeToLF, splitBom } from "./edit-fuzzy.js";
-import { STREAM_READ_THRESHOLD, readHeadAsync, readLineWindowAsync } from "./read-lines.js";
+import {
+  STREAM_READ_THRESHOLD,
+  numberLines,
+  readHeadAsync,
+  readLineWindowAsync,
+} from "./read-lines.js";
+import { executeResourceRead } from "./read-resource.js";
+import { parseResourceRef, type HostResourceLookup } from "./resource-ref.js";
 import {
   MAX_IMAGE_FILE_BYTES,
   fitImage,
@@ -27,6 +35,7 @@ import {
 } from "./image-file.js";
 
 export { imageSize, type ImageSize } from "./image-file.js";
+export { numberLines } from "./read-lines.js";
 
 export interface ReadInput {
   path: string;
@@ -41,6 +50,10 @@ export interface ReadToolOptions {
   imageOptions?(ctx: ToolContext): ImageFitOptions;
   /** [M-E] 超过这个字节数的文本文件走字节窗口；缺省 `STREAM_READ_THRESHOLD`，测试注入 0 / Infinity。 */
   streamThreshold?: number;
+  /** [#270] 宿主资源注册表：非空时 `scheme://path` 交给宿主读（read-resource.ts）；缺省 / 为空时行为不变。 */
+  resources?: HostResourceLookup;
+  /** [#270] 宿主 `read()` 的时限；缺省 `HOST_RESOURCE_TIMEOUT_MS`，测试注入。 */
+  resourceTimeoutMs?: number;
 }
 
 const SNIFF_BYTES = 8000;
@@ -74,11 +87,6 @@ export function directoryHint(shown: string, ctx: Pick<ToolContext, "activeTools
     return `use glob (e.g. pattern ${JSON.stringify(`${shown}/*`)})`;
   }
   return "read a file inside it";
-}
-
-/** `cat -n` 形状。 */
-export function numberLines(lines: readonly string[], firstLine: number): string {
-  return lines.map((line, i) => `${String(firstLine + i).padStart(6)}\t${line}`).join("\n");
 }
 
 async function readImage(
@@ -118,6 +126,17 @@ export async function executeRead(
   ctx: ToolContext,
   options: ReadToolOptions = {},
 ): Promise<ToolResult> {
+  // [#270] 有宿主资源时先认 `scheme://path`；没有注册任何资源时不解析，输出逐字节不变
+  if (options.resources !== undefined && options.resources.schemes().length > 0) {
+    const ref = typeof input.path === "string" ? parseResourceRef(input.path) : undefined;
+    if (ref !== undefined) {
+      return executeResourceRead(ref, input, ctx, options.resources, {
+        ...(options.resourceTimeoutMs !== undefined
+          ? { timeoutMs: options.resourceTimeoutMs }
+          : {}),
+      });
+    }
+  }
   const abs = resolvePath(input.path, ctx.cwd);
   const shown = displayPath(abs, ctx.cwd);
   let info;
