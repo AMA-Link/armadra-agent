@@ -5,6 +5,10 @@
  * cwd、model、permissionMode、depth、host…）由构造时给的 `context()` 每次现取，再由第 4 参数
  * 按次覆盖（子 Agent 的 depth / sessionId / sessionFile）。每条 Hook 执行后回调
  * `onExecuted`（bootstrap 把它接到宿主事件 `hook_executed`）。matcher 只在 Pre/PostToolUse 生效。
+ *
+ * [#277] `read` 调用的 `toolInput.path` 先经组装根注入的 `normalizePath` 规范化（已注册的宿主资源引用 →
+ * `小写scheme://path`，其它原文），matcher 与交给 Hook 脚本的 stdin 用同一个值——与权限规则看到的一致，
+ * `DEMO://x` 绕不过 `read(demo://*)`。hooks 模块不 import tools，规范化函数由 bootstrap 提供。
  */
 
 import type { LoadedHook } from "./config.js";
@@ -43,6 +47,8 @@ export interface HookDispatcherOptions {
   executor?: HookExecutor;
   /** 额外环境变量。 */
   env?: Readonly<Record<string, string | undefined>>;
+  /** [#277] `read` 的 `path` 规范化（已注册资源引用 → 小写 scheme；其它原文）；缺省不改。 */
+  normalizePath?: (path: string) => string;
 }
 
 /** 用 `overrides` 里值不为 undefined 的键覆盖 `base`。 */
@@ -59,6 +65,29 @@ function withOverrides(
 }
 
 const TOOL_EVENTS: ReadonlySet<HookEvent> = new Set(["PreToolUse", "PostToolUse"]);
+
+/** 只有内置 `read` 读宿主资源；write / edit 的 `scheme://x` 是普通文件名，保持原文。 */
+const RESOURCE_TOOL = "read";
+
+/**
+ * [#277] Pre/PostToolUse 且工具为 `read`、`path` 为字符串时返回带规范化 `path` 的浅拷贝；其它情况原样返回。
+ * 不改动调用方的输入对象。
+ */
+function normalizePayload(
+  event: HookEvent,
+  payload: HookEventPayload,
+  normalize: ((path: string) => string) | undefined,
+): HookEventPayload {
+  if (normalize === undefined || !TOOL_EVENTS.has(event)) return payload;
+  if (payload.toolName !== RESOURCE_TOOL) return payload;
+  const input = payload.toolInput;
+  if (typeof input !== "object" || input === null) return payload;
+  const path = (input as Record<string, unknown>)["path"];
+  if (typeof path !== "string") return payload;
+  const normalized = normalize(path);
+  if (normalized === path) return payload;
+  return { ...payload, toolInput: { ...(input as Record<string, unknown>), path: normalized } };
+}
 
 interface CompiledHook {
   hook: LoadedHook;
@@ -102,10 +131,11 @@ export class HookDispatcher implements HookDispatcherApi {
 
   async run(
     event: HookEvent,
-    payload: HookEventPayload,
+    rawPayload: HookEventPayload,
     signal?: AbortSignal,
     context?: HookContextOverrides,
   ): Promise<HookOutcome> {
+    const payload = normalizePayload(event, rawPayload, this.options.normalizePath);
     const hooks = this.matching(event, payload.toolName, payload.toolInput);
     if (hooks.length === 0) return emptyOutcome();
     const common = withOverrides(this.options.context(), context);
