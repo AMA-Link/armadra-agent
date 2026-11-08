@@ -12,6 +12,9 @@
  *
  * [#226] `runners.onDone` 与 `minor`（host-api 1.1）：每轮结束的事件由 registry 的观察包装发出，
  * 处理器异常走本适配器的 `log`。
+ *
+ * [#270] `resources`（host-api 1.2）：注册进 bootstrap 注入的 {@link HostResourceRegistry}（read 工具
+ * 持同一个实例）；未注入时本地新建一个（SDK / 测试），宿主激活后由 bootstrap 冻结。
  */
 
 import { HostRunnerRegistry, type RunnerDoneHandler } from "../drivers/host-runners.js";
@@ -29,6 +32,8 @@ import type {
   InstructionSource,
 } from "./types.js";
 import { HOST_API_MINOR, HOST_API_VERSION } from "./types.js";
+import { HostResourceRegistry } from "./resources.js";
+import type { HostResource } from "../tools/resource-ref.js";
 import type { ToolDefinition, ToolRegistryApi } from "../tools/types.js";
 import type { WarmingDecisionHandler } from "../ai/cache/types.js";
 import { msg } from "../i18n/index.js";
@@ -99,6 +104,8 @@ export interface HostApiDeps {
   log?: HostLogger;
   /** stderr 写入（测试注入）。 */
   stderr?: (text: string) => void;
+  /** [#270] 宿主资源注册表（与 read 工具共用同一实例）；缺省新建。 */
+  resources?: HostResourceRegistry;
 }
 
 /** createHostApi 的产物：api 交给适配器，其余给 bootstrap / AgentSession。 */
@@ -122,6 +129,8 @@ export interface HostApiBinding {
   setNotify(fn?: HostNotify): void;
   /** [W3-C0] 宿主经 `cache.onWarmingDecision` 注册的否决钩子（最后注册且未注销的那个）。 */
   warmingDecider(): WarmingDecisionHandler | undefined;
+  /** [#270] 宿主资源注册表（系统提示资源行与 read 工具都读它）。 */
+  readonly resources: HostResourceRegistry;
 }
 
 const TOOL_NAME = /^[a-z][a-z0-9_]{1,63}$/;
@@ -163,6 +172,7 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
       if (level === "warn" || level === "error") writeErr(`ama: [host] ${message}\n`);
     });
   const runners = new HostRunnerRegistry({ log: (message, error) => log("error", message, error) });
+  const resources = deps.resources ?? new HostResourceRegistry();
 
   const api: HostApi = Object.freeze({
     version: HOST_API_VERSION,
@@ -248,6 +258,10 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
       provide: (runner: HostRunner) => runners.provide(runner),
       onDone: (handler: RunnerDoneHandler) => runners.onDone(handler),
     }),
+    resources: Object.freeze({
+      register: (resource: HostResource) => resources.register(resource),
+      list: () => resources.schemes(),
+    }),
   });
   hostRunnerRegistries.set(api, runners);
 
@@ -265,5 +279,6 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
       notify = fn ?? deps.notify;
     },
     warmingDecider: () => warmingHandlers.at(-1),
+    resources,
   };
 }
