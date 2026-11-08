@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { TurnCollector } from "./turn.js";
-import type { DriverEvent } from "./types.js";
+import type { SubagentReport } from "../tools/types.js";
+import { TurnCollector, reportFromTurn } from "./turn.js";
+import type { DriverEvent, DriverTurnResult } from "./types.js";
 
 const call = (
   status: "pending" | "in_progress" | "completed" | "failed",
@@ -43,5 +44,37 @@ describe("TurnCollector 的工具进度去重", () => {
       "t1 Write b.txt",
       "t2 Write a.txt",
     ]);
+  });
+});
+
+describe("[#269] reportFromTurn：外部 Agent 的结构化报告映射", () => {
+  const turn = (stopReason: DriverTurnResult["stopReason"], report?: SubagentReport) => ({
+    stopReason,
+    ...(report === undefined ? {} : { report }),
+  });
+
+  it("驱动给的 report 优先；否则 refusal → failed、max_tokens / max_turn_requests → blocked", () => {
+    const own: SubagentReport = { state: "waiting", summary: "asked the user" };
+    expect(reportFromTurn("codex", turn("end_turn", own), false)).toBe(own);
+    expect(reportFromTurn("codex", turn("refusal"), false)).toEqual({
+      state: "failed",
+      summary: "codex refused the request.",
+    });
+    expect(reportFromTurn("codex", turn("max_tokens"), false)).toEqual({
+      state: "blocked",
+      summary: "codex hit its output limit before finishing.",
+    });
+    expect(reportFromTurn("codex", turn("max_turn_requests"), false)).toEqual({
+      state: "blocked",
+      summary: "codex hit its turn limit before finishing.",
+    });
+  });
+
+  it("end_turn / cancelled 不编造；超时时即使驱动给了也不带（status 已表达）", () => {
+    expect(reportFromTurn("codex", turn("end_turn"), false)).toBeUndefined();
+    expect(reportFromTurn("codex", turn("cancelled"), false)).toBeUndefined();
+    expect(
+      reportFromTurn("codex", turn("end_turn", { state: "ready", summary: "ok" }), true),
+    ).toBeUndefined();
   });
 });

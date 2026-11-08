@@ -119,6 +119,27 @@ describe("ProcessRunner × 假 ACP Agent", () => {
     expect(asked).toEqual([]);
   });
 
+  it("[#269] refusal → report failed（事件与结果都带）；end_turn 不编造 report", async () => {
+    const { runner } = setup();
+    const refused = request("[refuse]");
+    const handle = await runner.start(refused.req);
+    cleanups.push(() => handle.stop());
+    const result = await handle.wait();
+    expect(result).toMatchObject({
+      status: "failed",
+      stopReason: "refusal",
+      report: { state: "failed", summary: "acp:fake refused the request." },
+    });
+    expect(refused.events.filter((e) => e.type === "report")).toEqual([
+      { type: "report", report: { state: "failed", summary: "acp:fake refused the request." } },
+    ]);
+    const plain = request("hello");
+    const second = await runner.start(plain.req);
+    cleanups.push(() => second.stop());
+    expect(await second.wait()).not.toHaveProperty("report");
+    expect(plain.events.some((e) => e.type === "report")).toBe(false);
+  });
+
   it("父 abort：挂起的审批 signal 被取消、回 cancelled，任务 aborted", async () => {
     const controller = new AbortController();
     let approvalSignal: AbortSignal | undefined;

@@ -11,6 +11,7 @@
 
 import type { ContentBlock } from "../ai/types.js";
 import type { ExternalPermissionOrigin, PermissionMode } from "../permissions/types.js";
+import type { SubagentReport } from "../tools/types.js";
 
 export interface DriverCapabilities {
   resume: "resume" | "load" | "none";
@@ -108,6 +109,11 @@ export interface DriverTurnResult {
   filesTouched: string[];
   /** ≤ 20 行。 */
   toolSummary: string[];
+  /**
+   * [#269] 驱动能从原生协议拿到的结构化状态（有就填）；没有时 ProcessRunner 只按 stopReason 映射
+   * `refusal` → failed、`max_tokens` / `max_turn_requests` → blocked，`end_turn` 不编造。
+   */
+  report?: SubagentReport;
 }
 
 export interface DriverPromptHooks {
