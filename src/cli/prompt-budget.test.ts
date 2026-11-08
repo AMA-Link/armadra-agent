@@ -39,7 +39,7 @@ const PROMPT_BUDGETS = { default: 2000, minimal: 800, "codemode-only": 1950 } as
  * default + task（`tools.default: ["+task"]`，按需打开）：task 描述带子 Agent 类型清单，加上 web_fetch 后
  * 实测 -p 2099 / 交互 2116（原 1980 / 1997，紧贴 2000），单列一档，与 default+memory 同理；[#269] `report`
  * 随 task 进表（描述、schema 与 tools 节一行），实测 -p 2203 / 交互 2220，放宽到 2250；[#266/#267] 与 bash 的
- * `extend` 动作、task_ctl 的 `extend` 合并后交互实测 2266，放宽到 2300。
+ * `extend` 动作、task_ctl 的 `extend` 合并后交互实测 2266（Windows 的 bash 描述是 PowerShell 版，单 #266/#267 时已到 2151），放宽到 2300。
  */
 const TASK_BUDGET = 2300;
 /** [W6-M] 记忆开启时 default 预设的上限（docs/history/wave6-plan.md §3.6、§10）。 */
