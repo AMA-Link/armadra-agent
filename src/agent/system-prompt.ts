@@ -16,6 +16,7 @@ import { escapeXml } from "../skills/index-prompt.js";
 import type { AgentMessage } from "../session/types.js";
 import type { ToolDefinition } from "../tools/types.js";
 import { baseRules } from "./prompt-rules.js";
+import { formatResourceLine } from "../tools/resource-ref.js";
 
 export const SECTION_ORDER = [
   "preamble",
@@ -50,6 +51,11 @@ export interface SystemPromptInput {
   cwd: string;
   /** 宿主 instructions（已读入的文本），按添加顺序。 */
   hostInstructions?: readonly string[];
+  /**
+   * [#270] 宿主注册的资源（`api.resources.register`）：tools 节末尾追加一行列出 `scheme:// describe`，
+   * 按 scheme 排序；会话开始时固定（之后不再注册）。没有时零字节变化。
+   */
+  hostResources?: readonly { scheme: string; describe: string }[];
   /** [W5-G] task 子会话的角色说明（子 Agent 通用说明 + 类型正文）；主会话没有。 */
   role?: string;
   /** [W6-C0] 预渲染的 `<memory_index>` 节（W6-M 的 memory/section.ts）；未开启记忆时不给。 */
@@ -78,6 +84,8 @@ export function assembleSections(
     // 内置工具的 promptSnippet 已以「name: 」开头（B3 约定），不再重复工具名。
     return snippet.startsWith(`${tool.name}:`) ? `- ${snippet}` : `- ${tool.name}: ${snippet}`;
   });
+  const resourceLine = formatResourceLine(input.hostResources ?? []);
+  if (resourceLine !== undefined) toolLines.push(`- ${resourceLine}`);
   const rules = [
     ...baseRules(tools),
     ...tools.flatMap((tool) => tool.promptGuidelines ?? []),
