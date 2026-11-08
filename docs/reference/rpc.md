@@ -235,9 +235,14 @@
 | 事件                  | 字段                                                                                                                                                                                     |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `subagent_start`      | `taskId`、`parentToolCallId`、`agent`、`runner`（`ama` / `claude` / `codex` / `acp:<程序>`）、`description`、`background`、`model?`、`sessionFile?`、`cwd`；同一 `taskId` 续聊时再发一次 |
-| `subagent_update`     | `taskId`、`kind: tool \| text \| turn`、`toolName?`、`textDelta?`（≥ 250 ms 合并）、`turn`、`usage?`                                                                                     |
+| `subagent_update`     | `taskId`、`kind: tool \| text \| turn \| report`、`toolName?`、`textDelta?`（≥ 250 ms 合并）、`turn`、`usage?`、`report?`（只随 `kind: "report"`：子 Agent 调用了 `report`，#269）       |
 | `subagent_background` | `taskId`、`parentToolCallId`、`reason: user \| timeout \| host`（前台任务转后台：交互界面手动、`subagents.autoBackgroundAfterMs` 到时、RPC / SDK 调用；第七波）                          |
-| `subagent_end`        | `taskId`、`status: completed \| failed \| aborted \| max_turns \| interrupted`、`usage?`、`cache?`、`outputFile?`、`worktree?: { branch, changed }`                                      |
+| `subagent_end`        | `taskId`、`status: completed \| failed \| aborted \| max_turns \| interrupted`、`usage?`、`cache?`、`outputFile?`、`worktree?: { branch, changed }`、`report?`                           |
+
+`report`（#269）是子 Agent 用 `report` 工具自报的结构化状态 `{ state: ready | blocked | failed | waiting, summary, humanAction? }`
+（[agents.md](../guides/agents.md)「结构化报告」）：`subagent_update{kind:"report"}` 在子 Agent 每次调用后发一次（这次运行当前折叠后的值），
+`subagent_end.report` 与 `get_tasks` 的 `TaskInfo.report` 是最终值；子 Agent 没报告时都缺省。`humanAction` 是只有人能决定的事，
+客户端应直接展示给人。都是新增的可选字段与一个新的 `kind` 值，`RPC_PROTOCOL_VERSION` 不变，客户端忽略不认识的 `kind` 即可。
 
 子会话与外部 Agent 的审批照常以 `permission_request` 发给本连接，`context`（可选）标出来源（第六波起本会话工具调用的审批也带
 `context.toolCallId`——触发审批的工具调用 id，轨迹据此算审批等待；外部 Agent 的请求不带）：

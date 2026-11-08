@@ -192,6 +192,7 @@ interface RunnerDoneEvent {
 - 只观察：处理器不被 await，抛错（含 Promise 拒绝）只经 `log` 记一条 error，不影响 `wait()` 的结果与其它处理器。
 - 同一轮里 ama 可能多次调用 `wait()`（任务入口与注册表各一次），事件只发一次；该轮落定后、没有新的 `send` / `interrupt` 时再调用 `wait()` 不再发。运行中的 `interrupt` 由当前这一轮跟到结束，不另起一轮。
 - 只覆盖宿主注入的 runner；ama 自己的子会话（`general` / `explore` / `plan`）仍看 `subagent_start` / `subagent_end` 事件。
+- （#269）`subagent_end` 可带 `report?: { state: ready | blocked | failed | waiting, summary, humanAction? }`——子 Agent 用 `report` 工具自报的状态（[agents.md](../guides/agents.md)「结构化报告」）；宿主 runner 可在结果里带 `report`，或发 `{ type: "report", report }` 进度事件。可选字段，`HOST_API_VERSION` / `HOST_API_MINOR` 不变。
 - 用途：宿主不必轮询「协调者是否还在等这个任务」——收到事件即知道 ama 这一侧的任务结束了。
 
 ## 退出

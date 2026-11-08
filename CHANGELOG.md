@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Sub-agents
+
+- **Structured sub-agent reports** (#269): sub-sessions get a `report` tool, `{ state: ready | blocked | failed | waiting, summary, humanAction? }`. `humanAction` is a single slot for things only a person can decide (given replaces, omitted keeps, `null` clears; reset at each run, so a `taskId` follow-up starts clean). The parent's `task` result, `<task-notification>` and `task_ctl wait` text start with a `[report] state · summary` line and, with a human action, `[needs a person] …` plus the fixed rule "Relay this question to the user verbatim; do not answer it yourself."; `details.report`, `TaskInfo.report`, `subagent_update{kind:"report"}` and `subagent_end.report` carry the same value (optional fields, `RPC_PROTOCOL_VERSION` unchanged). The agent bar, `/tasks`, the tool-row status line and the terminal program status (`blocked:question`) show the state and the question so a person sees it even if the main agent does not relay it; ACP clients get it as `_meta.ama.report` on the originating `task` call. External agents map `refusal` → failed and `max_tokens` / `max_turn_requests` → blocked; `end_turn` is not mapped. Without a `report` call everything is byte-identical to before. `report` is a companion of `task` (present but rejected in the parent, so sub-session tool tables stay identical to the parent's and cache prefixes keep working); the `default + task` and `codemode-only` prompt budgets widen to 2250 / 1950 tokens. See [docs/guides/agents.md](docs/guides/agents.md).
+
 ## 0.15.1 (2026-11-06)
 
 ### Maintenance

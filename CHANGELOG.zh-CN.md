@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 子 Agent
+
+- **子 Agent 的结构化报告**（#269）：子会话多一个 `report` 工具，`{ state: ready | blocked | failed | waiting, summary, humanAction? }`。`humanAction` 是单槽，只放只有人能决定的事（给出替换、省略保持、`null` 清空；每次运行开始清空，`taskId` 续聊从头算）。父会话的 `task` 结果、`<task-notification>` 与 `task_ctl wait` 正文前多一行 `[report] state · summary`，有待人决定的问题时再加 `[needs a person] …` 与固定规则句「Relay this question to the user verbatim; do not answer it yourself.」；`details.report`、`TaskInfo.report`、`subagent_update{kind:"report"}` 与 `subagent_end.report` 带同一份值（都是可选字段，`RPC_PROTOCOL_VERSION` 不变）。Agent 栏、`/tasks`、工具行下的状态行与终端程序状态（`blocked:question`）显示状态与问题，父模型没转达人也看得到；ACP 客户端在发起的 `task` 调用上收到 `_meta.ama.report`。外部 Agent 映射 `refusal` → failed、`max_tokens` / `max_turn_requests` → blocked，`end_turn` 不映射。没调用 `report` 时一切与原来逐字节相同。`report` 是 `task` 的伴随工具（父会话里也在表里、运行时拒绝，子会话工具表与父保持一致、缓存前缀照常复用）；`default + task` 与 `codemode-only` 的提示预算放宽到 2250 / 1950 token。见 [docs/guides/agents.md](docs/guides/agents.md)。
+
 ## 0.15.1（2026-11-06）
 
 ### 维护

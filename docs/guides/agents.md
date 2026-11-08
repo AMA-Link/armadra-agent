@@ -10,6 +10,7 @@
 `task` 与 `task_ctl` 同进退：`default` 预设下只在 codemode 脚本里可调用，`--tools …,task` 或 `tools.default: ["+task"]`
 时直接暴露；嵌入宿主时宿主可以禁用。子 Agent 运行在同一进程的新会话里（全新上下文，看不到父对话，`prompt` 要写全），
 有自己的 JSONL（与父会话同目录，头的 `parentSession` 指回父文件）。深度最多 1：子 Agent 里调用 `task` / `task_ctl` 会被拒绝。
+`report` 是第三个同进退的工具：子 Agent 用它向父会话报告结构化状态（见「结构化报告」），父会话里调用会被拒绝。
 
 ### 内置类型
 
@@ -20,7 +21,7 @@
 | `plan`            | 父的活动集 | plan 模式                             | 输出分步计划、关键文件与取舍，不修改文件   |
 
 只读靠权限层：只读类型的子会话用一条 plan 模式的权限管线（规则与父相同），需要确认的调用一律直接拒绝，**不弹审批**。
-工具表与父会话逐字节相同（`task` / `task_ctl` 也在表里，运行时拒绝），子会话的首个请求能复用父会话已缓存的 tools + system
+工具表与父会话逐字节相同（`task` / `task_ctl` / `report` 都在表里，前两个在子会话、后一个在父会话运行时拒绝），子会话的首个请求能复用父会话已缓存的 tools + system
 前缀；角色说明是系统提示最后一个节（`role`），父会话的全部节都是它的前缀。只有类型声明了 `tools` / `disallowed-tools`
 （或调用时传了 `tools`）时工具表才不同，此时首个请求不命中父的缓存。
 
@@ -121,15 +122,52 @@ ama 再跑一轮、在消息里要求「不要调用工具、直接给最终报�
 
 `task_ctl` 的动作：
 
-| `action` | 说明                                                                                                    |
-| -------- | ------------------------------------------------------------------------------------------------------- |
-| `list`   | 列出本会话的任务：编号、类型、状态、轮数、token、耗时、是否后台、描述                                   |
-| `wait`   | 等任务结束（`timeoutMs` 缺省 30 000，最多 600 000）；超时说明仍在运行；被转后台时立即返回并说明不必再等 |
-| `stop`   | 停止任务，返回终态                                                                                      |
-| `output` | 运行中返回已有输出，结束后返回最终文本（同样有 50 KB 上限）                                             |
-| `send`   | 向任务追加一条消息并放到后台运行（等价于 `task{taskId, prompt, background:true}`）                      |
+| `action` | 说明                                                                                                                                    |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `list`   | 列出本会话的任务：编号、类型、状态、轮数、token、耗时、是否后台、描述                                                                   |
+| `wait`   | 等任务结束（`timeoutMs` 缺省 30 000，最多 600 000）；超时说明仍在运行；被转后台时立即返回并说明不必再等；结果正文前带「结构化报告」的行 |
+| `stop`   | 停止任务，返回终态                                                                                                                      |
+| `output` | 运行中返回已有输出，结束后返回最终文本（同样有 50 KB 上限）                                                                             |
+| `send`   | 向任务追加一条消息并放到后台运行（等价于 `task{taskId, prompt, background:true}`）                                                      |
 
 `coordinator` 预设下 `wait` 的超时封顶 5 000 毫秒（含缺省与更大的 `timeoutMs`），超时回复里说明被封顶、完成后会有通知；其它预设不变。
+
+### 结构化报告
+
+子 Agent 结束时父会话只拿到一段文字，「做完了」「卡住了」「要人拍板」都得从正文里猜；要人回答的问题埋在正文里时，父会话还可能自己编一个答案接着做。
+`report` 工具（#269）把这三件事变成结构化字段：
+
+```text
+report({ state: "blocked", summary: "Tests need a database account.", humanAction: "Which test account should I use?" })
+```
+
+- `state`：`ready`（做完）/ `blocked`（缺了某样东西做不下去）/ `failed`（放弃）/ `waiting`（在等外部的事）；`summary` ≤ 300 字符。
+- `humanAction`（≤ 300 字符）是**单槽**：只放只有人能决定的事。一次运行里多次调用时，给出就替换、省略就保持、`null` 清空；`state` / `summary` 取最后一次。
+- 槽按**一次运行**划定：每次 `task` 调用或 `taskId` 续聊开始时清空——续聊通常就是父会话带着人的回答回来，旧问题不会跨运行重复出现。
+- 角色说明末尾要求子 Agent 结束前调用 `report`，但不强制：没调用时结果、通知与事件和原来逐字节相同。
+
+父会话看到的（`task` 结果、`<task-notification>`、`task_ctl wait` 三处一致）是在正文前加的固定英文行：
+
+```text
+[report] blocked · Tests need a database account.
+[needs a person] Which test account should I use?
+Relay this question to the user verbatim; do not answer it yourself.
+
+…子 Agent 的正文…
+```
+
+`task` 结果的 `details.report`、`<task-notification>` 的 `report="blocked"` 属性、RPC `get_tasks` 的 `TaskInfo.report` 与事件
+`subagent_update{kind:"report"}` / `subagent_end.report` 带同一份报告（[rpc.md](../reference/rpc.md)「子 Agent 事件」）。
+规则句是对父模型的约束；对人的保证是界面：Agent 栏与 `/tasks` 的任务行带状态标签，留了待人决定的问题时整行警告色并带上问题，
+终端程序状态里该任务是 `blocked:question`，ACP 客户端在发起它的 `task` 调用上收到 `_meta.ama.report`——父模型就算把问题吞了，人也看得到。
+
+外部 Agent 没有 `report` 工具，驱动只映射能确定的原生状态：ACP `stopReason` 的 `refusal` → `failed`，`max_tokens` /
+`max_turn_requests` → `blocked`（摘要是固定英文一句）；`end_turn` 分不清做完与等人，不编造，行为与原来一样。宿主注入的 runner
+可以在结果里带 `report` 或发 `{ type: "report" }` 进度事件。
+
+`report` 是 `task` 的伴随工具：父会话的工具表里也有它（否则子会话的工具表与父不同，缓存前缀从第一个字节起失效，fork 模式也就
+失去意义），只是父会话里调用会被拒绝。代价是开了 `task` 的会话前缀多一个短工具（`default + task` 预算从 2 150 放宽到 2 250 token，
+`codemode-only` 从 1 900 到 1 950，见 [design.md](../design/design.md) §9.1）。
 
 ### 续聊、保留与 resume
 
@@ -192,7 +230,8 @@ fork 的成本不止首请求：子会话**每一回合**都重读整段父前�
 
 ### 事件与统计
 
-RPC / SDK 事件 `subagent_start` / `subagent_update` / `subagent_background` / `subagent_end` 见 [rpc.md](../reference/rpc.md)「子 Agent 事件」。
+RPC / SDK 事件 `subagent_start` / `subagent_update` / `subagent_background` / `subagent_end` 见 [rpc.md](../reference/rpc.md)「子 Agent 事件」；
+子 Agent 用 `report` 报告时另有 `subagent_update{kind:"report"}`，`subagent_end` 与 `get_tasks` 的 `TaskInfo` 带 `report`。
 `getStats().tasks` 给出任务总数、运行中数量与按状态的计数；子会话的缓存命中与重计费仍汇总在 `cache.subagents`。
 RPC `get_tasks` / `get_agents` 返回任务快照与可用类型（来源、定义文件路径）。交互界面的 `/tasks`、`/agents` 与 task 工具行的折叠显示见 [tui.md](tui.md)「子 Agent」。
 
