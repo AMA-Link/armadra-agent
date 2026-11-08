@@ -2,6 +2,7 @@
  * [#267] 后台子 Agent 的寿命上限与一次续命（手动时钟；脚本化供应商）。
  */
 
+import { getEventListeners } from "node:events";
 import { describe, expect, it } from "vitest";
 import { manualTimers } from "../../test/helpers/manual-timers.js";
 import { AgentCatalog } from "../agents/catalog.js";
@@ -160,8 +161,9 @@ describe("后台子 Agent 的寿命上限", () => {
     await say(h, "next");
     expect(reminders(h)).toHaveLength(1);
     expect(reminders(h)[0]).toContain("stopped at its lifetime cap");
-    // 被 stop 过的 ama 子会话续聊仍以 aborted 收尾（runner 现有行为）；无论终态如何都不再出第二条寿命提醒
+    // [#278] 被 stop 过的 ama 子会话续聊后正常完成：completed；不再出第二条寿命提醒
     await waitUntil(() => of(h.events, "subagent_end").length === 2);
+    expect(of(h.events, "subagent_end")[1]).toMatchObject({ taskId: "t1", status: "completed" });
     await say(h, "after");
     expect(reminders(h)).toHaveLength(1);
     await h.session.dispose();
@@ -253,5 +255,106 @@ describe("后台子 Agent 的寿命上限", () => {
     expect(expiredTaskText({ taskId: "t2", agent: "explore", maxMs: 90_000 })).toBe(
       "Background task t2 (agent explore) was stopped at its lifetime cap (1.5 min, subagents.backgroundMaxMs); task_ctl output has what it produced.",
     );
+  });
+});
+
+describe("[#278] 停止过的子会话续聊：每次运行自己的中止信号", () => {
+  const ends = (h: H) => of(h.events, "subagent_end").map((e) => e.status);
+
+  it("task_ctl stop 之后续聊、正常完成：completed，并发 task-notification", async () => {
+    const timers = manualTimers();
+    const { h, g } = harness(
+      { backgroundMaxMs: 0, timers },
+      {
+        go: task({ prompt: "slow", background: true }),
+        stop: ctl({ action: "stop", taskId: "t1" }),
+        again: task({ prompt: "continue", taskId: "t1", background: true }),
+      },
+    );
+    await h.session.prompt("go");
+    await waitUntil(() => of(h.events, "subagent_start").length === 1);
+    await say(h, "stop");
+    expect(ends(h)).toEqual(["aborted"]);
+    g.open();
+    await say(h, "again");
+    await waitUntil(() => ends(h).length === 2);
+    expect(ends(h)).toEqual(["aborted", "completed"]);
+    await waitUntil(() => notes(h).length === 1);
+    const note = notes(h)[0];
+    expect(note?.role === "user" ? String(note.content) : "").toContain("report slow");
+    await h.session.dispose();
+  });
+
+  it("续聊过程中再 stop：这一次 aborted；之后再续聊仍能正常完成", async () => {
+    const timers = manualTimers();
+    const { h, g } = harness(
+      { backgroundMaxMs: 0, timers },
+      {
+        go: task({ prompt: "slow", background: true }),
+        stop: ctl({ action: "stop", taskId: "t1" }),
+        again: task({ prompt: "continue", taskId: "t1", background: true }),
+      },
+    );
+    await h.session.prompt("go");
+    await waitUntil(() => of(h.events, "subagent_start").length === 1);
+    await say(h, "stop");
+    await say(h, "again");
+    await waitUntil(() => of(h.events, "subagent_start").length === 2);
+    await say(h, "stop");
+    expect(ends(h)).toEqual(["aborted", "aborted"]);
+    g.open();
+    await say(h, "again");
+    await waitUntil(() => ends(h).length === 3);
+    expect(ends(h)).toEqual(["aborted", "aborted", "completed"]);
+    await h.session.dispose();
+  });
+
+  it("前台续聊时父信号中止：子任务 aborted（父中止仍经注册表的 controller 传到子会话）", async () => {
+    const timers = manualTimers();
+    const { h } = harness(
+      { backgroundMaxMs: 0, timers },
+      {
+        go: task({ prompt: "slow", background: true }),
+        stop: ctl({ action: "stop", taskId: "t1" }),
+      },
+    );
+    await h.session.prompt("go");
+    await waitUntil(() => of(h.events, "subagent_start").length === 1);
+    await say(h, "stop");
+    const parent = new AbortController();
+    const running = h.session.spawnSubagent({
+      taskId: "t1",
+      prompt: "continue",
+      background: false,
+      parentToolCallId: "host",
+      signal: parent.signal,
+    });
+    await waitUntil(() => of(h.events, "subagent_start").length === 2);
+    parent.abort();
+    expect((await running).status).toBe("aborted");
+    expect(ends(h)).toEqual(["aborted", "aborted"]);
+    await h.session.dispose();
+  });
+
+  it("同一父信号上多次前台续聊：结束后不残留 abort 监听器，寿命计时器也不残留", async () => {
+    const timers = manualTimers();
+    const { h, g } = harness({ backgroundMaxMs: 600_000, timers }, {});
+    g.open();
+    const parent = new AbortController();
+    const spawn = (taskId?: string) =>
+      h.session.spawnSubagent({
+        ...(taskId === undefined ? {} : { taskId }),
+        prompt: "go",
+        background: false,
+        parentToolCallId: "host",
+        signal: parent.signal,
+      });
+    expect((await spawn()).status).toBe("completed");
+    expect((await spawn("t1")).status).toBe("completed");
+    expect((await spawn("t1")).status).toBe("completed");
+    expect(ends(h)).toEqual(["completed", "completed", "completed"]);
+    expect(getEventListeners(parent.signal, "abort")).toEqual([]);
+    expect(timers.pending()).toEqual([]);
+    await h.session.dispose();
   });
 });

@@ -341,7 +341,18 @@ async function startAmaChild(
       parent.emit(event);
   });
   if (mode !== undefined) run.onEvent({ type: "context", mode });
-  const onAbort = (): void => void child.abort();
+  /**
+   * [#278] 每次运行一个 controller：`stop()` 只中止当前这一次。`run.signal` 是首次启动那次运行的信号，
+   * 续聊（句柄复用）时注册表换了新 controller 并经 `stop()` 传达，所以终态只看本次运行的信号，
+   * 不再读已经陈旧的 `run.signal`（否则被停过一次的任务续聊后永远是 aborted）。
+   */
+  let runController: AbortController | undefined;
+  let firstRun = true;
+  const stopRun = (): Promise<void> => {
+    runController?.abort();
+    return child.abort();
+  };
+  const onAbort = (): void => void stopRun().catch(() => undefined);
   run.signal.addEventListener("abort", onAbort, { once: true });
   let billed = { cacheRead: 0, prompt: 0, reBilled: 0 };
 
@@ -353,14 +364,20 @@ async function startAmaChild(
     let error: string | undefined;
     report = undefined;
     active = true;
+    const controller = new AbortController();
+    runController = controller;
+    const { signal } = controller;
+    // 首次运行前请求信号就已中止：按 aborted 收尾；之后的运行不再看 run.signal
+    if (firstRun && run.signal.aborted) controller.abort();
+    firstRun = false;
     try {
-      if (run.signal.aborted) throw new AmaError("aborted", "aborted");
+      if (signal.aborted) throw new AmaError("aborted", "aborted");
       await child.prompt(prompt, origin === undefined ? {} : { origin });
       // [W6-A] 收尾阶段才入队的 followUp（只可能来自视图）留在队列里：接着再跑一轮
       for (;;) {
         while (forced.length > 0) await forced.shift();
         const left = child.clearQueue?.().followUp ?? [];
-        if (left.length === 0 || run.signal.aborted) break;
+        if (left.length === 0 || signal.aborted) break;
         await child.prompt(left.join("\n\n"), { origin: "direct" });
       }
     } catch (caught) {
@@ -368,7 +385,7 @@ async function startAmaChild(
     }
     active = false;
     const exhausted =
-      error === undefined && !run.signal.aborted && turns - startTurns >= maxTurns && toolUse;
+      error === undefined && !signal.aborted && turns - startTurns >= maxTurns && toolUse;
     if (exhausted) {
       options.maxTurns = 1;
       try {
@@ -379,7 +396,7 @@ async function startAmaChild(
         options.maxTurns = maxTurns;
       }
     }
-    const result = collect(child, error, exhausted, run.signal.aborted);
+    const result = collect(child, error, exhausted, signal.aborted);
     if (mode !== undefined) result.context = mode;
     if (report !== undefined) result.report = report;
     billed = addCache(parent, child.getStats(), billed);
@@ -422,7 +439,7 @@ async function startAmaChild(
       await child.followUp(text, { origin: "direct" });
     },
     wait: () => current,
-    stop: () => child.abort(),
+    stop: stopRun,
     dispose: async () => {
       run.signal.removeEventListener("abort", onAbort);
       unsubscribe();
