@@ -42,7 +42,7 @@
 | 新模式拒绝（切到 Plan 时等的是写入或非只读命令；切到 Allowlist only 时名单外的）       | 自动答拒绝：对话框收起，消息区一行「已按 Plan 自动拒绝 N 个待审批」；模型收到的结果写明「the permission mode was switched to "plan" …」加管线的说明 |
 | 新模式仍要问（Auto 下规则层 / 静态判定没定、要交分类器的也算）                         | 保持不动，继续等人                                                                                                                                  |
 
-不碰的：宿主 broker（`HostApi.approvals.setBroker`）已经接手、正在等它回答的请求（宿主自己决定）；危险命令表命中的（切到 Bypass 也照旧要人确认）；外部 Agent 的权限请求与首次运行确认（一律交给人）。自动作答只有允许 / 拒绝，不写 `allow_session` 记忆。先到的回答为准：人已经按了键就按人的，之后才到的切换不再改它。
+不碰的：宿主 broker（`HostApi.approvals.setBroker`）已经接手、正在等它回答的请求（宿主自己决定）；危险命令表命中的（切到 Bypass 也照旧要人确认）；外部 Agent 的权限请求与首次运行确认（一律交给人）。自动作答只有允许 / 拒绝，不写 `allow_session` 记忆；切到 Auto 时由规则层 / 静态判定放行的，不记入 `/permissions` 的 auto 审计（审计只记首轮判定）。先到的回答为准：人已经按了键就按人的，之后才到的切换不再改它。
 
 来源不限：交互界面 Shift+Tab / `/permission`、RPC `set_permission_mode`、ACP `session/set_mode`、计划批准切回执行模式都走同一条路。审批对话框打开时 Shift+Tab 仍能切模式（Tab 归对话框）；切到 Bypass 照旧先弹确认框，确认之后才重判。RPC / ACP 客户端收到被自动作答请求的 `permission_resolved`，`reason: "mode_changed"`，据此收起自己的审批界面（[rpc.md](../reference/rpc.md)「审批」）。
 
