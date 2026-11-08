@@ -52,10 +52,13 @@ describe("对话框打开时切模式：重判待审批", () => {
     expect(mode(s)).toBe("default");
     expect(s.handle.tui.hasOverlay).toBe(true);
     const ended = s.until((e) => e.type === "tool_execution_end");
+    // 帧要在这一轮真正收尾之后截：只等屏上出现最终回复时，慢机器上转圈行与用量还没刷新（CI 偶发）
+    const settled = s.until((e) => e.type === "agent_settled");
     s.type(SHIFT_TAB);
     expect(mode(s)).toBe("auto-edit");
     expect(s.handle.tui.hasOverlay).toBe(false);
     await ended;
+    await settled;
     await waitFor(s, (x) => x.includes("结束"), "final reply");
     const shown = screen(s);
     expect(shown).toContain("已按 Accept edits 自动允许 1 个待审批");
