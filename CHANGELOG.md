@@ -5,6 +5,13 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Tools and permissions
+
+- **A foreground `bash` command moves to the background after a threshold** (`tools.bashAutoBackgroundAfterMs`): when it is still running after the threshold, the process is handed to the background job table without being restarted and the tool returns at once with `{ jobId, outputPath, movedToBackground: true, output }` (the output so far); steering messages and task notifications no longer wait for the command, the exit is reported through the reminder channel as for any background job, and `bash {job, action}` works as usual. The default is 15 s under `--mode rpc` / `--mode acp`, in an embedding host (with a profile) and with the `coordinator` preset, and off (`0`) in a standalone terminal and with `-p`. Permission checks, sandbox wrapping, output truncation and the Windows process tree are unchanged; the 120 s / 600 s timeout no longer applies to a moved command, which is governed by the lifetime cap instead (#266).
+- **Lifetime caps for background jobs and background sub-agents**: `tools.bashBackgroundMaxMs` (default 2 hours) kills a background command's process tree when it is reached (SIGTERM → grace → SIGKILL; `taskkill /T` on Windows) and `subagents.backgroundMaxMs` (default 1 hour) stops a background sub-agent; `0` means unlimited. The model is told through the reminder channel ("stopped at its lifetime cap") and the output file is kept. A command moved from the foreground, or a task moved to the background, counts from the move. One extension per job or task: `bash {job, action: "extend", timeoutMs?}` and `task_ctl {action: "extend", taskId, timeoutMs?}` add at most one more cap (#267).
+
 ## 0.15.1 (2026-11-06)
 
 ### Maintenance

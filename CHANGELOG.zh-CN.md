@@ -4,6 +4,13 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 工具与权限
+
+- **前台 `bash` 超过阈值原地转后台**（`tools.bashAutoBackgroundAfterMs`）：命令跑过阈值还没结束时，进程不重启、直接交给后台任务表登记，工具立即返回 `{ jobId, outputPath, movedToBackground: true, output }`（到此刻的输出）；插话与子任务通知不再被长命令挡住，退出沿用后台命令的提醒通道，`bash {job, action}` 照常可用。缺省：`--mode rpc` / `--mode acp`、嵌入宿主（有 profile）与 `coordinator` 预设下 15 秒，独立终端与 `-p` 下关闭（`0`）。权限管线、沙箱包装、输出截断与 Windows 进程树处理不变；转后台的命令不再受 120 / 600 秒超时约束，改受寿命上限约束（#266）。
+- **后台任务与后台子 Agent 的寿命上限**：`tools.bashBackgroundMaxMs`（缺省 2 小时）到点杀掉后台命令的进程树（SIGTERM → 宽限 → SIGKILL；Windows `taskkill /T`），`subagents.backgroundMaxMs`（缺省 1 小时）到点停止后台子 Agent；`0` 不限。模型经提醒通道得知「到达寿命上限被停止」，输出文件保留。前台转来的命令、转后台的任务从转换时刻起算。每个任务可续命一次：`bash {job, action: "extend", timeoutMs?}` 与 `task_ctl {action: "extend", taskId, timeoutMs?}`，最多再加一个上限（#267）。
+
 ## 0.15.1（2026-11-06）
 
 ### 维护

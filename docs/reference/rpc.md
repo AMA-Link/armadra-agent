@@ -270,11 +270,11 @@
 
 ### 预算、回退与后台命令事件（第五波 W5-H2）
 
-| 事件             | 字段                                                                                                                                                                                                  |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `limit_reached`  | `kind: turns \| cost`、`value`（本次运行的回合数 / 美元）、`limit`；`limits.*`（config，`-p` 另有 `--max-turns` / `--max-cost`）到限时每次运行每类一次，随后 `agent_settled{warning:"limit_reached"}` |
-| `model_fallback` | `from`、`to`（`{ provider, id, channel? }`）、`reason`（触发的错误文本）；可重试错误在 overloaded 时或重试用尽后切到 `fallbackModel` 重试一次，回复后切回（另有两次 `model_changed`）                 |
-| `background_job` | `jobId`、`phase: started \| exited \| stopped`、`command`、`pid?`、`outputPath?`、`exitCode?`；`bash{background:true}` 启动的后台命令                                                                 |
+| 事件             | 字段                                                                                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `limit_reached`  | `kind: turns \| cost`、`value`（本次运行的回合数 / 美元）、`limit`；`limits.*`（config，`-p` 另有 `--max-turns` / `--max-cost`）到限时每次运行每类一次，随后 `agent_settled{warning:"limit_reached"}`                                                                                             |
+| `model_fallback` | `from`、`to`（`{ provider, id, channel? }`）、`reason`（触发的错误文本）；可重试错误在 overloaded 时或重试用尽后切到 `fallbackModel` 重试一次，回复后切回（另有两次 `model_changed`）                                                                                                             |
+| `background_job` | `jobId`、`phase: started \| exited \| stopped`、`command`、`pid?`、`outputPath?`、`exitCode?`；`bash{background:true}` 启动的后台命令，以及超过 `tools.bashAutoBackgroundAfterMs` 原地转后台的前台命令（转换时发 `started`，#266）；到达 `tools.bashBackgroundMaxMs` 被停止时发 `stopped`（#267） |
 
 重复调用检测（同 run 同名同参第 5 次）结束 run 时 `agent_settled{warning:"repeated_tool_call"}`。
 
