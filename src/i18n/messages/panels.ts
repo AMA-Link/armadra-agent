@@ -135,6 +135,9 @@ export const en = {
     fullOutput: (path: string) => `Full output: ${path}`,
     noOutput: "(no output yet)",
     title: (id: string) => `Task ${id}`,
+    /** [#269] 子 Agent 自报的状态与待人决定的问题。 */
+    report: { ready: "ready", blocked: "blocked", failed: "failed", waiting: "waiting" },
+    needsPerson: (question: string) => `needs a person: ${question}`,
   },
 };
 
@@ -254,5 +257,7 @@ export const zh = {
     fullOutput: (path) => `全文：${path}`,
     noOutput: "（还没有输出）",
     title: (id) => `任务 ${id}`,
+    report: { ready: "就绪", blocked: "受阻", failed: "失败", waiting: "等待中" },
+    needsPerson: (question) => `待人决定：${question}`,
   },
 } satisfies Messages<typeof en>;

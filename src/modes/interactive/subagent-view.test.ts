@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { SessionEvent } from "../../agent/types.js";
 import { Container, MemoryTerminal, TUI, plainTheme } from "../../tui.js";
-import { RECENT_TOOLS, SubagentTracker, backgroundEndText } from "./subagent-view.js";
+import {
+  RECENT_TOOLS,
+  SubagentTracker,
+  backgroundEndText,
+  notificationSummary,
+  subagentLine,
+} from "./subagent-view.js";
 import { subagentBackgroundText } from "./event-notices.js";
 import { golden, usage } from "./test-support.js";
 import { ToolTracker } from "./tool-view.js";
@@ -189,5 +195,50 @@ describe("[W7-C] 转后台的呈现", () => {
       "t2 explore 运行较久，已自动转后台（subagents.autoBackgroundAfterMs）",
     );
     expect(subagentBackgroundText(event("host"), "explore")).toBe("t2 explore 已由宿主转后台");
+  });
+});
+
+describe("[#269] 子 Agent 的报告", () => {
+  it("tracker：update 更新报告、end 以结果为准（没带就清掉）；状态行带标签与问题并转警告色", () => {
+    const tracker = new SubagentTracker(() => 0);
+    tracker.onEvent(start("t1", "c1"));
+    tracker.onEvent({
+      type: "subagent_update",
+      taskId: "t1",
+      kind: "report",
+      turn: 1,
+      report: { state: "blocked", summary: "Need an account.", humanAction: "Which account?" },
+    });
+    const state = tracker.get("t1")!;
+    expect(state.report).toEqual({
+      state: "blocked",
+      summary: "Need an account.",
+      humanAction: "Which account?",
+    });
+    const line = subagentLine(state, theme, 0);
+    expect(line).toContain("受阻 · 待人决定：Which account?");
+    tracker.onEvent({ type: "subagent_end", taskId: "t1", status: "completed" });
+    expect(tracker.get("t1")?.report).toBeUndefined();
+    tracker.onEvent({
+      type: "subagent_end",
+      taskId: "t1",
+      status: "completed",
+      report: { state: "ready", summary: "Done." },
+    });
+    expect(tracker.get("t1")?.report).toEqual({ state: "ready", summary: "Done." });
+    expect(subagentLine(tracker.get("t1")!, theme, 0)).toContain("完成 0s · 1 轮 · 就绪");
+  });
+
+  it("通知行：report 属性显示为状态标签；没有时不变", () => {
+    expect(
+      notificationSummary(
+        '<task-notification taskId="t2" agent="explore" status="completed" turns="7" report="blocked">\nx\n</task-notification>',
+      ),
+    ).toBe("t2 explore 完成 · 7 轮 · 受阻 · /tasks 查看输出");
+    expect(
+      notificationSummary(
+        '<task-notification taskId="t2" agent="explore" status="completed" turns="7">\nx\n</task-notification>',
+      ),
+    ).toBe("t2 explore 完成 · 7 轮 · /tasks 查看输出");
   });
 });

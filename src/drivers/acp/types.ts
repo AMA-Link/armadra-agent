@@ -10,6 +10,7 @@
  * 用它自己的权限策略；它要问人的才经 `session/request_permission` 回到 ama。
  */
 
+import type { SubagentReport } from "../../tools/types.js";
 import type { AcpToolKind } from "../types.js";
 
 export const ACP_PROTOCOL_VERSION = 1 as const;
@@ -454,6 +455,9 @@ export const ACP_META_KEY = "ama" as const;
 export interface AcpAmaMeta {
   /** codemode 内层调用所属的外层工具调用。 */
   parentToolCallId?: string;
+  /** [#269] 子 Agent 的结构化报告（挂在发起它的 `task` 调用的 `tool_call_update` 上）。 */
+  taskId?: string;
+  report?: SubagentReport;
 }
 
 // ---------------------------------------------------------------------------

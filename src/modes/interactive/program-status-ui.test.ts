@@ -147,6 +147,60 @@ describe("状态机（合成事件）", () => {
   });
 });
 
+describe("[#269] 子 Agent 的报告 → 终端程序状态", () => {
+  it("留了待人决定的问题 → blocked:question（msg = 问题）；清掉后回 working；审批解除不影响它", () => {
+    const sent: ProgramStatusReport[] = [];
+    const t = new ProgramStatusTracker({ report: (r) => void sent.push(r) }, () => "/w");
+    const ev = (e: unknown) => t.onEvent(e as SessionEvent);
+    ev({ type: "agent_start" });
+    ev({ type: "subagent_start", taskId: "t1", description: "migrate", agent: "general" });
+    const id = "task/t1";
+    const task = (): ProgramStatusReport[] => sent.filter((r) => r.id === id);
+    ev({
+      type: "subagent_update",
+      taskId: "t1",
+      kind: "report",
+      turn: 1,
+      report: { state: "blocked", summary: "Need an account.", humanAction: "Which account?" },
+    });
+    expect(task().at(-1)).toMatchObject({
+      state: "blocked",
+      kind: "question",
+      msg: "Which account?",
+    });
+    // 同一任务的审批解除不会把 question 误判成解除
+    ev({
+      type: "permission_request",
+      requestId: "r",
+      toolName: "read",
+      input: { path: "/w/a.ts" },
+      context: { depth: 1, taskId: "t1" },
+    });
+    expect(task().at(-1)).toMatchObject({ state: "blocked", kind: "permission" });
+    ev({ type: "permission_resolved", requestId: "r", decision: "allow" });
+    expect(task().at(-1)?.state).toBe("working");
+    ev({
+      type: "subagent_update",
+      taskId: "t1",
+      kind: "report",
+      turn: 2,
+      report: { state: "waiting", summary: "Still waiting.", humanAction: "Which account?" },
+    });
+    expect(task().at(-1)).toMatchObject({ state: "blocked", kind: "question" });
+    ev({
+      type: "subagent_update",
+      taskId: "t1",
+      kind: "report",
+      turn: 3,
+      report: { state: "ready", summary: "Used account A." },
+    });
+    expect(task().at(-1)).toMatchObject({ state: "working", msg: "Used account A." });
+    expect(task().at(-1)).not.toHaveProperty("kind");
+    ev({ type: "subagent_end", taskId: "t1", status: "completed" });
+    expect(task().at(-1)).toMatchObject({ state: "done" });
+  });
+});
+
 describe("交互模式整轮（fake 供应商）", () => {
   it("auto 检测通过：idle → working → blocked → working → done；回复不进输入框；退出 clear", async () => {
     const s = await start(

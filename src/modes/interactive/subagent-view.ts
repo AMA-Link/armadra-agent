@@ -13,14 +13,15 @@
  * 完成后父会话收到的 `<task-notification>` 只显示一行（`notificationSummary`），失败 / 停止另有一行提示。
  * 外部 runner（claude / codex）同一组事件，用量可能缺。
  * [W7-C] `subagent_background`（前台转后台）：置 `background`，工具行出跟随行。
+ * [#269] 子 Agent 自报的状态（`report`）：状态行与通知行带状态标签，有待人决定的问题时整行警告色并带上问题。
  */
 
 import { msg } from "../../i18n/index.js";
-import type { SessionEvent, SubagentStatus } from "../../agent/types.js";
+import type { SessionEvent, SubagentReport, SubagentStatus } from "../../agent/types.js";
 import type { Usage } from "../../ai/types.js";
 import { formatElapsed, type Theme } from "../../tui.js";
 import { formatTokenCount } from "../session-report.js";
-import { taskStatusText } from "./tasks-report.js";
+import { reportFacts, taskStatusText } from "./tasks-report.js";
 
 export const RECENT_TOOLS = 3;
 
@@ -37,6 +38,8 @@ export interface SubagentState {
   usage?: Usage;
   startedAt: number;
   endedAt?: number;
+  /** [#269] 这次运行当前的结构化报告（`subagent_update{kind:"report"}` / `subagent_end.report`）。 */
+  report?: SubagentReport;
 }
 
 export class SubagentTracker {
@@ -71,6 +74,7 @@ export class SubagentTracker {
         if (state === undefined) return undefined;
         if (event.turn > state.turns) state.turns = event.turn;
         if (event.usage !== undefined) state.usage = event.usage;
+        if (event.kind === "report" && event.report !== undefined) state.report = event.report;
         if (event.kind === "tool" && event.toolName !== undefined) {
           state.tools.push(event.toolName);
           if (state.tools.length > RECENT_TOOLS)
@@ -90,6 +94,9 @@ export class SubagentTracker {
         state.status = event.status;
         state.endedAt = this.now();
         if (event.usage !== undefined) state.usage = event.usage;
+        // [#269] 结束时以结果为准：这次运行没有报告就清掉
+        if (event.report !== undefined) state.report = event.report;
+        else delete state.report;
         return state;
       }
       default:
@@ -129,6 +136,7 @@ export function subagentLine(state: SubagentState, theme: Theme, now: number): s
       : `${taskStatusText(state.status)} ${elapsed}`;
   const facts = [status];
   if (state.turns > 0) facts.push(msg().panels.tasks.turns(state.turns));
+  facts.push(...reportFacts(state.report));
   if (state.tools.length > 0) facts.push(state.tools.join(" "));
   const usage = state.usage;
   if (usage !== undefined && usage.input + usage.output + usage.cacheRead > 0) {
@@ -138,11 +146,13 @@ export function subagentLine(state: SubagentState, theme: Theme, now: number): s
     );
   }
   const color =
-    state.status === "running" || state.status === "completed"
-      ? "muted"
-      : state.status === "failed"
-        ? "error"
-        : "warning";
+    state.report?.humanAction !== undefined
+      ? "warning"
+      : state.status === "running" || state.status === "completed"
+        ? "muted"
+        : state.status === "failed"
+          ? "error"
+          : "warning";
   const agent =
     state.runner !== "ama" && state.runner !== state.agent
       ? msg().panels.tasks.agentRunner(state.agent, state.runner)
@@ -177,9 +187,19 @@ export function notificationSummary(text: string): string | undefined {
   ];
   const turns = attrs.get("turns");
   if (turns !== undefined) parts.push(msg().interactive.subagent.notificationTurns(turns));
+  const report = attrs.get("report");
+  if (report !== undefined && report in REPORT_KEYS)
+    parts.push(msg().panels.tasks.report[report as SubagentReport["state"]]);
   parts.push(msg().interactive.subagent.viewOutput);
   return parts.join(" · ");
 }
+
+const REPORT_KEYS: Readonly<Record<SubagentReport["state"], true>> = {
+  ready: true,
+  blocked: true,
+  failed: true,
+  waiting: true,
+};
 
 const STATUS_KEYS: Readonly<Record<SubagentStatus, true>> = {
   completed: true,

@@ -9,6 +9,7 @@
  *   回合结束 → done；出错 → error（msg = 错误首行）；用户中断 → idle；之后用户再按键 → idle
  *   启动 / 切换会话 → idle
  * 子记录：子 Agent 任务 `id=task/<短 id>`、title = 任务描述，working / blocked / done / error（中断为 idle）；
+ *   blocked 的 kind 是 permission（审批）或 question（[#269] 子 Agent 用 `report` 留了待人决定的问题，msg = 问题）；
  * 下一个主回合开始时清掉已结束的任务记录。退出交互模式前发不带 id 的 `state=clear`（用户主动退出，
  * 不留记录）。
  *
@@ -41,6 +42,8 @@ interface TaskRecord {
   id: string;
   title: string;
   state: "working" | "blocked" | "done" | "error" | "idle";
+  /** blocked 的原因：审批，或 [#269] 子 Agent 留了待人决定的问题。 */
+  kind?: BlockedKind;
   msg?: string;
 }
 interface Pending {
@@ -105,7 +108,8 @@ export class ProgramStatusTracker {
         const taskId = event.context?.taskId;
         this.approvals.set(event.requestId, { msg: text, ...(taskId ? { taskId } : {}) });
         const task = taskId !== undefined ? this.tasks.get(taskId) : undefined;
-        if (task !== undefined) Object.assign(task, { state: "blocked", msg: text });
+        if (task !== undefined)
+          Object.assign(task, { state: "blocked", kind: "permission", msg: text });
         break;
       }
       case "permission_resolved": {
@@ -113,7 +117,10 @@ export class ProgramStatusTracker {
         this.approvals.delete(event.requestId);
         const task = taskId !== undefined ? this.tasks.get(taskId) : undefined;
         const still = [...this.approvals.values()].some((p) => p.taskId === taskId);
-        if (task?.state === "blocked" && !still) Object.assign(task, { state: "working" });
+        if (task?.state === "blocked" && task.kind === "permission" && !still) {
+          task.state = "working";
+          delete task.kind;
+        }
         break;
       }
       case "plan_proposed":
@@ -135,7 +142,20 @@ export class ProgramStatusTracker {
         break;
       case "subagent_update": {
         const task = this.tasks.get(event.taskId);
-        if (task?.state === "working" && event.toolName !== undefined)
+        if (task === undefined) break;
+        if (event.kind === "report" && event.report !== undefined) {
+          // [#269] 子 Agent 留了待人决定的问题：blocked:question，问题即 msg；问题清掉后回 working
+          const question = event.report.humanAction;
+          if (question !== undefined)
+            Object.assign(task, { state: "blocked", kind: "question", msg: flat(question, 80) });
+          else if (task.state === "blocked" && task.kind === "question") {
+            task.state = "working";
+            delete task.kind;
+            task.msg = flat(event.report.summary, 80);
+          } else if (task.state === "working") task.msg = flat(event.report.summary, 80);
+          break;
+        }
+        if (task.state === "working" && event.toolName !== undefined)
           task.msg = run.runningTool(event.toolName);
         break;
       }
@@ -145,6 +165,7 @@ export class ProgramStatusTracker {
         const s = event.status;
         task.state =
           s === "completed" ? "done" : s === "aborted" || s === "interrupted" ? "idle" : "error";
+        delete task.kind;
         delete task.msg;
         break;
       }
@@ -180,7 +201,7 @@ export class ProgramStatusTracker {
         id: task.id,
         state: task.state,
         title: task.title,
-        ...(task.state === "blocked" ? { kind: "permission" as const } : {}),
+        ...(task.state === "blocked" ? { kind: task.kind ?? ("permission" as const) } : {}),
         ...(task.msg !== undefined ? { msg: task.msg } : {}),
       });
   }

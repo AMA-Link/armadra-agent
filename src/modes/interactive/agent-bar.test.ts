@@ -8,7 +8,8 @@ import { fakeRegistry, info, start } from "../../agent/testing/agent-view-fixtur
 import { setLocale } from "../../i18n/index.js";
 import type { TaskInfo } from "../../tools/types.js";
 import { plainTheme, type Theme } from "../../tui.js";
-import { AgentBar, BAR_RETAIN_MS, rowFacts, taskRow } from "./agent-bar.js";
+import { AgentBar, BAR_RETAIN_MS, rowAlert, rowFacts, taskRow } from "./agent-bar.js";
+import { taskLine } from "./tasks-report.js";
 import { SubagentTracker } from "./subagent-view.js";
 import { golden, lines, usage } from "./test-support.js";
 
@@ -120,6 +121,49 @@ describe("Agent 栏：显示规则", () => {
     expect(
       rowFacts(taskRow({ ...external, contextTokens: 92_480 }, { ...ctx, queued: false })),
     ).toBe("运行中 · 3 轮");
+  });
+
+  it("[#269] 子 Agent 的报告：行里带状态标签；留了待人决定的问题时带问题并整行警告", () => {
+    const ctx = { tracker: new SubagentTracker(() => 0), approvals: new Set<string>(), now: 0 };
+    const blocked = taskRow(
+      info("t7", {
+        turns: 2,
+        report: { state: "blocked", summary: "Need an account.", humanAction: "Which account?" },
+      }),
+      { ...ctx, queued: false },
+    );
+    expect(rowFacts(blocked)).toBe("运行中 · 2 轮 · 受阻 · 待人决定：Which account?");
+    expect(rowAlert(blocked)).toBe(true);
+    const ready = taskRow(
+      info("t8", { status: "completed", endedAt: 0, report: { state: "ready", summary: "Done." } }),
+      { ...ctx, queued: false },
+    );
+    expect(rowFacts(ready)).toBe("完成 0s · 就绪");
+    expect(rowAlert(ready)).toBe(false);
+    // 注册表快照没带时退回 tracker（运行中刚收到的 subagent_update）
+    ctx.tracker.onEvent(start("t9"));
+    ctx.tracker.onEvent({
+      type: "subagent_update",
+      taskId: "t9",
+      kind: "report",
+      turn: 1,
+      report: { state: "waiting", summary: "Waiting for CI." },
+    });
+    expect(rowFacts(taskRow(info("t9"), { ...ctx, queued: false }))).toBe(
+      "运行中 0s · 1 轮 · 等待中",
+    );
+    // /tasks 的一行同样带上
+    expect(
+      taskLine(
+        info("t7", {
+          turns: 2,
+          report: { state: "blocked", summary: "x", humanAction: "Which account?" },
+        }),
+        0,
+      ),
+    ).toBe("t7  explore · 运行中 · 0.0s · 2 轮 · 受阻 · 待人决定：Which account? · 后台");
+    setLocale("en");
+    expect(rowFacts(blocked)).toBe("running · 2 turns · blocked · needs a person: Which account?");
   });
 
   it("结束后未查看的保留 10 分钟；活动的一直在", () => {

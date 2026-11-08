@@ -15,7 +15,8 @@
  * - 聚焦（`Ctrl+B` / 空输入 `↓` / `/tasks`）：列出本会话全部任务，`›` 标当前项，窗口跟着选择滚动，
  *   末行是按键提示（`↑↓ 选择 · Enter 打开 · b 转后台 · x 停止 · Esc 返回`，放不下时丢 b / x 说明）。
  *   按键处理在 agent-ui.ts。
- * - [W7-C] 等审批的行（含停靠在栏里的后台任务审批）整行警告色。
+ * - [W7-C] 等审批的行（含停靠在栏里的后台任务审批）整行警告色；[#269] 子 Agent 留了待人决定的问题
+ *   （`report.humanAction`）的行同样整行警告色，事实里带状态标签与问题。
  * - 状态来自任务注册表（`TaskInfo`、`live().queued`）、子 Agent 折叠视图的跟踪（轮数、最近工具、用时，界面时钟）
  *   与 `permission_request.context.taskId`（等审批）。
  */
@@ -24,7 +25,7 @@ import type { SubagentRegistry } from "../../agent/subagent-registry.js";
 import type { SubagentStatus } from "../../agent/types.js";
 import { formatTaskContext } from "../../agents/task-record.js";
 import { msg } from "../../i18n/index.js";
-import type { TaskInfo } from "../../tools/types.js";
+import type { SubagentReport, TaskInfo } from "../../tools/types.js";
 import {
   formatElapsed,
   truncateToWidth,
@@ -33,6 +34,7 @@ import {
   type Theme,
 } from "../../tui.js";
 import type { SubagentTracker } from "./subagent-view.js";
+import { reportFacts } from "./tasks-report.js";
 
 export const BAR_ROWS = 3;
 /** 结束后未查看的任务在栏里保留多久。 */
@@ -51,6 +53,8 @@ export interface BarRow {
   elapsedMs?: number;
   /** 外部 Agent 报告的上下文占用（已格式化，如 `34%`）。 */
   context?: string;
+  /** [#269] 子 Agent 自报的状态；有 `humanAction` 时整行警告色。 */
+  report?: SubagentReport;
 }
 
 /** 栏与视图读的任务注册表（当前会话的 `registryOf(sessionId)`；测试给假的）。 */
@@ -120,6 +124,8 @@ export function taskRow(
   };
   const context = formatTaskContext(info);
   if (context !== undefined) row.context = context;
+  const report = info.report ?? state?.report;
+  if (report !== undefined) row.report = report;
   const tool = state?.tools.at(-1);
   if (tool !== undefined && status !== "queued") row.tool = tool;
   if (status !== "queued") {
@@ -142,8 +148,14 @@ export function rowFacts(row: BarRow, withTool = true): string {
   if (row.elapsedMs !== undefined) facts[0] += ` ${formatElapsed(row.elapsedMs)}`;
   if (row.turns > 0) facts.push(msg().agents.turns(row.turns));
   if (row.context !== undefined) facts.push(msg().agents.context(row.context));
+  facts.push(...reportFacts(row.report));
   if (withTool && row.tool !== undefined && row.status === "running") facts.push(row.tool);
   return facts.join(" · ");
+}
+
+/** [#269] 整行警告色：等审批，或子 Agent 留了待人决定的问题。 */
+export function rowAlert(row: Pick<BarRow, "status" | "report">): boolean {
+  return row.status === "approval" || row.report?.humanAction !== undefined;
 }
 
 export class AgentBar implements Component {
@@ -284,15 +296,15 @@ export class AgentBar implements Component {
     const g = t.glyphs;
     const agent = agentLabel(row);
     const lead = focused ? (selected ? t.fg("accent", g.prompt) : " ") + " " : "";
-    const marker = t.fg(statusColor(row.status), g.tool);
-    const approval = row.status === "approval";
-    const plainId = selected || approval ? t.bold(row.taskId) : row.taskId;
-    const id = approval ? t.fg("warning", plainId) : plainId;
+    const alert = rowAlert(row);
+    const marker = t.fg(alert ? "warning" : statusColor(row.status), g.tool);
+    const plainId = selected || alert ? t.bold(row.taskId) : row.taskId;
+    const id = alert ? t.fg("warning", plainId) : plainId;
     const description = row.description.replace(/\s+/g, " ").trim();
     const text =
       `${lead}${marker} ${id} ${t.fg("tool", agent)}` +
       t.fg("dim", " · ") +
-      t.fg(row.status === "approval" ? "warning" : "muted", rowFacts(row)) +
+      t.fg(alert ? "warning" : "muted", rowFacts(row)) +
       (description === "" ? "" : `  ${t.fg("dim", description)}`);
     return truncateToWidth(text, width, g.ellipsis);
   }
