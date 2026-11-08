@@ -24,7 +24,7 @@ import type { PermissionMode, Rule, RuleSource } from "./types.js";
 import { PERMISSION_MODES_STRICT_FIRST } from "./types.js";
 import { globBody } from "../tools/glob.js";
 import { expandHome, resolvePath, toPosix } from "../tools/paths.js";
-import { parseResourceRef } from "../tools/resource-ref.js";
+import { canonicalResourceRef, parseResourceRef } from "../tools/resource-ref.js";
 
 /**
  * [#270] 已注册资源的查找（`HostResourceLookup.get` 的子集：返回非 undefined 即已注册）；
@@ -130,10 +130,8 @@ export function inputResourceRef(input: unknown, resources: ResourceSchemes): st
     typeof input === "object" && input !== null
       ? (input as Record<string, unknown>)["path"]
       : undefined;
-  if (typeof raw !== "string" || resources === undefined) return undefined;
-  const ref = parseResourceRef(raw);
-  if (ref === undefined || resources.get(ref.scheme) === undefined) return undefined;
-  return `${ref.scheme}://${ref.path}`;
+  if (typeof raw !== "string") return undefined;
+  return canonicalResourceRef(raw, resources);
 }
 
 /** [#270] 资源引用的会话记忆前缀：小写 `scheme://`；不是已注册的资源引用返回 undefined。 */

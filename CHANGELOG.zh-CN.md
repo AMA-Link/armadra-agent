@@ -19,6 +19,10 @@
 
 - **切换权限模式时重新判定正在等的审批**：Shift+Tab / `/permission`、RPC `set_permission_mode`、ACP `session/set_mode` 与计划批准都会把在等的与排队的审批按新模式重新过一遍管线。新模式放行的自动允许（对话框或停靠收起，消息区一行「已按 <模式> 自动允许 N 个待审批」），拒绝的自动拒绝并在给模型的结果里写明切换，仍要问的继续等。不碰：宿主 broker 已接手的请求、危险命令（切到 Bypass 也照旧要人确认）、外部 Agent 的请求、`allow_session` 记忆。审批对话框打开时 Shift+Tab 仍能切模式（Tab 归对话框；进入 Bypass 照旧先确认）。RPC / ACP 客户端收到 `permission_resolved{reason:"mode_changed"}` 与 `permission_mode_changed.reevaluated{allowed, denied}`。见 [docs/guides/permissions.md](docs/guides/permissions.md)（#271）。
 
+### Hook
+
+- **Hook matcher 看到的是规范化后的资源引用**：`read` 调用的 `path` 若是已注册的宿主资源引用，先规范成 `小写scheme://path` 再交给 matcher 与 Hook 脚本，matcher 为 `read(demo://*)` 的 `PreToolUse` Hook 也能挡住 `DEMO://…`、`Demo://…`——与权限规则、会话记忆和 read 实际读取看到的形式一致。matcher 括号里的 scheme 同样不分大小写（`read(DEMO://*)` 照常生效，路径部分仍区分）。未注册的 scheme 与普通文件路径保持原文，其它工具不受影响。见 [docs/guides/hooks.md](docs/guides/hooks.md)「matcher」（#277）。
+
 ### 工具与权限
 
 - **前台 `bash` 超过阈值原地转后台**（`tools.bashAutoBackgroundAfterMs`）：命令跑过阈值还没结束时，进程不重启、直接交给后台任务表登记，工具立即返回 `{ jobId, outputPath, movedToBackground: true, output }`（到此刻的输出）；插话与子任务通知不再被长命令挡住，退出沿用后台命令的提醒通道，`bash {job, action}` 照常可用。缺省：`--mode rpc` / `--mode acp`、嵌入宿主（有 profile）与 `coordinator` 预设下 15 秒，独立终端与 `-p` 下关闭（`0`）。权限管线、沙箱包装、输出截断与 Windows 进程树处理不变；转后台的命令不再受 120 / 600 秒超时约束，改受寿命上限约束（#266）。

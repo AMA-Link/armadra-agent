@@ -22,6 +22,7 @@ import { HookDispatcher } from "../hooks/dispatcher.js";
 import { AgentEventBus, createHostApi } from "../host/api-impl.js";
 import { activateHost, disposeHost } from "../host/loader.js";
 import { HostResourceRegistry } from "../host/resources.js";
+import { normalizeResourceRef } from "../tools/resource-ref.js";
 import type { ApprovalBroker, HostAdapterHandle } from "../host/types.js";
 import { helpText, parseArgs, UsageError, type ParsedArgs } from "./args.js";
 import { hostSessionStart } from "./compose-events.js";
@@ -311,6 +312,8 @@ export async function bootstrap(
           durationMs: r.durationMs,
         }),
       onWarning: warn,
+      // [#277] 已注册资源引用的 Hook matcher 与脚本输入用规范形式（注册表已冻结）
+      normalizePath: (path) => normalizeResourceRef(path, hostResources),
     });
     let sessionStartContext: string | undefined;
     const source = sourceOf(sessionRequest, sessionManager);

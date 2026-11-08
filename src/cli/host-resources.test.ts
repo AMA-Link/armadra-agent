@@ -131,6 +131,41 @@ describe("宿主资源（#270）", () => {
     await runtime.dispose();
   });
 
+  it("PreToolUse Hook matcher read(demo://*) 挡住 DEMO://items，脚本 stdin 的 path 已规范化（#277）", async () => {
+    h = composeHarness([readCall({ path: "DEMO://items" }), { text: "done" }]);
+    const script = h.home
+      .write(
+        "scripts/deny-demo.cjs",
+        `let raw = ""; process.stdin.on("data", (c) => (raw += c)); process.stdin.on("end", () => {
+  const input = JSON.parse(raw);
+  console.log(JSON.stringify({ decision: "deny", reason: "hook saw " + input.toolInput.path }));
+});`,
+      )
+      .replace(/\\/g, "/");
+    h.home.write("home/.config/ama/hooks.json", {
+      version: 1,
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "read(demo://*)",
+            hooks: [
+              {
+                type: "command",
+                command: `"${process.execPath.replace(/\\/g, "/")}" "${script}"`,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const runtime = await h.boot(["--model", "fake/echo", "--host", resourceHost()]);
+    await runtime.session.prompt("go");
+    const [result] = toolResults(runtime);
+    expect(result?.isError).toBe(true);
+    expect(String(result?.content)).toContain("hook saw demo://items");
+    await runtime.dispose();
+  });
+
   it("没有宿主时 tools 节没有资源行，read 的 scheme://path 按文件路径处理", async () => {
     h = composeHarness([readCall({ path: "demo://items" }), { text: "done" }]);
     const runtime = await h.boot(["--model", "fake/echo"]);

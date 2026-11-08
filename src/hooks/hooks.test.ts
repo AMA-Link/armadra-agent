@@ -94,6 +94,31 @@ describe("matcher", () => {
   });
 });
 
+describe("matcher：read 括号里的 scheme 不分大小写（#277）", () => {
+  it("read(DEMO://*) / read(Demo://*) 都命中 DEMO://x 与 demo://x；路径部分仍区分大小写", () => {
+    for (const pattern of ["read(DEMO://*)", "read(Demo://*)", "read(demo://*)"]) {
+      const m = compileMatcher(pattern);
+      expect(m("read", { path: "demo://x" }), pattern).toBe(true);
+      // dispatcher 未注入 normalizePath 时 path 原文：pattern 的 scheme 小写化不能反过来放宽 path
+      expect(m("read", { path: "DEMO://x" }), pattern).toBe(false);
+    }
+    const items = compileMatcher("read(DEMO://Items)");
+    expect(items("read", { path: "demo://Items" })).toBe(true);
+    expect(items("read", { path: "demo://items" })).toBe(false);
+  });
+
+  it("普通路径 glob 与其它工具的大小写语义不变", () => {
+    expect(compileMatcher("read(SRC/*)")("read", { path: "src/a.ts" })).toBe(false);
+    expect(compileMatcher("read(src/*)")("read", { path: "SRC/a.ts" })).toBe(false);
+    expect(compileMatcher("read(docs/a://*)")("read", { path: "docs/a://b" })).toBe(true);
+    expect(compileMatcher("write(DEMO://*)")("write", { path: "DEMO://x" })).toBe(true);
+    expect(compileMatcher("write(DEMO://*)")("write", { path: "demo://x" })).toBe(false);
+    expect(
+      compileMatcher("web_fetch(HTTPS://a.example/*)")("web_fetch", { url: "https://a.example/" }),
+    ).toBe(false);
+  });
+});
+
 describe("protocol", () => {
   it("stdout：空 / 非 JSON → 无决策；字段校验", () => {
     expect(parseHookOutput("").output).toBeUndefined();
@@ -279,6 +304,103 @@ describe("dispatcher", () => {
     });
     const outcome = await dispatcher.run("SessionStart", { source: "startup" });
     expect(outcome).toMatchObject({ decision: "block", reason: "no" });
+  });
+});
+
+describe("dispatcher：read 的资源引用规范化后再匹配（#277）", () => {
+  /** 模拟组装根注入：只有 demo 已注册。 */
+  const registry = { get: (scheme: string) => (scheme === "demo" ? {} : undefined) };
+  const normalizePath = (path: string): string => {
+    const m = /^([A-Za-z][A-Za-z0-9+.-]{1,31}):\/\/([\s\S]*)$/.exec(path);
+    if (m === null || registry.get((m[1] as string).toLowerCase()) === undefined) return path;
+    return `${(m[1] as string).toLowerCase()}://${m[2]}`;
+  };
+  const seen: HookInput[] = [];
+  const executor: HookExecutor = (hooks, input) => {
+    seen.push(input);
+    return Promise.resolve(hooks.map(() => result(input.hookEventName, { stdout: "" })));
+  };
+
+  it("matcher read(demo://*) 命中 DEMO://x 与 Demo://x；未注册 ab://x 与普通路径原文", async () => {
+    const dispatcher = new HookDispatcher({
+      hooks: [
+        hook("PreToolUse", "c", { matcher: "read(demo://*)" }),
+        hook("PostToolUse", "c", { matcher: "read(demo://*)" }),
+      ],
+      context,
+      executor,
+      normalizePath,
+    });
+    const run = (toolName: string, toolInput: unknown, event: HookEvent = "PreToolUse") =>
+      dispatcher.run(event, { toolCallId: "t", toolName, toolInput, viaCodemode: true });
+    expect((await run("read", { path: "DEMO://x" })).results).toHaveLength(1);
+    expect((await run("read", { path: "Demo://x", offset: 2 })).results).toHaveLength(1);
+    // 老写法 read(DEMO://*) 在 path 规范化后仍命中（pattern 的 scheme 也小写化）
+    const upper = new HookDispatcher({
+      hooks: [hook("PreToolUse", "c", { matcher: "read(DEMO://*)" })],
+      context,
+      executor,
+      normalizePath,
+    });
+    for (const path of ["DEMO://x", "demo://x"]) {
+      const out = await upper.run("PreToolUse", { toolName: "read", toolInput: { path } });
+      expect(out.results, path).toHaveLength(1);
+    }
+    expect((await run("read", { path: "demo://x" }, "PostToolUse")).results).toHaveLength(1);
+    expect((await run("read", { path: "ab://x" })).results).toHaveLength(0);
+    expect((await run("read", { path: "src/demo.ts" })).results).toHaveLength(0);
+    // 只对 read 生效：write 的 DEMO://x 是普通文件名
+    expect((await run("write", { path: "DEMO://x", content: "" })).results).toHaveLength(0);
+  });
+
+  it("Hook 脚本 stdin 里的 input.path 是规范形式，其余字段与 viaCodemode 原样；调用方对象不被改", async () => {
+    const dispatcher = new HookDispatcher({
+      hooks: [hook("PreToolUse", "c"), hook("PostToolUse", "c")],
+      context,
+      executor,
+      normalizePath,
+    });
+    seen.length = 0;
+    const raw = { path: "DEMO://Items", offset: 3 };
+    await dispatcher.run("PreToolUse", { toolCallId: "t", toolName: "read", toolInput: raw });
+    await dispatcher.run("PostToolUse", {
+      toolCallId: "t",
+      toolName: "read",
+      toolInput: raw,
+      toolResult: { content: "", isError: false },
+      viaCodemode: true,
+      parentToolCallId: "p",
+    });
+    await dispatcher.run("PreToolUse", { toolName: "read", toolInput: { path: "ab://X" } });
+    expect(seen.map((i) => i.toolInput)).toEqual([
+      { path: "demo://Items", offset: 3 },
+      { path: "demo://Items", offset: 3 },
+      { path: "ab://X" },
+    ]);
+    expect(seen[1]).toMatchObject({ viaCodemode: true, parentToolCallId: "p" });
+    expect(raw.path).toBe("DEMO://Items");
+  });
+
+  it("真实子进程：脚本读到的 input.path 已规范化", async () => {
+    const dispatcher = new HookDispatcher({
+      hooks: [
+        hook(
+          "PreToolUse",
+          nodeHook(
+            `${READ_STDIN} function main(i) { console.log(JSON.stringify({ decision: i.toolInput.path === "demo://x" ? "deny" : "allow", reason: i.toolInput.path })); }`,
+          ),
+          { matcher: "read(demo://*)" },
+        ),
+      ],
+      context,
+      normalizePath,
+    });
+    const outcome = await dispatcher.run("PreToolUse", {
+      toolCallId: "t",
+      toolName: "read",
+      toolInput: { path: "DEMO://x" },
+    });
+    expect(outcome).toMatchObject({ decision: "deny", reason: "demo://x" });
   });
 });
 

@@ -92,6 +92,31 @@ export function parseResourceRef(path: string): ResourceRef | undefined {
   return { scheme: (m[1] as string).toLowerCase(), path: m[2] as string, raw: path };
 }
 
+/** 已注册 scheme 的最小查找：返回非 undefined 即已注册（`HostResourceLookup.get` 的子集）。 */
+export type ResourceSchemeLookup = { get(scheme: string): unknown };
+
+/**
+ * [#270 / #277] `path` 若是**已注册**资源的引用，返回规范形式 `小写scheme://path`；未注册、没有注册表或不是
+ * 引用形状返回 undefined。权限规则、会话记忆、Hook matcher 与 read 实际读取用的都是这个形式。
+ */
+export function canonicalResourceRef(
+  path: string,
+  lookup: ResourceSchemeLookup | undefined,
+): string | undefined {
+  if (lookup === undefined) return undefined;
+  const ref = parseResourceRef(path);
+  if (ref === undefined || lookup.get(ref.scheme) === undefined) return undefined;
+  return `${ref.scheme}://${ref.path}`;
+}
+
+/** [#277] 已注册资源引用 → 规范形式；其它（未注册 scheme、普通路径）原文返回。 */
+export function normalizeResourceRef(
+  path: string,
+  lookup: ResourceSchemeLookup | undefined,
+): string {
+  return canonicalResourceRef(path, lookup) ?? path;
+}
+
 /** `describe` 合法：非空、单行、无控制字符、≤ 上限。 */
 export function validResourceDescribe(describe: unknown): describe is string {
   return (
