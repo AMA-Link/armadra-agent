@@ -368,6 +368,9 @@ export class SubagentRegistry implements TaskControl {
     record.info.status = "running";
     record.info.background = background;
     delete record.info.endedAt;
+    // [#267] 上一次运行到点被停止的标记不带进这次续聊（否则这次正常结束会被误报）；还没报告的保留并标 relaunched
+    if (record.expired?.taken === true) delete record.expired;
+    else if (record.expired !== undefined) record.expired.relaunched = true;
     record.text = "";
     if (background) delete record.onUpdate;
     else if (request.onUpdate !== undefined) record.onUpdate = request.onUpdate;

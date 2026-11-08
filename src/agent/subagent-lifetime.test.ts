@@ -10,6 +10,7 @@ import { createSubagentExtension, subagentEnvironment } from "../cli/compose-age
 import type { ComposeExtensionDeps } from "../cli/compose-extensions.js";
 import type { ToolDefinition } from "../tools/types.js";
 import { createRemindersExtension, REMINDER_CUSTOM_TYPE } from "./reminders.js";
+import { MAX_TIMER_MS } from "../tools/timers.js";
 import { DEFAULT_SUBAGENT_BACKGROUND_MAX_MS, expiredTaskText } from "./subagent-lifetime.js";
 import type { SubagentEnvironment } from "./subagent-registry.js";
 import type { ScriptCall, ScriptStep } from "./testing/scripted-api.js";
@@ -131,6 +132,38 @@ describe("后台子 Agent 的寿命上限", () => {
     expect(lines[0]).toContain("(task_ctl output)");
     await say(h, "again");
     expect(reminders(h)).toHaveLength(1); // 只报一次
+    await h.session.dispose();
+  });
+
+  it("到点后续聊重启的任务：expired 清掉，正常结束不再误报寿命上限；超大上限钳到 2^31−1", async () => {
+    const timers = manualTimers();
+    const { h, g } = harness(
+      { backgroundMaxMs: MAX_TIMER_MS * 4, timers },
+      {
+        go: task({ prompt: "slow", background: true }),
+      },
+    );
+    await h.session.prompt("go");
+    await waitUntil(() => of(h.events, "subagent_start").length === 1);
+    expect(timers.pending()).toEqual([{ ms: MAX_TIMER_MS }]);
+    timers.fire(0);
+    await waitUntil(() => of(h.events, "subagent_end").length === 1);
+    // 提醒还没取走就续聊重启（宿主 / 视图直接续聊，不经过提示）：报告的是上一次运行，不等这次结束
+    g.open();
+    await h.session.spawnSubagent({
+      taskId: "t1",
+      prompt: "continue",
+      background: true,
+      parentToolCallId: "host",
+      signal: new AbortController().signal,
+    });
+    await say(h, "next");
+    expect(reminders(h)).toHaveLength(1);
+    expect(reminders(h)[0]).toContain("stopped at its lifetime cap");
+    // 被 stop 过的 ama 子会话续聊仍以 aborted 收尾（runner 现有行为）；无论终态如何都不再出第二条寿命提醒
+    await waitUntil(() => of(h.events, "subagent_end").length === 2);
+    await say(h, "after");
+    expect(reminders(h)).toHaveLength(1);
     await h.session.dispose();
   });
 

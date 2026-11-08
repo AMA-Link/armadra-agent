@@ -13,7 +13,7 @@
 import type { ExpiredTask } from "../agents/task-control.js";
 import type { TaskRecord } from "../agents/task-record.js";
 import type { ExtendOutcome } from "../tools/background-jobs.js";
-import { REAL_TIMERS, minutesOf, type TimeoutTimers } from "../tools/timers.js";
+import { REAL_TIMERS, clampTimerMs, minutesOf, type TimeoutTimers } from "../tools/timers.js";
 
 /** [#267] 后台子 Agent 寿命上限缺省：1 小时。 */
 export const DEFAULT_SUBAGENT_BACKGROUND_MAX_MS = 3_600_000;
@@ -47,7 +47,7 @@ function schedule(record: TaskRecord, env: LifetimeEnv, stop: () => void, ms: nu
     if (record.running === undefined || record.lifetime !== lifetime) return;
     record.expired = { maxMs: lifetime.maxMs, taken: false };
     stop();
-  }, ms);
+  }, clampTimerMs(ms));
 }
 
 /** 任务结束：清计时器与寿命记录（`expired` 保留给提醒通道）。 */
@@ -84,8 +84,11 @@ export function takeExpiredTasks(records: Iterable<TaskRecord>): ExpiredTask[] {
   const out: ExpiredTask[] = [];
   for (const record of records) {
     const expired = record.expired;
-    if (expired === undefined || expired.taken || record.running !== undefined) continue;
+    if (expired === undefined || expired.taken) continue;
+    // 到点的那次运行还在收尾（abort → finish）时等它结束再报，好带上输出文件；被续聊重启的不等
+    if (record.running !== undefined && expired.relaunched !== true) continue;
     expired.taken = true;
+    if (expired.relaunched === true) delete record.expired;
     const info = record.info;
     const task: ExpiredTask = { taskId: info.taskId, agent: info.agent, maxMs: expired.maxMs };
     if (info.outputFile !== undefined) task.outputFile = info.outputFile;

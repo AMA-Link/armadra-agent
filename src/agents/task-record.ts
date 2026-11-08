@@ -230,8 +230,11 @@ export interface TaskRecord {
    * `extended` 后不能再续。结束时清掉。
    */
   lifetime?: { maxMs: number; extended: boolean; since: number; timer?: unknown };
-  /** [#267] 到达寿命上限被停止；`taken` = 提醒通道已取走。 */
-  expired?: { maxMs: number; taken: boolean };
+  /**
+   * [#267] 到达寿命上限被停止；`taken` = 提醒通道已取走；`relaunched` = 取走前又被续聊重启（此时不等它结束就
+   * 报告，报告的是上一次运行）。重启时已取走的标记直接清掉。
+   */
+  expired?: { maxMs: number; taken: boolean; relaunched?: true };
 }
 
 export function newRecord(
