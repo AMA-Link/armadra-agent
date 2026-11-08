@@ -1,12 +1,37 @@
 /**
  * 组装根：会话事件 → 宿主事件总线（实施计划 §1.4 表）。[B6，ACP-C0 从 compose-session.ts 迁出]
  *
- * hook_executed、session_start / session_shutdown 由 bootstrap 与会话切换发，不在这里桥接；
- * 第三波加 `cache_miss` / `context_pressure`，第五波加子 Agent 与计划事件。
+ * hook_executed、session_start / session_shutdown 由 bootstrap 与会话切换发，不在这里桥接（`session_start`
+ * 的载荷由这里的 `hostSessionStart` 组装）；第三波加 `cache_miss` / `context_pressure`，第五波加子 Agent
+ * 与计划事件。
  */
 
-import type { SessionEvent } from "../agent/types.js";
+import type { SessionEvent, SessionState } from "../agent/types.js";
 import type { AgentEventBus } from "../host/api-impl.js";
+import type { AgentEvents } from "../host/types.js";
+import type { SessionEntry } from "../session/types.js";
+import { detectUncleanEnd } from "../session/unclean-end.js";
+
+type BranchSource = { branch(): readonly SessionEntry[] };
+
+/**
+ * [#268] 宿主总线 `session_start` 的载荷：`reason: "resume"` 时带 `uncleanEnd`（上一轮没有正常结束，
+ * 判定只看会话文件，见 session/unclean-end.ts；host-api 1.3）。
+ */
+export function hostSessionStart(
+  session: {
+    state: Pick<SessionState, "sessionId" | "sessionFile" | "cwd">;
+    manager: BranchSource;
+  },
+  reason: AgentEvents["session_start"]["reason"],
+): AgentEvents["session_start"] {
+  const { sessionId, sessionFile, cwd } = session.state;
+  const event: AgentEvents["session_start"] = { sessionId, cwd, reason };
+  if (sessionFile !== undefined) event.sessionFile = sessionFile;
+  if (reason === "resume")
+    event.uncleanEnd = detectUncleanEnd(session.manager.branch()) !== undefined;
+  return event;
+}
 
 /** §1.4：SessionEvent → AgentEvents。 */
 export function bridgeEvent(event: SessionEvent, bus: AgentEventBus): void {

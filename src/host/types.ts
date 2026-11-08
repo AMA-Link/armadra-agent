@@ -17,12 +17,17 @@
  * - （#226）host-api 1.1：可选面 `HostApi.runners.onDone`（宿主 runner 每轮结束的 {@link RunnerDoneEvent}）
  *   与 `HostApi.minor`。主版本 `HOST_API_VERSION` 要求宿主严格相等，只在破坏性变化时改；只加不改的
  *   增量递增 {@link HOST_API_MINOR}，宿主按成员是否存在做特性探测。
+ * - （#270）host-api 1.2：可选面 `HostApi.resources`（宿主资源命名空间，内置 `read` 读 `scheme://path`；
+ *   类型在 tools/resource-ref.ts，此处再导出）。
+ * - （#268）host-api 1.3：`session_start` 在 `reason: "resume"` 时带 `uncleanEnd`（上一轮没有正常结束，
+ *   判定见 session/unclean-end.ts）。只加不改，主版本不变。
  */
 
 import type { CacheMiss, WarmingDecisionHandler } from "../ai/cache/types.js";
 import type { HookEvent } from "../hooks/types.js";
 import type { ApprovalBroker, ApprovalDecision } from "../permissions/types.js";
 import type { SubagentRunner, SubagentStatus, ToolDefinition } from "../tools/types.js";
+import type { HostResource } from "../tools/resource-ref.js";
 import type { QuotaUpdateEvent } from "../agent/types-w6.js";
 import type {
   PlanProposedEvent,
@@ -53,12 +58,20 @@ export type {
   ToolResult,
 } from "../tools/types.js";
 export type { JsonSchema } from "../ai/types.js";
+export type {
+  HostResource,
+  HostResourceContent,
+  HostResourceReadOptions,
+} from "../tools/resource-ref.js";
 export type { CacheMiss, WarmDecision, WarmingDecisionHandler } from "../ai/cache/types.js";
 
 export const HOST_API_VERSION = 1 as const;
 export type HostApiVersion = typeof HOST_API_VERSION;
-/** host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`）；旧运行时没有 `api.minor`，按 0 算。 */
-export const HOST_API_MINOR = 1 as const;
+/**
+ * host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`，2 = `resources`，3 = `session_start.uncleanEnd`）；
+ * 旧运行时没有 `api.minor`，按 0 算。
+ */
+export const HOST_API_MINOR = 3 as const;
 
 export type HostMode = "interactive" | "line" | "print" | "rpc";
 
@@ -84,6 +97,8 @@ export interface AgentEvents {
     sessionFile?: string;
     cwd: string;
     reason: "startup" | "resume" | "new" | "fork";
+    /** [#268] 只在 `reason: "resume"` 时出现：上一轮没有正常结束（host-api 1.3）。 */
+    uncleanEnd?: boolean;
   };
   before_agent_start: { prompt: string };
   agent_start: Empty;
@@ -208,6 +223,17 @@ export interface HostApi {
      * 可选面（host-api 1.1）：旧版本运行时没有它，用前判断 `typeof api.runners?.onDone === "function"`。
      */
     onDone?(handler: (event: RunnerDoneEvent) => void | Promise<void>): () => void;
+  };
+  /**
+   * [#270] 宿主资源命名空间（host-api 1.2）：注册后内置 `read` 认 `<scheme>://<path>`，按 `read` 的分页与
+   * 截断规则返回宿主给的文本（首行标注不可信），权限类 read、从不询问；系统提示工具节多一行列出全部
+   * scheme 与 `describe`。只能在 `create()` 里注册（会话开始后列表固定，再注册抛错）。
+   * 可选面：旧版本运行时没有它，用前判断 `api.resources !== undefined`。
+   */
+  readonly resources?: {
+    register(resource: HostResource): void;
+    /** 已注册的 scheme，按名排序。 */
+    list(): readonly string[];
   };
 }
 

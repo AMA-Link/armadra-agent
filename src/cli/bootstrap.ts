@@ -21,8 +21,10 @@ import { loadHookConfigs } from "../hooks/config.js";
 import { HookDispatcher } from "../hooks/dispatcher.js";
 import { AgentEventBus, createHostApi } from "../host/api-impl.js";
 import { activateHost, disposeHost } from "../host/loader.js";
+import { HostResourceRegistry } from "../host/resources.js";
 import type { ApprovalBroker, HostAdapterHandle } from "../host/types.js";
 import { helpText, parseArgs, UsageError, type ParsedArgs } from "./args.js";
+import { hostSessionStart } from "./compose-events.js";
 import { applyFromOption } from "./from-prompt.js";
 import type { CliIo, RuntimeDeps, SessionAssembly } from "./deps.js";
 import { ExitCode } from "./exit-codes.js";
@@ -214,13 +216,15 @@ export async function bootstrap(
     resolveModel(args, providers, sessionManager, config.defaultModel, deps, interactive, io.env),
   );
   const thinkingLevel = thinkingOf(args, sessionManager, config.thinkingLevel);
-  // 12. 工具注册表
+  // 12. 工具注册表（[#270] 宿主资源注册表先建好：read 工具与第 13 步的 HostApi 共用，激活后冻结）
+  const hostResources = new HostResourceRegistry();
   const tools = await step(ExitCode.RuntimeError, m().steps.tools, () =>
     deps.tools.create({
       config,
       cwd: sessionCwd,
       mode,
       paths: { configDir: paths.configDir, dataDir: paths.dataDir },
+      resources: hostResources,
       memory: resolveMemory({
         config,
         cwd: sessionCwd,
@@ -256,6 +260,7 @@ export async function bootstrap(
       return (deps.sendUser ?? defaultSendUser)(session, text, origin);
     },
     stderr: io.stderr,
+    resources: hostResources,
   });
   let uiBroker: ApprovalBroker | undefined;
   const hostSpec = args.host;
@@ -265,6 +270,7 @@ export async function bootstrap(
       activateHost({ module: hostSpec, binding, cwd: io.cwd }),
     );
   }
+  hostResources.freeze();
   let shutdown: ((reason: "exit" | "new" | "switch") => Promise<void>) | undefined;
   try {
     applyToolFilters(args, tools);
@@ -280,6 +286,7 @@ export async function bootstrap(
         cwd: sessionCwd,
         ...(builtinDeny !== undefined ? { builtinDeny } : {}),
         ...(autoSafeCommands !== undefined ? { autoSafeCommands } : {}),
+        resources: hostResources,
       }),
     );
     const hooks = new HookDispatcher({
@@ -327,6 +334,7 @@ export async function bootstrap(
         broker: binding.broker,
         instructions: binding.instructions,
         warmingDecider: binding.warmingDecider,
+        resources: hostResources.list(),
       },
       uiBroker: () => uiBroker,
       onSessionReplaced: (next) => {
@@ -364,12 +372,10 @@ export async function bootstrap(
       })();
       return disposed;
     };
-    await events.emit("session_start", {
-      sessionId: active.state.sessionId,
-      ...(active.state.sessionFile !== undefined ? { sessionFile: active.state.sessionFile } : {}),
-      cwd: active.state.cwd,
-      reason: source,
-    });
+    await events.emit(
+      "session_start",
+      hostSessionStart({ state: active.state, manager: sessionManager }, source),
+    );
     const outcome = await hooks.run("SessionStart", { source });
     if (outcome.decision === "block") {
       throw new StartupError(

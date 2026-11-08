@@ -131,17 +131,17 @@ contextTokens?, contextWindow?, outputFile?, sessionRef?`；`contextTokens / con
 
 第五波登记的类型（docs/history/wave5-plan.md；括号里是开始写入的批次，之前的版本不会产生，读到未知 `customType` 一律忽略）。`custom_message` 类都是 `display: false`，经扩展点 `beforePrompts` 追加在末尾，不改缓存前缀：
 
-| `customType`         | 条目类型         | 内容                                                                                                                                     | 写入时机                                                                                                                        |
-| -------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `ama.plan`           | `custom`         | `data: PlanData`：`{ id, version, status: proposed \| approved \| rejected \| superseded, markdown, steps[], sourceEntryId, filePath? }` | 根会话在 plan 下一回合以纯文本结束、回复里有 `<proposed_plan>` 时；审批结果（approved / rejected / superseded）另记一条（W5-F） |
-| `ama.plan_state`     | `custom`         | `data: { active, prePlanMode, planId?, executionModel?, executionThinking? }`（后两项：`plan.model` 切走的执行模型）                     | 进入 / 退出 plan 模式；resume 时据此回到 plan（W5-F）                                                                           |
-| `ama.plan_mode`      | `custom_message` | `content`：plan 模式说明（完整版或简版）                                                                                                 | 进入 plan 后的首个提示前，之后每 5 回合简版、压缩后补完整版（W5-F）                                                             |
-| `ama.plan_mode_exit` | `custom_message` | `content`：已退出 plan 模式                                                                                                              | 手动退出 plan 后的下一次提示前（获批时由 `ama.plan_approved` 说明，不另发）（W5-F）                                             |
-| `ama.plan_approved`  | `custom_message` | `content`：获批计划全文、文件路径与进度记法（有 todo 工具时「按 todo 推进」，没有时「每完成一步单独一行写 `[DONE:<步骤>]`」）            | 计划获批交接时（W5-F）                                                                                                          |
-| `ama.post_compact`   | （不单独成条）   | 回注改为 `compaction.summary` 末尾的 `<post-compact-state>` 块（清单与指针，不含正文；见 `compaction/post-compact.ts`）                  | 写 compaction 条目时（W5-H1），模型看到「摘要 → 回注 → 保留区」                                                                 |
-| `ama.reminder`       | `custom_message` | `content`：提醒（todo 复述、外部文件改动、上下文用量、预算余量、后台命令退出），`<system-reminder>` 包起来                               | 新提示之前按 `reminders.*` 追加（W5-H2）；run 进行中的提醒不单独成条，追加在工具批次最后一条 toolResult 的末尾                  |
-| `ama.agent-session`  | `custom`         | `data: { agent, runner, sessionId, cwd?, taskId? }`：外部 Agent 自己的会话引用（不含原始事件与转录）                                     | 外部 Agent 会话建立 / 续聊时（W5-E）                                                                                            |
-| `ama.agent-usage`    | `custom`         | `data: { agent, sessionId, unit: usd \| tokens \| requests, amount, tokens?, contextTokens?, contextWindow? }`（上下文只记数字）         | 外部 Agent 每个回合结束（W5-E）；`SessionStats.external` 据此汇总                                                               |
+| `customType`         | 条目类型         | 内容                                                                                                                                                                                               | 写入时机                                                                                                                        |
+| -------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `ama.plan`           | `custom`         | `data: PlanData`：`{ id, version, status: proposed \| approved \| rejected \| superseded, markdown, steps[], sourceEntryId, filePath? }`                                                           | 根会话在 plan 下一回合以纯文本结束、回复里有 `<proposed_plan>` 时；审批结果（approved / rejected / superseded）另记一条（W5-F） |
+| `ama.plan_state`     | `custom`         | `data: { active, prePlanMode, planId?, executionModel?, executionThinking? }`（后两项：`plan.model` 切走的执行模型）                                                                               | 进入 / 退出 plan 模式；resume 时据此回到 plan（W5-F）                                                                           |
+| `ama.plan_mode`      | `custom_message` | `content`：plan 模式说明（完整版或简版）                                                                                                                                                           | 进入 plan 后的首个提示前，之后每 5 回合简版、压缩后补完整版（W5-F）                                                             |
+| `ama.plan_mode_exit` | `custom_message` | `content`：已退出 plan 模式                                                                                                                                                                        | 手动退出 plan 后的下一次提示前（获批时由 `ama.plan_approved` 说明，不另发）（W5-F）                                             |
+| `ama.plan_approved`  | `custom_message` | `content`：获批计划全文、文件路径与进度记法（有 todo 工具时「按 todo 推进」，没有时「每完成一步单独一行写 `[DONE:<步骤>]`」）                                                                      | 计划获批交接时（W5-F）                                                                                                          |
+| `ama.post_compact`   | （不单独成条）   | 回注改为 `compaction.summary` 末尾的 `<post-compact-state>` 块（清单与指针，不含正文；见 `compaction/post-compact.ts`）                                                                            | 写 compaction 条目时（W5-H1），模型看到「摘要 → 回注 → 保留区」                                                                 |
+| `ama.reminder`       | `custom_message` | `content`：提醒（todo 复述、外部文件改动、上下文用量、预算余量、后台命令退出、异常中断恢复），`<system-reminder>` 包起来；含恢复提醒时 `details: { recovery: true }`（#268，见「异常结束的判定」） | 新提示之前按 `reminders.*` 追加（W5-H2）；run 进行中的提醒不单独成条，追加在工具批次最后一条 toolResult 的末尾                  |
+| `ama.agent-session`  | `custom`         | `data: { agent, runner, sessionId, cwd?, taskId? }`：外部 Agent 自己的会话引用（不含原始事件与转录）                                                                                               | 外部 Agent 会话建立 / 续聊时（W5-E）                                                                                            |
+| `ama.agent-usage`    | `custom`         | `data: { agent, sessionId, unit: usd \| tokens \| requests, amount, tokens?, contextTokens?, contextWindow? }`（上下文只记数字）                                                                   | 外部 Agent 每个回合结束（W5-E）；`SessionStats.external` 据此汇总                                                               |
 
 第六波登记的类型（docs/history/wave6-plan.md §2.2；之前的版本不会产生）：
 
@@ -150,6 +150,24 @@ contextTokens?, contextWindow?, outputFile?, sessionRef?`；`contextTokens / con
 | `ama.trace`  | `custom` | `data.kind` 区分：`step`（一次模型请求：`assistantEntryId?`、`requestAt? / firstTokenAt? / doneAt?`、`outputTokens?`、`tps?`、`attempt`、`fallbackFrom?`、`status?: "aborted"`、`tools?: { id, startedAt, endedAt?, approvalMs?, denied? }[]`、`subcalls?: { id, parentId, name, startedAt, endedAt?, isError? }[]`）、`retry_wait`（`attempt, delayMs, startedAt, reason?`）、`fallback`（`from, to, reason?`）、`compaction`（`trigger, startedAt, endedAt, compactionEntryId?, aborted?`）、`aux`（`purpose, usageEntryId, startedAt?, endedAt`）、`external_turn`（`taskId?, agent, sessionId, turn, startedAt, endedAt, stopReason, tools: { kind, status, startedAt?, endedAt? }[], toolCount, filesTouched`）。时间是 epoch ms；**只有 id、时间与计数，不含正文**（提示、参数、结果、外部 Agent 的工具标题 / 命令行 / 路径） | 事件发生后追加（W6-C0 起）：`step` 在该请求的 toolResult 之后（无工具时紧跟 assistant），中断时由 `agent_end` 兜底；主会话与 task 子会话都写；`external_turn` 写在父会话。轨迹构建器 `buildTrace()` 合并它们，缺失时按条目时间回退推算（标 `approx`） |
 
 其它程序（宿主、SDK 工具经 `ToolContext.session.appendCustom`）可以写自己的 `customType`；建议加前缀避免冲突，`ama.` 前缀保留给 ama。
+
+## 异常结束的判定
+
+resume 时（`--resume` / `--continue`、`/resume`、RPC `switch_session`、ACP `session/load`，以及 `taskId` 续聊重开子会话）只看活动分支就能判断上一轮有没有正常结束，不需要新的条目类型（`src/session/unclean-end.ts`，#268）。记 A = 分支上最后一条 `assistant` 消息，T = A 之后的条目，任一成立即「异常结束」：
+
+| 规则       | 条件                                                                          | 现场                                                                                                                       |
+| ---------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 悬空调用   | A 有 `toolCall` 块而 T 里缺对应 `toolCallId` 的 `toolResult`                  | 工具执行中进程被杀。正常运行下错误 / 中断路径都由运行时补齐结果，不变式「每个调用恰有一个结果」永远成立                    |
+| 非人为中断 | `A.stopReason` 为 `aborted` 而 T 里没有 `custom_message{ama.aborted}`         | Esc、`interrupt: true`、RPC `abort`、SIGINT / SIGTERM 都在 abort 之后落 `ama.aborted`；只有 abort 之后、落盘之前被杀才会缺 |
+| 回合没结束 | A 之前有 `custom{ama.trace, kind:"step"}`（本会话在写轨迹），而 T 里没有 step | step 在 `turn_end` 时写（toolResult 之后）；结果已落、`finishTurn`（检查点等）期间被杀                                     |
+
+不判为异常：最后一条是 `user`（本回合还没有任何工具动作）；最后一条是 `toolResult` 且其后有 step（下一次请求中被杀，或 `terminate` / 重复调用检测 / Hook 停止 / 预算到限的正常停止，文件里分不出，而且结果都已在上下文里）；`error` / `length` 收尾；带 `ama.aborted` 的中断。`compaction`、`context_edit`、`model_change` 等非消息条目不影响判断，所以 resume 后先 `/compact` 再提问仍能命中。fork 到 A 本身或 `/tree` 把叶子停在 A 上再退出也会被判为异常（A 的结果确实不在分支上）。
+
+判定结果的去向：
+
+- 第一次新提示前经 `ama.reminder` 追加一条恢复提醒（固定英文；列出最后一轮——最后一条非 `steer` 的 `user` 之后——的工具名与目标：`bash` 取命令第一个词（跳过开头的 `VAR=…` 环境变量赋值，剩下的词仍带 `=` 或以 `-` 开头就不给目标），`write` / `edit` 取路径（去掉 `?` / `#` 之后的部分），其余只给名字，缺结果的标 `(no result)`，去重、最多 12 项；从不含结果正文），要求先检查工作区、git 历史与外部状态再决定是否重复外部动作。该条带 `details: { recovery: true }`；T 里已有这样的条目就不再注入，于是「只提醒一次」不依赖新的持久化：注入后模型还没回复又被杀，第二次 resume 不重复；resume 后不提问就退出，下一次 resume 仍会在第一次提示前注入。系统提示与工具表不变，缓存前缀不受影响。
+- 宿主事件 `session_start` 在 `reason: "resume"` 时带 `uncleanEnd`（[host-api.md](host-api.md)）。
+- 父会话里按 `custom{ama.task}` 重建为 `interrupted` 的任务，`task_ctl` 的 `list` / `output` / `wait` 附一句同样的提示；`taskId` 续聊重开的子会话按同一规则自行提醒。
 
 ## 读取方
 

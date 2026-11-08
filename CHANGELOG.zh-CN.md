@@ -6,6 +6,15 @@
 
 ## 未发布
 
+### 会话
+
+- **异常中断后恢复会话时的恢复提醒**：恢复会话（`--resume` / `--continue`、`/resume`、RPC `switch_session`、ACP `session/load`、`taskId` 续聊重开子会话）时，上一轮若没有正常结束——工具调用缺结果、不是人主动中断的 `aborted`、回合没有结束标记——在第一个新提示前经提醒通道（`ama.reminder`，带 `details.recovery`；不进系统提示，前缀不变）注入一次恢复提醒：列出那一轮调用过的工具（bash 只给命令第一个词，write / edit 给路径，不带输出），要求先检查工作区、git 历史和外部状态再决定要不要重复外部动作。判定只读会话文件；干净退出、Esc 中断、还没跑任何工具就崩溃的不触发，第二次恢复不重复。被打断的子 Agent 任务在 `task_ctl` 的 `list` / `output` / `wait` 里附同一句说明。见 [docs/reference/session-format.md](docs/reference/session-format.md)（#268）。
+
+### 宿主
+
+- **宿主资源命名空间，内置 `read` 读 `scheme://path`**（host-api 1.2）：`api.resources.register({ scheme, describe, read })` 把宿主数据暴露成 `scheme://path`；模型用 `read` 的 `offset` / `limit` 分页，结果带与 `web_fetch` 同一套的 `(untrusted)` 标注，走同一截断规则与会话结果上限，权限类 `read`（从不询问，所以宿主的 `read` 不得有副作用）。系统提示工具节多一行按 scheme 排序的资源清单，会话开始时固定；未注册的 scheme 报错并列出已注册的，`http(s)://` 指向 `web_fetch`，codemode 脚本里同样可以 `tools.read({ path: "scheme://…" })`。`@armadra/agent/host` 导出 `pageResourceText`。见 [docs/reference/host-api.md](docs/reference/host-api.md)「宿主资源」（#270）。
+- **host-api 1.3**：`session_start` 事件在 `reason` 为 `resume` 时带 `uncleanEnd`，用同一个判定（#268）。
+
 ### 权限
 
 - **切换权限模式时重新判定正在等的审批**：Shift+Tab / `/permission`、RPC `set_permission_mode`、ACP `session/set_mode` 与计划批准都会把在等的与排队的审批按新模式重新过一遍管线。新模式放行的自动允许（对话框或停靠收起，消息区一行「已按 <模式> 自动允许 N 个待审批」），拒绝的自动拒绝并在给模型的结果里写明切换，仍要问的继续等。不碰：宿主 broker 已接手的请求、危险命令（切到 Bypass 也照旧要人确认）、外部 Agent 的请求、`allow_session` 记忆。审批对话框打开时 Shift+Tab 仍能切模式（Tab 归对话框；进入 Bypass 照旧先确认）。RPC / ACP 客户端收到 `permission_resolved{reason:"mode_changed"}` 与 `permission_mode_changed.reevaluated{allowed, denied}`。见 [docs/guides/permissions.md](docs/guides/permissions.md)（#271）。
