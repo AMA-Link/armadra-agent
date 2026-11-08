@@ -105,7 +105,7 @@ describe("宿主资源（#270）", () => {
     h = composeHarness([readCall({ path: "other://x" }), { text: "done" }]);
     const runtime = await h.boot(["--model", "fake/echo", "--host", resourceHost()]);
     const api = (globalThis as Record<string, unknown>)[KEY] as HostApi;
-    expect(api.minor).toBe(2);
+    expect(api.minor).toBeGreaterThanOrEqual(2); // resources 自 1.2 起
     expect(() =>
       api.resources?.register({ scheme: "late", describe: "late", read: () => undefined }),
     ).toThrowError(expect.objectContaining({ code: "invalid_arguments" }));

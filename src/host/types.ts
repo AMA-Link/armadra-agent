@@ -19,6 +19,8 @@
  *   增量递增 {@link HOST_API_MINOR}，宿主按成员是否存在做特性探测。
  * - （#270）host-api 1.2：可选面 `HostApi.resources`（宿主资源命名空间，内置 `read` 读 `scheme://path`；
  *   类型在 tools/resource-ref.ts，此处再导出）。
+ * - （#268）host-api 1.3：`session_start` 在 `reason: "resume"` 时带 `uncleanEnd`（上一轮没有正常结束，
+ *   判定见 session/unclean-end.ts）。只加不改，主版本不变。
  */
 
 import type { CacheMiss, WarmingDecisionHandler } from "../ai/cache/types.js";
@@ -66,10 +68,10 @@ export type { CacheMiss, WarmDecision, WarmingDecisionHandler } from "../ai/cach
 export const HOST_API_VERSION = 1 as const;
 export type HostApiVersion = typeof HOST_API_VERSION;
 /**
- * host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`，2 = `resources`）；
+ * host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`，2 = `resources`，3 = `session_start.uncleanEnd`）；
  * 旧运行时没有 `api.minor`，按 0 算。
  */
-export const HOST_API_MINOR = 2 as const;
+export const HOST_API_MINOR = 3 as const;
 
 export type HostMode = "interactive" | "line" | "print" | "rpc";
 
@@ -95,6 +97,8 @@ export interface AgentEvents {
     sessionFile?: string;
     cwd: string;
     reason: "startup" | "resume" | "new" | "fork";
+    /** [#268] 只在 `reason: "resume"` 时出现：上一轮没有正常结束（host-api 1.3）。 */
+    uncleanEnd?: boolean;
   };
   before_agent_start: { prompt: string };
   agent_start: Empty;

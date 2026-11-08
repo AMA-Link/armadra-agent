@@ -6,9 +6,14 @@
 
 ## 未发布
 
+### 会话
+
+- **异常中断后恢复会话时的恢复提醒**：恢复会话（`--resume` / `--continue`、`/resume`、RPC `switch_session`、ACP `session/load`、`taskId` 续聊重开子会话）时，上一轮若没有正常结束——工具调用缺结果、不是人主动中断的 `aborted`、回合没有结束标记——在第一个新提示前经提醒通道（`ama.reminder`，带 `details.recovery`；不进系统提示，前缀不变）注入一次恢复提醒：列出那一轮调用过的工具（bash 只给命令第一个词，write / edit 给路径，不带输出），要求先检查工作区、git 历史和外部状态再决定要不要重复外部动作。判定只读会话文件；干净退出、Esc 中断、还没跑任何工具就崩溃的不触发，第二次恢复不重复。被打断的子 Agent 任务在 `task_ctl` 的 `list` / `output` / `wait` 里附同一句说明。见 [docs/reference/session-format.md](docs/reference/session-format.md)（#268）。
+
 ### 宿主
 
 - **宿主资源命名空间，内置 `read` 读 `scheme://path`**（host-api 1.2）：`api.resources.register({ scheme, describe, read })` 把宿主数据暴露成 `scheme://path`；模型用 `read` 的 `offset` / `limit` 分页，结果带与 `web_fetch` 同一套的 `(untrusted)` 标注，走同一截断规则与会话结果上限，权限类 `read`（从不询问，所以宿主的 `read` 不得有副作用）。系统提示工具节多一行按 scheme 排序的资源清单，会话开始时固定；未注册的 scheme 报错并列出已注册的，`http(s)://` 指向 `web_fetch`，codemode 脚本里同样可以 `tools.read({ path: "scheme://…" })`。`@armadra/agent/host` 导出 `pageResourceText`。见 [docs/reference/host-api.md](docs/reference/host-api.md)「宿主资源」（#270）。
+- **host-api 1.3**：`session_start` 事件在 `reason` 为 `resume` 时带 `uncleanEnd`，用同一个判定（#268）。
 
 ## 0.15.1（2026-11-06）
 

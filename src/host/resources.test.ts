@@ -81,7 +81,7 @@ describe("HostResourceRegistry（#270）", () => {
 });
 
 describe("HostApi.resources（host-api 1.2）", () => {
-  it("api.resources.register 写进注入的注册表；list 按名排序；minor = 2", () => {
+  it("api.resources.register 写进注入的注册表；list 按名排序；minor ≥ 2", () => {
     const resources = new HostResourceRegistry();
     const binding = createHostApi({
       mode: "print",
@@ -98,7 +98,7 @@ describe("HostApi.resources（host-api 1.2）", () => {
       resources,
     });
     expect(binding.api.minor).toBe(HOST_API_MINOR);
-    expect(HOST_API_MINOR).toBe(2);
+    expect(HOST_API_MINOR).toBeGreaterThanOrEqual(2); // resources 自 1.2 起
     expect(binding.api.resources).toBeDefined();
     binding.api.resources?.register(ok("notes"));
     binding.api.resources?.register(ok("demo"));
