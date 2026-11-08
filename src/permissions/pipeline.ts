@@ -21,9 +21,9 @@
  * allow 规则 / Hook allow 命中放行，task 同 plan 放行（子会话共用本管线），其余 deny——从不询问
  * （危险命令、Hook ask 也 deny）。
  *
- * allow_session 记忆（内存，不落盘）：bash 记命令的前两个词（`npm test`），之后以它开头的命令
- * 命中；带 path 的工具记文件所在目录，之后该目录下的路径命中；其它工具只记工具名。
- * 记忆只作用于第 ③ 步模式产生的 ask（auto 里只作用于规则层之后）。
+ * allow_session 记忆（内存，不落盘，session-grants.ts）：bash 记命令的前两个词（`npm test`），之后以它开头的
+ * 命令命中；带 path 的工具记文件所在目录，之后该目录下的路径命中；[#270] 已注册的资源引用记 `scheme://`；
+ * 其它工具只记工具名。记忆只作用于第 ③ 步模式产生的 ask（auto 里只作用于规则层之后）。
  *
  * [S2] bash 沙箱（docs/guides/permissions.md「判定顺序」）：default / auto-edit 下，bash 调用若将在 OS 沙箱内
  * 运行且沙箱拒绝网络、没请求 `sandbox: false`、命令文本不碰机密路径、嵌套不超深，第 ③ 步的 ask 变
@@ -34,7 +34,6 @@
  * 任一层即 deny；allow 规则与会话记忆要求外层与每一层嵌套命令都被覆盖，嵌套超深时不放行。
  */
 
-import { dirname, sep } from "node:path";
 import { isBackgroundJobQuery } from "../tools/background-jobs.js";
 import type {
   ApprovalReason,
@@ -49,19 +48,18 @@ import type {
 } from "./types.js";
 import type { ToolPermission } from "../tools/types.js";
 import { memoryEffectivePermission } from "./memory-class.js";
-import {
-  networkBlockReason,
-  networkEffectivePermission,
-  networkGrantHost,
-} from "./network-class.js";
+import { networkBlockReason, networkEffectivePermission } from "./network-class.js";
 import {
   findAllowRule,
   findDenyRule,
   inputCommand,
   inputPath,
-  normalizeCommand,
-  splitShellSegments,
+  inputResourceRef,
+  type ResourceSchemes,
 } from "./rules.js";
+import { grantCovers, sessionGrantFor, type SessionGrant } from "./session-grants.js";
+
+export { sessionGrantFor } from "./session-grants.js";
 import { collectNestedCommands, matchDangerous } from "./dangerous.js";
 import { analyzeBashForAuto, secretReferenceReason } from "./auto-safe.js";
 import { runsSandboxed, wantsUnsandboxed, type BashSandbox } from "../sandbox/bash.js";
@@ -154,43 +152,6 @@ function auditSummary(toolName: string, input: unknown): string {
   return text.length > 80 ? `${text.slice(0, 79)}…` : text;
 }
 
-interface SessionGrant {
-  toolName: string;
-  kind: "command" | "dir" | "host" | "any";
-  prefix: string;
-}
-
-export function sessionGrantFor(toolName: string, input: unknown, cwd: string): SessionGrant {
-  if (toolName === "memory") return { toolName, kind: "any", prefix: "" }; // [W6-M] 本会话允许全部写命令
-  const host = networkGrantHost(input); // web_fetch：本会话允许该主机
-  if (host !== undefined) return { toolName, kind: "host", prefix: host };
-  const command = inputCommand(input);
-  if (command !== undefined) {
-    const words = normalizeCommand(command).split(" ").slice(0, 2);
-    return { toolName, kind: "command", prefix: words.join(" ") };
-  }
-  const path = inputPath(toolName, input, cwd);
-  if (path !== undefined) return { toolName, kind: "dir", prefix: dirname(path) };
-  return { toolName, kind: "any", prefix: "" };
-}
-
-function grantCovers(grant: SessionGrant, toolName: string, input: unknown, cwd: string): boolean {
-  if (grant.toolName !== toolName) return false;
-  if (grant.kind === "any") return true;
-  if (grant.kind === "host") return networkGrantHost(input) === grant.prefix;
-  if (grant.kind === "command") {
-    const command = inputCommand(input);
-    if (command === undefined || /\$\(|`/.test(command)) return false;
-    const segments = splitShellSegments(command);
-    return (
-      segments.length > 0 &&
-      segments.every((s) => s === grant.prefix || s.startsWith(`${grant.prefix} `))
-    );
-  }
-  const path = inputPath(toolName, input, cwd);
-  return path !== undefined && (path === grant.prefix || path.startsWith(grant.prefix + sep));
-}
-
 export interface PermissionPipelineOptions {
   mode: PermissionMode;
   rules: readonly Rule[];
@@ -203,6 +164,11 @@ export interface PermissionPipelineOptions {
   planBash?: PlanBashMode;
   /** [S2] bash 的 OS 沙箱设定（与 bash 工具用同一份，保证「会不会在沙箱里跑」两边结论一致）。 */
   bashSandbox?: BashSandbox;
+  /**
+   * [#270] 宿主资源注册表（与 read 工具同一实例）：只有已注册的 scheme 才按资源引用处理（规则 glob、
+   * 会话记忆、跳过机密路径检查），其余 `xx://` 一律按文件路径。缺省 = 没有资源。
+   */
+  resources?: ResourceSchemes;
 }
 
 export class PermissionPipeline implements PermissionPipelineApi {
@@ -215,9 +181,11 @@ export class PermissionPipeline implements PermissionPipelineApi {
   readonly autoSafeCommands: readonly string[];
   private planBashMode: PlanBashMode;
   readonly bashSandbox: BashSandbox | undefined;
+  private readonly resources: ResourceSchemes;
 
   constructor(options: PermissionPipelineOptions) {
     this.bashSandbox = options.bashSandbox;
+    this.resources = options.resources;
     this.currentMode = options.mode;
     this.planBashMode = options.planBash ?? "readonly";
     this.ruleList = [...options.rules];
@@ -248,7 +216,7 @@ export class PermissionPipeline implements PermissionPipelineApi {
   }
 
   rememberForSession(toolName: string, input: unknown): void {
-    this.grants.push(sessionGrantFor(toolName, input, this.cwd));
+    this.grants.push(sessionGrantFor(toolName, input, this.cwd, this.resources));
   }
 
   clearSessionGrants(): void {
@@ -304,7 +272,7 @@ export class PermissionPipeline implements PermissionPipelineApi {
     const layers = layeredInputs(toolName, input.input);
     let deny: Rule | undefined;
     for (const layer of layers.inputs) {
-      deny = findDenyRule(this.ruleList, toolName, layer, this.cwd);
+      deny = findDenyRule(this.ruleList, toolName, layer, this.cwd, this.resources);
       if (deny) break;
     }
     if (deny) {
@@ -366,13 +334,17 @@ export class PermissionPipeline implements PermissionPipelineApi {
     if (verdict.decision === "ask") {
       const allow = layers.tooDeep
         ? undefined
-        : findAllowRule(this.ruleList, toolName, input.input, this.cwd);
+        : findAllowRule(this.ruleList, toolName, input.input, this.cwd, this.resources);
       const allowAll =
         allow !== undefined &&
-        layers.inputs.every((l) => findAllowRule(this.ruleList, toolName, l, this.cwd));
+        layers.inputs.every((l) =>
+          findAllowRule(this.ruleList, toolName, l, this.cwd, this.resources),
+        );
       const granted =
         !layers.tooDeep &&
-        layers.inputs.every((l) => this.grants.some((g) => grantCovers(g, toolName, l, this.cwd)));
+        layers.inputs.every((l) =>
+          this.grants.some((g) => grantCovers(g, toolName, l, this.cwd, this.resources)),
+        );
       if (allowAll) verdict = { decision: "allow", step: "allow-rule", rule: allow };
       else if (input.hookDecision === "allow") verdict = { decision: "allow", step: "hook" };
       else if (granted) {
@@ -440,7 +412,9 @@ export class PermissionPipeline implements PermissionPipelineApi {
     if (
       useGrants &&
       !layers.tooDeep &&
-      layers.inputs.every((l) => this.grants.some((g) => grantCovers(g, toolName, l, this.cwd)))
+      layers.inputs.every((l) =>
+        this.grants.some((g) => grantCovers(g, toolName, l, this.cwd, this.resources)),
+      )
     ) {
       return { decision: "allow", step: "session" };
     }
@@ -470,6 +444,9 @@ export class PermissionPipeline implements PermissionPipelineApi {
         ? (input.input as Record<string, unknown>)["path"]
         : undefined;
     if (typeof raw !== "string" && input.permission !== "write") return {};
+    // [#270] 已注册的资源引用不是文件路径：read 类不做机密路径检查（未注册的 xx:// 仍按文件查）
+    if (input.permission === "read" && inputResourceRef(input.input, this.resources) !== undefined)
+      return {};
     const path = inputPath(input.toolName, input.input, this.cwd);
     if (path === undefined) return {};
     const secret = secretPathReason(path);
