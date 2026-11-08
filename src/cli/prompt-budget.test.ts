@@ -35,9 +35,10 @@ const STRICT = detectSandboxCapability("25.0.0", new Set(["--permission"]));
 const PROMPT_BUDGETS = { default: 2000, minimal: 800, "codemode-only": 1900 } as const;
 /**
  * default + task（`tools.default: ["+task"]`，按需打开）：task 描述带子 Agent 类型清单，加上 web_fetch 后
- * 实测 -p 2099 / 交互 2116（原 1980 / 1997，紧贴 2000），单列一档，与 default+memory 同理。
+ * 实测 -p 2099 / 交互 2116（原 1980 / 1997，紧贴 2000），单列一档，与 default+memory 同理；[#266/#267] bash
+ * 与 task_ctl 多 `extend` 动作后 Windows（bash 描述是 PowerShell 版，更长）交互实测 2151，放宽到 2200。
  */
-const TASK_BUDGET = 2150;
+const TASK_BUDGET = 2200;
 /** [W6-M] 记忆开启时 default 预设的上限（docs/history/wave6-plan.md §3.6、§10）。 */
 const MEMORY_BUDGET = 2350;
 

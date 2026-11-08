@@ -7,6 +7,7 @@
 
 import { PERMISSION_MODES_STRICT_FIRST } from "../permissions/types.js";
 import { msg } from "../i18n/index.js";
+import { MAX_TIMER_MS } from "../tools/timers.js";
 import { Checker, THINKING_LEVELS, checkSection, join, type Obj } from "./checker.js";
 import {
   AGENTS_RESERVED_KEYS,
@@ -113,6 +114,7 @@ export function validateConfigW5(c: Checker, config: Obj): void {
       "defaultModel",
       "background",
       "autoBackgroundAfterMs",
+      "backgroundMaxMs",
       "retainSessions",
       "forkMaxContextRatio",
     ],
@@ -122,6 +124,7 @@ export function validateConfigW5(c: Checker, config: Obj): void {
       c.string(s, "defaultModel", p);
       c.oneOf(s, "background", p, SUBAGENT_BACKGROUND_MODES);
       c.number(s, "autoBackgroundAfterMs", p, 0);
+      c.number(s, "backgroundMaxMs", p, 0, MAX_TIMER_MS);
       c.number(s, "retainSessions", p, 0);
       c.number(s, "forkMaxContextRatio", p, 0.05, 0.95);
     },

@@ -199,6 +199,8 @@ export interface RuntimeDeps {
       paths?: { configDir: string; dataDir: string };
       /** [W6-M] 记忆运行期（开启时注册 memory 工具；组装会话时渲染 memory 节）。 */
       memory?: MemoryRuntime | undefined;
+      /** [#266] 嵌入宿主（有 profile）：bash 自动转后台缺省开启。 */
+      embedded?: boolean;
       /** [#270] 宿主资源注册表（read 工具据此认 `scheme://path`）；SDK 不给。 */
       resources?: HostResourceLookup | undefined;
     }): ToolRegistryApi;

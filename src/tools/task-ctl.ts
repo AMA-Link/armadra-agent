@@ -11,10 +11,13 @@
  *   `bindTaskCtlWaitCap`）；其它预设不变。
  * - [W7-B1] `wait` 被转后台（`background()`，TUI `Ctrl+B` / RPC `background_task`）打断时立即返回固定
  *   文案，要求模型不要再等。
+ * - [#267] `extend` = 给后台任务续命一次（`timeoutMs` 为增量，缺省与 `subagents.backgroundMaxMs` 相同，封顶一个
+ *   上限）；到点被停止的任务经提醒通道告知模型（agent/subagent-lifetime.ts）。
  * - [#268] resume 后重建为 `interrupted` 的任务：`list` 行、`output` 头部与 `wait` 都附同一句（上一次运行
  *   没结束就停了，副作用可能只做了一半，重复外部动作前先核实）。
  */
 
+import { extendTaskText } from "../agent/subagent-lifetime.js";
 import { capTaskText, formatTokens, waitDetachedText } from "../agents/result.js";
 import { taskControl } from "../agents/task-control.js";
 import { nestedTaskRejection } from "./task.js";
@@ -42,8 +45,9 @@ export function bindTaskCtlWaitCap(tool: ToolDefinition | undefined, capMs: numb
 }
 
 export interface TaskCtlInput {
-  action: "list" | "wait" | "stop" | "output" | "send";
+  action: "list" | "wait" | "stop" | "output" | "send" | "extend";
   taskId?: string;
+  /** wait：等待时长；[#267] extend：续命增量。 */
   timeoutMs?: number;
   /** send：追加给任务的消息。 */
   prompt?: string;
@@ -84,13 +88,17 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
     label: "TaskCtl",
     description:
       "Manage sub-agent tasks started by task: list them, wait for one, stop it, read its " +
-      "output, or send it a follow-up message (runs in background).",
+      "output, send it a follow-up message (runs in background), or extend a background task's " +
+      "lifetime once.",
     parameters: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["list", "wait", "stop", "output", "send"] },
+        action: { type: "string", enum: ["list", "wait", "stop", "output", "send", "extend"] },
         taskId: { type: "string", description: "Required except for list" },
-        timeoutMs: { type: "number", description: `wait only (default ${DEFAULT_WAIT_MS})` },
+        timeoutMs: {
+          type: "number",
+          description: `wait: how long (default ${DEFAULT_WAIT_MS}); extend: extra lifetime in ms`,
+        },
         prompt: { type: "string", description: "send only" },
       },
       required: ["action"],
@@ -128,6 +136,13 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
                 : "";
           const body = capTaskText(text, info.outputFile).text || "(no output yet)";
           return { content: head === "" ? body : `${head}\n${body}` };
+        }
+        case "extend": {
+          const ms = input.timeoutMs;
+          if (ms !== undefined && (!Number.isFinite(ms) || ms <= 0))
+            return fail("timeoutMs for extend must be a positive number of milliseconds");
+          const outcome = control.extend(taskId, ms);
+          return { content: extendTaskText(taskId, outcome), isError: !outcome.ok };
         }
         case "stop": {
           const result = await control.stop(taskId);

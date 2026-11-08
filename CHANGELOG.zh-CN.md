@@ -19,6 +19,12 @@
 
 - **切换权限模式时重新判定正在等的审批**：Shift+Tab / `/permission`、RPC `set_permission_mode`、ACP `session/set_mode` 与计划批准都会把在等的与排队的审批按新模式重新过一遍管线。新模式放行的自动允许（对话框或停靠收起，消息区一行「已按 <模式> 自动允许 N 个待审批」），拒绝的自动拒绝并在给模型的结果里写明切换，仍要问的继续等。不碰：宿主 broker 已接手的请求、危险命令（切到 Bypass 也照旧要人确认）、外部 Agent 的请求、`allow_session` 记忆。审批对话框打开时 Shift+Tab 仍能切模式（Tab 归对话框；进入 Bypass 照旧先确认）。RPC / ACP 客户端收到 `permission_resolved{reason:"mode_changed"}` 与 `permission_mode_changed.reevaluated{allowed, denied}`。见 [docs/guides/permissions.md](docs/guides/permissions.md)（#271）。
 
+### 工具与权限
+
+- **前台 `bash` 超过阈值原地转后台**（`tools.bashAutoBackgroundAfterMs`）：命令跑过阈值还没结束时，进程不重启、直接交给后台任务表登记，工具立即返回 `{ jobId, outputPath, movedToBackground: true, output }`（到此刻的输出）；插话与子任务通知不再被长命令挡住，退出沿用后台命令的提醒通道，`bash {job, action}` 照常可用。缺省：`--mode rpc` / `--mode acp`、嵌入宿主（有 profile）与 `coordinator` 预设下 15 秒，独立终端与 `-p` 下关闭（`0`）。权限管线、沙箱包装、输出截断与 Windows 进程树处理不变；转后台的命令不再受 120 / 600 秒超时约束，改受寿命上限约束（#266）。
+- **后台任务与后台子 Agent 的寿命上限**：`tools.bashBackgroundMaxMs`（缺省 2 小时）到点杀掉后台命令的进程树（SIGTERM → 宽限 → SIGKILL；Windows `taskkill /T`），`subagents.backgroundMaxMs`（缺省 1 小时）到点停止后台子 Agent；`0` 不限。模型经提醒通道得知「到达寿命上限被停止」，输出文件保留。前台转来的命令、转后台的任务从转换时刻起算。每个任务可续命一次：`bash {job, action: "extend", timeoutMs?}` 与 `task_ctl {action: "extend", taskId, timeoutMs?}`，最多再加一个上限；上限不超过 2^31 − 1 毫秒（#267）。
+- **`coordinator` 预设下 `bash {job, action: "wait"}` 封顶 5 秒**，与 `task_ctl wait` 一致，被封顶时回复里说明（#242）。
+
 ## 0.15.1（2026-11-06）
 
 ### 维护

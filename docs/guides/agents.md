@@ -128,8 +128,27 @@ ama 再跑一轮、在消息里要求「不要调用工具、直接给最终报�
 | `stop`   | 停止任务，返回终态                                                                                      |
 | `output` | 运行中返回已有输出，结束后返回最终文本（同样有 50 KB 上限）                                             |
 | `send`   | 向任务追加一条消息并放到后台运行（等价于 `task{taskId, prompt, background:true}`）                      |
+| `extend` | 给后台任务续命一次（`timeoutMs` 为增量，缺省与上限相同，封顶一个上限）；见「长命令与后台寿命」          |
 
-`coordinator` 预设下 `wait` 的超时封顶 5 000 毫秒（含缺省与更大的 `timeoutMs`），超时回复里说明被封顶、完成后会有通知；其它预设不变。
+`coordinator` 预设下 `wait` 的超时封顶 5 000 毫秒（含缺省与更大的 `timeoutMs`），超时回复里说明被封顶、完成后会有通知；
+`bash {job, action: "wait"}` 同样封顶（#242）；其它预设不变。
+
+### 长命令与后台寿命
+
+前台 `bash` 最长会挂 120 秒（上限 600 秒），这期间插话与子任务通知都要等它结束。`tools.bashAutoBackgroundAfterMs` 大于 0 时，
+前台命令跑过这个时长还没结束就**原地转成后台任务**：进程不重启，交给后台任务表登记（发 `background_job{phase:"started"}`），
+工具立即返回 `{ jobId, outputPath, pid?, movedToBackground: true, output }`，正文是到此刻的输出尾部加一段说明；之后
+`bash {job, action: "wait" | "output" | "stop"}` 照常可用，命令退出后经提醒通道告知模型。转后台之后原来的超时不再生效，父回合的
+`Esc` 也不再杀它（与子 Agent 转后台同一语义），会话关闭时仍随会话回收。阈值不小于超时时超时先到，照旧杀掉、不转。
+
+缺省由运行方式决定：`--mode rpc` / `--mode acp`、嵌入宿主（有 profile）或 `coordinator` 预设下 15 000；独立交互界面与 `-p`
+下 0（关闭，人在终端前看得到输出）。显式写 `0` 即关闭。权限审批发生在启动前、沙箱包装与输出截断规则都不变。
+
+后台任务与后台子 Agent 有寿命上限：`tools.bashBackgroundMaxMs`（缺省 2 小时）到点杀掉后台命令的进程树（SIGTERM → 宽限 →
+SIGKILL；Windows `taskkill /T /F`），`subagents.backgroundMaxMs`（缺省 1 小时）到点按 `stop` 处理后台子 Agent（终态 `aborted`，
+不发 `<task-notification>`）；`0` 表示不限。到点后模型经提醒通道得知「后台任务 … 到达寿命上限被停止」，输出文件保留；前台转来的
+命令、转后台的任务都从转换时刻起算。每个任务可以续命一次：`bash {job, action: "extend", timeoutMs?}` /
+`task_ctl {action: "extend", taskId, timeoutMs?}`，增量缺省与上限相同、最多再加一个上限，第二次续命被拒绝。
 
 ### 续聊、保留与 resume
 
@@ -198,18 +217,21 @@ RPC `get_tasks` / `get_agents` 返回任务快照与可用类型（来源、定�
 
 ### 配置
 
-| 键                                | 说明                                                                             |
-| --------------------------------- | -------------------------------------------------------------------------------- |
-| `subagents.maxConcurrent`         | 同时运行的子 Agent，缺省 4                                                       |
-| `subagents.maxPending`            | 排队上限，缺省 16                                                                |
-| `subagents.retainSessions`        | 保留在内存里的已结束子会话数（LRU），缺省 4，0 = 结束即释放；只认用户级          |
-| `subagents.defaultModel`          | 子 Agent 缺省模型，不设继承父会话                                                |
-| `subagents.forkMaxContextRatio`   | fork 回落比例（见「fork 模式」），0.05–0.95，缺省 0.5；只认用户级                |
-| `subagents.background`            | `auto`（缺省）\| `always` \| `never`，见「前台与后台」；用户 / 项目 / 宿主级都认 |
-| `subagents.autoBackgroundAfterMs` | 前台任务运行超过该毫秒数自动转后台，缺省 0（关闭）；用户 / 项目级都认            |
-| `agents.dirs`                     | 追加的定义目录                                                                   |
-| `agents.<类型>.model`             | 某个类型的模型（如让 `explore` 用便宜模型）                                      |
-| `models.aliases.fast` / `.strong` | 定义文件里 `model: fast / strong` 的映射                                         |
+| 键                                | 说明                                                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `subagents.maxConcurrent`         | 同时运行的子 Agent，缺省 4                                                                           |
+| `subagents.maxPending`            | 排队上限，缺省 16                                                                                    |
+| `subagents.retainSessions`        | 保留在内存里的已结束子会话数（LRU），缺省 4，0 = 结束即释放；只认用户级                              |
+| `subagents.defaultModel`          | 子 Agent 缺省模型，不设继承父会话                                                                    |
+| `subagents.forkMaxContextRatio`   | fork 回落比例（见「fork 模式」），0.05–0.95，缺省 0.5；只认用户级                                    |
+| `subagents.background`            | `auto`（缺省）\| `always` \| `never`，见「前台与后台」；用户 / 项目 / 宿主级都认                     |
+| `subagents.autoBackgroundAfterMs` | 前台任务运行超过该毫秒数自动转后台，缺省 0（关闭）；用户 / 项目级都认                                |
+| `subagents.backgroundMaxMs`       | 后台任务的寿命上限（毫秒），缺省 3 600 000（1 小时），0 不限；只认用户级（见「长命令与后台寿命」）   |
+| `tools.bashAutoBackgroundAfterMs` | 前台 `bash` 运行超过该毫秒数原地转后台；不设时按运行方式定缺省（见「长命令与后台寿命」）；只认用户级 |
+| `tools.bashBackgroundMaxMs`       | 后台 `bash` 任务的寿命上限（毫秒），缺省 7 200 000（2 小时），0 不限；只认用户级                     |
+| `agents.dirs`                     | 追加的定义目录                                                                                       |
+| `agents.<类型>.model`             | 某个类型的模型（如让 `explore` 用便宜模型）                                                          |
+| `models.aliases.fast` / `.strong` | 定义文件里 `model: fast / strong` 的映射                                                             |
 
 按角色选模型只要三行配置（`config.json`）：别名 `fast` 指向便宜模型，`explore` 类型用它，外部 Agent `claude` 用它自己的模型名（原样交给该 CLI）：
 

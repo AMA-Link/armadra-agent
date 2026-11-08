@@ -6,7 +6,8 @@
  * （描述里的类型清单）；工厂给每个根会话装一个扩展：建任务注册表（subagent-registry.ts，并发 /
  * 排队上限与模型别名取自 config），`getStats().tasks` 汇总，会话 dispose 时停止后台任务。
  * task 子会话（depth ≥ 1）与没有 task 工具的会话不装。[W7-B1] `subagents.background`（auto：交互 / RPC /
- * ACP 后台、`-p` 前台）解析成本进程的缺省，同时决定 task 描述的版本；`autoBackgroundAfterMs` 透传。
+ * ACP 后台、`-p` 前台）解析成本进程的缺省，同时决定 task 描述的版本；`autoBackgroundAfterMs` 透传；
+ * [#267] `backgroundMaxMs` 不设时给缺省 1 小时（0 = 不限）。
  *
  * [W5-EG] 外部 runner（claude / codex / acp:* / 宿主注入）经 agents/external.ts 接入 `runners`：每个主
  * 会话一个 ExternalAgents（审批接 requestApproval，只交给人）；PATH 上的 claude / codex 登记进类型
@@ -15,6 +16,7 @@
  */
 
 import { subagentRegistryFor, type SubagentEnvironment } from "../agent/subagent-registry.js";
+import { DEFAULT_SUBAGENT_BACKGROUND_MAX_MS } from "../agent/subagent-lifetime.js";
 import type { SessionCore } from "../agent/session-core.js";
 import type { SessionExtension, SessionExtensionFactory } from "../agent/session-extensions.js";
 import { AgentCatalog } from "../agents/catalog.js";
@@ -82,6 +84,7 @@ export function subagentEnvironment(
   if (isCoordinatorPreset(config)) env.background = true;
   const after = sub?.autoBackgroundAfterMs;
   if (typeof after === "number" && after > 0) env.autoBackgroundAfterMs = after;
+  env.backgroundMaxMs = sub?.backgroundMaxMs ?? DEFAULT_SUBAGENT_BACKGROUND_MAX_MS;
   return env;
 }
 

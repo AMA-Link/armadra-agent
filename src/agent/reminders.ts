@@ -16,7 +16,8 @@
  *    压缩后回落再重新计；
  * 4. `budget`：limits 的回合或费用用掉 ≥ 80%（剩余 < 20%）时每次运行各一次；
  * 5. 后台命令退出（不可关）：`bash{background}` 的任务退出且模型还没经 wait / output 看到 →
- *    「后台命令 bgN 已退出（码 N）」。
+ *    「后台命令 bgN 已退出（码 N）」；[#267] 到达寿命上限被停止的后台命令与后台子 Agent也在这里报告
+ *    （发起停止的不是模型，所以不像 stop 那样视为已知）。
  *
  * 6. 异常中断恢复（#268，recovery-reminder.ts，不可关）：resume 时上一轮没有正常结束（判定见
  *    session/unclean-end.ts）→ 第一次新提示前提醒一次，列出上一轮的工具与目标，要求先核实现场再重复
@@ -30,12 +31,15 @@ import { execFileSync } from "node:child_process";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { estimateProjectedTokens } from "../compaction/estimate.js";
+import { taskControl } from "../agents/task-control.js";
 import type { RemindersConfig } from "../config/types-w5.js";
 import { buildProjection } from "../session/projection.js";
 import type { AgentMessage, SessionEntry } from "../session/types.js";
 import { disposeSessionJobs, jobsForSession, type Job } from "../tools/background-jobs.js";
 import { TODO_CUSTOM_TYPE, parseTodoState, renderTodoList } from "../tools/todo.js";
 import { budgetOf } from "./limits.js";
+import { expiredTaskText } from "./subagent-lifetime.js";
+import { minutesOf } from "../tools/timers.js";
 import { RECOVERY_DETAILS, RecoveryReminder } from "./recovery-reminder.js";
 import type { SessionCore } from "./session-core.js";
 import type { SessionExtension } from "./session-extensions.js";
@@ -217,9 +221,14 @@ class Reminders {
   }
 
   private jobLines(): string | undefined {
-    const exited = jobsForSession(this.core.manager.id).takeExited();
-    if (exited.length === 0) return undefined;
-    return exited.map((job) => jobExitText(job)).join("\n");
+    const sessionId = this.core.manager.id;
+    const lines = jobsForSession(sessionId)
+      .takeExited()
+      .map((job) => jobExitText(job));
+    // [#267] 到点被停止的后台子 Agent（TaskNotifier 不投递 aborted，这里补一句）
+    for (const task of taskControl(sessionId)?.takeExpired() ?? [])
+      lines.push(expiredTaskText(task));
+    return lines.length === 0 ? undefined : lines.join("\n");
   }
 
   private todoLine(): string | undefined {
@@ -319,7 +328,11 @@ class Reminders {
 
 export function jobExitText(job: Job): string {
   const how =
-    job.status === "stopped" ? "was stopped" : `exited with code ${job.exitCode ?? "unknown"}`;
+    job.status === "stopped"
+      ? job.expired === true
+        ? `was stopped at its lifetime cap (${minutesOf(job.lifetime?.maxMs ?? 0)}, tools.bashBackgroundMaxMs)`
+        : "was stopped"
+      : `exited with code ${job.exitCode ?? "unknown"}`;
   return `Background job ${job.id} (\`${job.command}\`) ${how}; output: ${job.outputPath} (bash {"job":"${job.id}","action":"output"}).`;
 }
 

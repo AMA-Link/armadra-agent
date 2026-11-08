@@ -41,7 +41,9 @@ import { configureOsSandbox } from "../sandbox/detect.js";
 import { resolveBashSandbox, type BashSandbox } from "../sandbox/bash.js";
 import { join } from "node:path";
 import { AUTH_FILE } from "../config/paths.js";
-import { PresetToolRegistry, resolvePreset } from "../tools/presets.js";
+import { PresetToolRegistry, isCoordinatorPreset, resolvePreset } from "../tools/presets.js";
+import { DEFAULT_BASH_AUTO_BACKGROUND_MS } from "../tools/bash-jobs.js";
+import { COORDINATOR_WAIT_MAX_MS } from "../tools/task-ctl.js";
 import { builtinTools } from "../tools/registry.js";
 import type { WebFetchOptions } from "../tools/web/fetch.js";
 import type { HostResourceLookup } from "../tools/resource-ref.js";
@@ -112,6 +114,22 @@ export interface ComposeOptions {
   log?: LogFn;
 }
 
+/**
+ * [#266] `tools.bashAutoBackgroundAfterMs` 的生效值：显式写了就用它（0 = 关）；没写时 `--mode rpc` / acp（bootstrap 已映射为
+ * rpc）、嵌入宿主（有 profile）或 `coordinator` 预设下 15 s，独立交互 / line / `-p` 关（人在终端前看得到输出）。
+ */
+export function resolveBashAutoBackgroundMs(
+  config: Pick<AmaConfig, "tools">,
+  mode: RuntimeMode,
+  embedded = false,
+): number {
+  const explicit = config.tools?.bashAutoBackgroundAfterMs;
+  if (explicit !== undefined) return explicit;
+  return mode === "rpc" || embedded || isCoordinatorPreset(config)
+    ? DEFAULT_BASH_AUTO_BACKGROUND_MS
+    : 0;
+}
+
 export function lazyMode(load: () => Promise<ModeRunner>): ModeRunner {
   return async (runtime, context) => (await load())(runtime, context);
 }
@@ -140,6 +158,7 @@ export function createTools(
     mode: RuntimeMode;
     paths?: { configDir: string; dataDir: string } | undefined;
     memory?: MemoryRuntime | undefined;
+    embedded?: boolean | undefined;
     resources?: HostResourceLookup | undefined;
   },
   options: ComposeOptions,
@@ -166,6 +185,13 @@ export function createTools(
     ...(input.config.tools?.bashTimeoutMs !== undefined
       ? { defaultTimeoutMs: input.config.tools.bashTimeoutMs }
       : {}),
+    // [#266 / #267] 自动转后台阈值按运行方式定缺省；寿命上限缺省 2 小时（bash-jobs.ts）
+    autoBackgroundAfterMs: resolveBashAutoBackgroundMs(input.config, input.mode, input.embedded),
+    ...(input.config.tools?.bashBackgroundMaxMs !== undefined
+      ? { backgroundMaxMs: input.config.tools.bashBackgroundMaxMs }
+      : {}),
+    // [#242] 协调者不阻塞：bash {job, action:"wait"} 与 task_ctl wait 同样封顶 5 s
+    ...(isCoordinatorPreset(input.config) ? { waitCapMs: COORDINATOR_WAIT_MAX_MS } : {}),
     ...(bashSandbox.active ? { sandbox: bashSandbox } : {}),
   };
   const builtins = builtinTools({
