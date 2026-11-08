@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 权限
+
+- **切换权限模式时重新判定正在等的审批**：Shift+Tab / `/permission`、RPC `set_permission_mode`、ACP `session/set_mode` 与计划批准都会把在等的与排队的审批按新模式重新过一遍管线。新模式放行的自动允许（对话框或停靠收起，消息区一行「已按 <模式> 自动允许 N 个待审批」），拒绝的自动拒绝并在给模型的结果里写明切换，仍要问的继续等。不碰：宿主 broker 已接手的请求、危险命令（切到 Bypass 也照旧要人确认）、外部 Agent 的请求、`allow_session` 记忆。审批对话框打开时 Shift+Tab 仍能切模式（Tab 归对话框；进入 Bypass 照旧先确认）。RPC / ACP 客户端收到 `permission_resolved{reason:"mode_changed"}` 与 `permission_mode_changed.reevaluated{allowed, denied}`。见 [docs/guides/permissions.md](docs/guides/permissions.md)（#271）。
+
 ## 0.15.1（2026-11-06）
 
 ### 维护

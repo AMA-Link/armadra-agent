@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Permissions
+
+- **Switching the permission mode re-evaluates approvals that are already waiting**: Shift+Tab / `/permission`, RPC `set_permission_mode`, ACP `session/set_mode` and plan approval all re-run the waiting and queued approvals through the pipeline under the new mode. What the new mode allows is answered allow automatically (the dialog or dock closes, one line "Auto-allowed N pending approvals under <mode>"), what it denies is answered deny with a reason that names the switch, the rest keep waiting. Never touched: requests a host broker has taken, dangerous-command hits (still ask under Bypass), external-agent requests, `allow_session` memory. Shift+Tab still cycles while the approval dialog is open (Tab stays with the dialog; Bypass still asks to confirm first). RPC / ACP clients get `permission_resolved{reason:"mode_changed"}` and `permission_mode_changed.reevaluated{allowed, denied}`. See [docs/guides/permissions.md](docs/guides/permissions.md) (#271).
+
 ## 0.15.1 (2026-11-06)
 
 ### Maintenance

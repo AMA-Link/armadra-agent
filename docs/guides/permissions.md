@@ -32,6 +32,20 @@
 - `Shift+Tab` 循环：Manual → Accept edits → Plan → Auto → Bypass permissions → Manual。`Allowlist only` 不在循环里，只能显式选。
 - **进入 Bypass**：交互界面里切到 Bypass（Tab / Shift+Tab 循环、`/permission` 选择器、`/permission full-auto`）先弹确认框，缺省选中「取消」；循环时取消则跳过 Bypass 回到 Manual，选择器与命令取消则保持原模式。本次运行确认过一次后不再问。命令行 `--permission-mode full-auto`、用户级配置与 profile 指定的不弹（那是显式选择）；line 模式问 `确认进入 Bypass？[y/N]`；管道输入、RPC `set_permission_mode`、ACP `session/set_mode` 由调用方负责，不弹。详见 [tui.md](tui.md)「进入 Bypass」。
 
+### 切换模式时的待审批
+
+切换模式对**之后**的调用立即生效；对切换那一刻**已经在等回答**的审批（弹出的那一条，以及排在它后面的子 Agent / codemode 的请求），ama 按新模式把同一调用重新过一遍管线（同一条管线、同样的 Hook 结论，不再调 auto 分类器）：
+
+| 重判结果                                                                               | 处理                                                                                                                                                |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 新模式放行（切到 Bypass；切到 Accept edits 时等的是写入；切到 Plan 时等的是只读命令…） | 自动答允许：对话框 / 停靠收起，消息区一行「已按 Bypass permissions 自动允许 N 个待审批」                                                            |
+| 新模式拒绝（切到 Plan 时等的是写入或非只读命令；切到 Allowlist only 时名单外的）       | 自动答拒绝：对话框收起，消息区一行「已按 Plan 自动拒绝 N 个待审批」；模型收到的结果写明「the permission mode was switched to "plan" …」加管线的说明 |
+| 新模式仍要问（Auto 下规则层 / 静态判定没定、要交分类器的也算）                         | 保持不动，继续等人                                                                                                                                  |
+
+不碰的：宿主 broker（`HostApi.approvals.setBroker`）已经接手、正在等它回答的请求（宿主自己决定）；危险命令表命中的（切到 Bypass 也照旧要人确认）；外部 Agent 的权限请求与首次运行确认（一律交给人）。自动作答只有允许 / 拒绝，不写 `allow_session` 记忆。先到的回答为准：人已经按了键就按人的，之后才到的切换不再改它。
+
+来源不限：交互界面 Shift+Tab / `/permission`、RPC `set_permission_mode`、ACP `session/set_mode`、计划批准切回执行模式都走同一条路。审批对话框打开时 Shift+Tab 仍能切模式（Tab 归对话框）；切到 Bypass 照旧先弹确认框，确认之后才重判。RPC / ACP 客户端收到被自动作答请求的 `permission_resolved`，`reason: "mode_changed"`，据此收起自己的审批界面（[rpc.md](../reference/rpc.md)「审批」）。
+
 ### 审批对话框的来源标注
 
 审批不只来自主会话。对话框（以及 RPC `permission_request.context`）标出请求从哪来，选项都只有「允许 / 本会话允许同类 / 拒绝」（`web_fetch` 的第二项是「本会话允许 `<主机>`」）：
