@@ -16,6 +16,10 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 - **Host resource namespace, read through the built-in `read`** (host-api 1.2): `api.resources.register({ scheme, describe, read })` exposes host data as `scheme://path`; the model pages it with `read`'s `offset` / `limit`, the result carries the `(untrusted)` marking of `web_fetch`, obeys the same truncation and session caps, and runs as permission class `read` (never asks, so the host's `read` must be side-effect free). The system prompt's tools section gains one sorted line listing the schemes, fixed at session start; an unregistered scheme returns an error listing the registered ones, `http(s)://` points to `web_fetch`, and codemode scripts can call `tools.read({ path: "scheme://…" })`. `@armadra/agent/host` exports `pageResourceText`. See [docs/reference/host-api.md](docs/reference/host-api.md) "Host resources" (#270).
 - **host-api 1.3**: the `session_start` event carries `uncleanEnd` when `reason` is `resume`, using the same decision (#268).
 
+### Permissions
+
+- **Switching the permission mode re-evaluates approvals that are already waiting**: Shift+Tab / `/permission`, RPC `set_permission_mode`, ACP `session/set_mode` and plan approval all re-run the waiting and queued approvals through the pipeline under the new mode. What the new mode allows is answered allow automatically (the dialog or dock closes, one line "Auto-allowed N pending approvals under <mode>"), what it denies is answered deny with a reason that names the switch, the rest keep waiting. Never touched: requests a host broker has taken, dangerous-command hits (still ask under Bypass), external-agent requests, `allow_session` memory. Shift+Tab still cycles while the approval dialog is open (Tab stays with the dialog; Bypass still asks to confirm first). RPC / ACP clients get `permission_resolved{reason:"mode_changed"}` and `permission_mode_changed.reevaluated{allowed, denied}`. See [docs/guides/permissions.md](docs/guides/permissions.md) (#271).
+
 ## 0.15.1 (2026-11-06)
 
 ### Maintenance

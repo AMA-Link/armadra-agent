@@ -42,10 +42,16 @@ import { availableCommands } from "../commands-core.js";
 import { msg } from "../../i18n/index.js";
 import { sessionTrace } from "../../trace/query-session.js";
 
+/** 暂存的提前回答与记住的已结算 id 的上限（都按先进先出淘汰）。 */
+export const RPC_APPROVALS_EARLY_LIMIT = 100;
+export const RPC_APPROVALS_SETTLED_LIMIT = 500;
+
 /** 审批 broker：等客户端 `permission_response`。 */
 export class RpcApprovals implements ApprovalBroker {
   private readonly pending = new Map<string, (decision: ApprovalDecision | undefined) => void>();
   private readonly early = new Map<string, ApprovalDecision>();
+  /** 已结算（答过 / 被撤回）的 requestId：迟到的 `permission_response` 直接丢，不进 `early`。 */
+  private readonly settled = new Set<string>();
 
   ask(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision | undefined> {
     const ready = this.early.get(request.requestId);
@@ -56,6 +62,7 @@ export class RpcApprovals implements ApprovalBroker {
     return new Promise((resolve) => {
       const done = (decision: ApprovalDecision | undefined): void => {
         this.pending.delete(request.requestId);
+        this.remember(request.requestId);
         signal.removeEventListener("abort", onAbort);
         resolve(decision);
       };
@@ -66,15 +73,27 @@ export class RpcApprovals implements ApprovalBroker {
     });
   }
 
-  /** 返回 false = 当前没有在等这个 requestId（已暂存，稍后被问到时生效）。 */
+  /**
+   * 返回 false = 当前没有在等这个 requestId：没结算过的暂存，稍后被问到时生效；已结算的（比如切换权限模式时
+   * 被自动作答，[#271]）直接丢弃。暂存有上限，最旧的先丢。
+   */
   respond(requestId: string, decision: ApprovalDecision): boolean {
     const resolve = this.pending.get(requestId);
     if (resolve !== undefined) {
       resolve(decision);
       return true;
     }
+    if (this.settled.has(requestId)) return false;
     this.early.set(requestId, decision);
+    if (this.early.size > RPC_APPROVALS_EARLY_LIMIT)
+      this.early.delete(this.early.keys().next().value as string);
     return false;
+  }
+
+  private remember(requestId: string): void {
+    this.settled.add(requestId);
+    if (this.settled.size > RPC_APPROVALS_SETTLED_LIMIT)
+      this.settled.delete(this.settled.values().next().value as string);
   }
 
   /** 关 stdin / 撤下时：全部弃权（会话按无人作答 deny）。 */

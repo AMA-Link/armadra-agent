@@ -9,6 +9,7 @@
 import type { Model, ModelThinkingLevel, ProviderRegistryApi } from "../ai/types.js";
 import { followChatGptLogin } from "../auth/chatgpt/follow.js";
 import { AmaError } from "../errors.js";
+import { reevaluatePendingApprovals } from "../permissions/broker.js";
 import type { PermissionMode } from "../permissions/types.js";
 import type { ToolDefinition } from "../tools/types.js";
 import type { StreamFn } from "./loop.js";
@@ -36,6 +37,24 @@ export function providerStream(providers: ProviderRegistryApi): StreamFn {
 }
 
 export type StaticSystemInput = Omit<SystemPromptInput, "tools" | "cwd">;
+
+/**
+ * [#271] 切换权限模式：管线改模式 → 审批链按新模式重判在等的与排队的审批 → 发 `permission_mode_changed`
+ * （带自动放行 / 拒绝的条数）。被自动作答的请求随后各自发 `permission_resolved{reason:"mode_changed"}`。
+ */
+export function applyPermissionMode(
+  options: Pick<AgentSessionOptions, "permission" | "brokers">,
+  mode: PermissionMode,
+  core: Pick<SessionCore, "emit">,
+): void {
+  options.permission?.setMode(mode);
+  const { allowed, denied } = reevaluatePendingApprovals(options.brokers, mode);
+  core.emit({
+    type: "permission_mode_changed",
+    mode,
+    ...(allowed + denied > 0 ? { reevaluated: { allowed, denied } } : {}),
+  });
+}
 
 export interface SessionSettingsDeps {
   /** 会话本身（构造完成后才会被调用）。 */
@@ -97,8 +116,7 @@ export class SessionSettings {
   }
 
   setPermissionMode(mode: PermissionMode): void {
-    this.options.permission?.setMode(mode);
-    this.deps.core.emit({ type: "permission_mode_changed", mode });
+    applyPermissionMode(this.options, mode, this.deps.core);
   }
 
   setActiveTools(names: string[]): void {

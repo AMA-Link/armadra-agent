@@ -64,6 +64,8 @@ export interface ApprovalUiDeps {
 export function createApprovalUi(deps: ApprovalUiDeps): {
   broker: ApprovalBroker;
   dock: ApprovalDock;
+  /** 审批对话框正开着（[#271] 键位分派据此放行 Shift+Tab 切模式）。 */
+  approvalOpen(): boolean;
 } {
   const { theme, keys, tui, editor, indicator, agentUi, hooks, notice } = deps;
   const taskInfo = (taskId: string) =>
@@ -78,6 +80,8 @@ export function createApprovalUi(deps: ApprovalUiDeps): {
     externalRunner: (agent) => agentUi.merge.externalRunner(agent),
     ...hooks,
     report: (request, outcome) => {
+      // [#271] 被模式切换自动作答的：对话框因撤回而关闭，说明由 session-events 按条数汇总
+      if (request.reevaluation?.outcome !== undefined) return;
       if (outcome === "deny" || outcome === "cancelled") {
         const text = approvalOutcomeText(request, outcome, taskAgent);
         notice(outcome === "deny" ? "info" : "warn", text);
@@ -104,5 +108,5 @@ export function createApprovalUi(deps: ApprovalUiDeps): {
       msg().interactive.app.followed(approvalOutcomeText(request, "allow", taskAgent)),
     ),
   );
-  return { broker, dock };
+  return { broker, dock, approvalOpen: () => dialog.isOpen };
 }

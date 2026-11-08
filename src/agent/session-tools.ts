@@ -22,6 +22,9 @@ import type {
   ApprovalRequest,
   AutoDecision,
   Decision,
+  ModeReevaluationOutcome,
+  PermissionCheckInput,
+  PermissionMode,
   PermissionRequestContext,
 } from "../permissions/types.js";
 import type { ToolContext, ToolResult } from "../tools/types.js";
@@ -118,8 +121,22 @@ export async function requestApproval(
     signal.removeEventListener("abort", onAbort);
   }
   if (signal.aborted) decision = "deny"; // run 被中断：即使 broker 已放行也不执行
-  core.emit({ type: "permission_resolved", requestId: request.requestId, decision });
+  const resolved: Parameters<SessionCore["emit"]>[0] = {
+    type: "permission_resolved",
+    requestId: request.requestId,
+    decision,
+  };
+  // [#271] 切换权限模式时被链按新模式自动作答
+  if (request.reevaluation?.outcome !== undefined && !signal.aborted)
+    resolved.reason = "mode_changed";
+  core.emit(resolved);
   return decision;
+}
+
+/** [#271] 模式切换导致拒绝时给模型的说明（固定英文）：切到了哪个模式 + 管线的说明。 */
+export function modeChangedDenial(toolName: string, outcome: ModeReevaluationOutcome): string {
+  const head = `${toolName} was denied: the permission mode was switched to "${outcome.mode}" while this call was waiting for approval.`;
+  return outcome.message === undefined ? head : `${head} ${outcome.message}`;
 }
 
 /** 嵌套调用时 Hook 输入的两个字段（设计 §5.5）；模型直接发起的调用不带。 */
@@ -187,8 +204,10 @@ export async function gateToolCall(
   let approvalReason: ApprovalRequest["reason"] = "hook";
   let denyMessage: string | undefined;
   let autoDecision: AutoDecision | undefined;
+  let checkInputFor: PermissionCheckInput | undefined;
+  let modeAtCheck: PermissionMode | undefined;
   if (permission !== undefined) {
-    const checkInput: Parameters<typeof permission.check>[0] = {
+    const checkInput: PermissionCheckInput = {
       toolName: call.name,
       permission: tool.permission,
       input,
@@ -196,6 +215,8 @@ export async function gateToolCall(
     };
     if (hookDecision !== undefined) checkInput.hookDecision = hookDecision;
     if (hookReason !== undefined) checkInput.hookReason = hookReason;
+    checkInputFor = checkInput;
+    modeAtCheck = permission.mode;
     const verdict = permission.check(checkInput);
     decision = verdict.decision;
     approvalReason = verdict.approvalReason ?? "mode";
@@ -241,10 +262,38 @@ export async function gateToolCall(
     };
     if (hookReason !== undefined) request.hookReason = hookReason;
     if (autoDecision !== undefined) request.autoDecision = autoDecision;
+    // [#271] 切换权限模式时按新模式重判同一调用（Hook 决策沿用、不调分类器：classify 仍算 ask）
+    if (permission !== undefined && checkInputFor !== undefined) {
+      request.reevaluation = { check: () => permission.check(checkInputFor) };
+      // 等分类器期间切了模式（请求还没进链、链补判不到）：进链前按新模式同步再判一次
+      if (permission.mode !== modeAtCheck) {
+        const again = request.reevaluation.check();
+        if (again.decision !== "ask") {
+          const outcome: ModeReevaluationOutcome = {
+            mode: permission.mode,
+            decision: again.decision,
+          };
+          if (again.message !== undefined) outcome.message = again.message;
+          request.reevaluation.outcome = outcome;
+          if (again.decision === "deny")
+            return withAuto({ block: true, reason: modeChangedDenial(call.name, outcome) });
+          return withAuto(replaced ? { input } : {});
+        }
+      }
+    }
     const preview = safePreview(core, request);
     if (preview !== undefined) request.preview = preview;
     const answer = await requestApproval(core, request, ctx.signal);
-    if (answer === "deny") return withAuto({ block: true, reason: `The user denied ${call.name}` });
+    if (answer === "deny") {
+      const outcome = request.reevaluation?.outcome;
+      return withAuto({
+        block: true,
+        reason:
+          outcome !== undefined && outcome.decision === "deny" && !ctx.signal.aborted
+            ? modeChangedDenial(call.name, outcome)
+            : `The user denied ${call.name}`,
+      });
+    }
     if (answer === "allow_session") permission?.rememberForSession(call.name, input);
   }
   return withAuto(replaced ? { input } : {});
