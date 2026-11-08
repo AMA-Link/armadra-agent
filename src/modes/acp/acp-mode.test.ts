@@ -226,6 +226,37 @@ describe("ama --mode acp", () => {
     await t.finish();
   });
 
+  it("[#271] set_mode 到 full-auto：挂起的 session/request_permission 被撤回，调用自动放行", async () => {
+    const seen: AbortSignal[] = [];
+    const t = await start(
+      [
+        { steps: [{ toolCall: { name: "bash", arguments: { command: "echo acp-mode" } } }] },
+        { text: "done" },
+      ],
+      (_p, signal) => {
+        seen.push(signal);
+        return new Promise(() => undefined); // 客户端不答，等 ama 撤回
+      },
+    );
+    await t.client.initialize();
+    const { sessionId } = await t.client.newSession(t.runtime.paths.cwd);
+    const prompt = t.client.prompt(sessionId, [{ type: "text", text: "run" }]);
+    for (let i = 0; i < 400 && seen.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(seen).toHaveLength(1);
+    await t.client.setMode(sessionId, "full-auto");
+    await expect(prompt).resolves.toMatchObject({ stopReason: "end_turn" });
+    expect(seen[0]!.aborted).toBe(true);
+    const statuses = t.updates
+      .map((u) => u.update)
+      .filter((u) => u.sessionUpdate === "tool_call_update")
+      .map((u) => (u as { status?: string }).status);
+    expect(statuses).toEqual(["in_progress", "pending", "in_progress", "completed"]);
+    expect(
+      t.updates.map((u) => u.update).filter((u) => u.sessionUpdate === "current_mode_update"),
+    ).toEqual([{ sessionUpdate: "current_mode_update", currentModeId: "full-auto" }]);
+    await t.finish();
+  });
+
   it("set_mode → current_mode_update；未知模式 invalid params", async () => {
     const t = await start([]);
     await t.client.initialize();
