@@ -285,6 +285,7 @@ export async function bootstrap(
         cwd: sessionCwd,
         ...(builtinDeny !== undefined ? { builtinDeny } : {}),
         ...(autoSafeCommands !== undefined ? { autoSafeCommands } : {}),
+        resources: hostResources,
       }),
     );
     const hooks = new HookDispatcher({

@@ -321,6 +321,7 @@ export function createRuntimeDeps(
             ? { autoSafeCommands: input.autoSafeCommands }
             : {}),
           ...(state.bashSandbox?.active === true ? { bashSandbox: state.bashSandbox } : {}),
+          ...(input.resources !== undefined ? { resources: input.resources } : {}),
         }),
     },
     resources: {

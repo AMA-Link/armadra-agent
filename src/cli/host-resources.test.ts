@@ -117,6 +117,20 @@ describe("宿主资源（#270）", () => {
     await runtime.dispose();
   });
 
+  it("deny read(demo://**) 规则挡住大小写混写的 DEMO://items（规则与读取看到同一个规范引用）", async () => {
+    h = composeHarness([readCall({ path: "DEMO://items" }), { text: "done" }]);
+    h.home.write("home/.config/ama/config.json", {
+      version: 1,
+      permission: { deny: ["read(demo://**)"] },
+    });
+    const runtime = await h.boot(["--model", "fake/echo", "--host", resourceHost()]);
+    await runtime.session.prompt("go");
+    const [result] = toolResults(runtime);
+    expect(result?.isError).toBe(true);
+    expect(String(result?.content)).toContain("Denied by permission rule read(demo://**)");
+    await runtime.dispose();
+  });
+
   it("没有宿主时 tools 节没有资源行，read 的 scheme://path 按文件路径处理", async () => {
     h = composeHarness([readCall({ path: "demo://items" }), { text: "done" }]);
     const runtime = await h.boot(["--model", "fake/echo"]);

@@ -215,6 +215,8 @@ export interface RuntimeDeps {
       builtinDeny?: boolean | string[];
       /** config `permission.autoSafeCommands`（auto 模式安全名单追加）。 */
       autoSafeCommands?: string[];
+      /** [#270] 宿主资源注册表（已冻结）：只有已注册的 scheme 才按资源引用匹配规则。 */
+      resources?: HostResourceLookup | undefined;
     }): PermissionPipelineApi;
   };
   /** B3：skills / prompts 发现；缺省为空。 */

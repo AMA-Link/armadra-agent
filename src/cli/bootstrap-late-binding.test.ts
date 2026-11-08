@@ -4,6 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { HostResourceRegistry } from "../host/resources.js";
 import { harness, type Harness } from "../../test/helpers/bootstrap-harness.js";
 import { createTmpHome, type TmpHome } from "../../test/helpers/tmp-home.js";
 import type { AgentSession } from "../agent/types.js";
@@ -155,7 +156,10 @@ describe("SessionAssembly.onSessionReplaced 与 permissions.create 入参（契�
       rules: [],
       unattended: true,
       cwd: home.cwd,
+      // [#270] 宿主资源注册表（与 read 工具同一实例，已冻结）：规则只认已注册的 scheme
+      resources: expect.any(HostResourceRegistry),
     });
+    expect((inputs[0]?.resources as HostResourceRegistry).isFrozen).toBe(true);
     expect(inputs[1]?.builtinDeny).toEqual(["read(**/.ssh/**)"]);
     expect(inputs[1]?.cwd).toBe(home.cwd);
   });
