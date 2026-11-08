@@ -5,7 +5,16 @@
  * tools/task-ctl.ts 不 import agent/ 的实现（agent/tool-runner → tools/registry → task-ctl 会成环）。
  */
 
+import type { ExtendOutcome } from "../tools/background-jobs.js";
 import type { SubagentResult, TaskRegistryView } from "../tools/types.js";
+
+/** [#267] 到达寿命上限被停止的后台任务（提醒通道取走一次）。 */
+export interface ExpiredTask {
+  taskId: string;
+  agent: string;
+  maxMs: number;
+  outputFile?: string;
+}
 
 export interface TaskControl extends TaskRegistryView {
   /** 运行中是已有输出，结束后是最终文本。 */
@@ -26,6 +35,10 @@ export interface TaskControl extends TaskRegistryView {
   detachSignal(taskId: string): AbortSignal;
   /** [W7-B1] 正在阻塞父回合的任务（前台运行中、或有 `task_ctl wait` 在等）。 */
   blocking(): string[];
+  /** [#267] 给后台任务续命一次：加 `min(ms, 上限)`（ms 不给 = 一个上限）。 */
+  extend(taskId: string, ms?: number): ExtendOutcome;
+  /** [#267] 取走到达寿命上限、已停止且尚未通知的任务（提醒通道用）。 */
+  takeExpired(): ExpiredTask[];
 }
 
 const controls = new Map<string, TaskControl>();

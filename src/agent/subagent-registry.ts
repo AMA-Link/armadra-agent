@@ -1,19 +1,15 @@
 /**
  * 子 Agent 任务注册表（docs/history/wave5-plan.md §7.3–§7.6，D13、D23–D24）。[W5-G]
  *
- * 每个根会话一份（按会话 id 登记；compose-agents.ts 的扩展在会话构造时建，SDK / 测试直接构造的
- * 会话在首次 task 时以缺省环境懒建）。职责：
- * - 解析类型（catalog）→ 选 runner：ama 子会话（session-subagent.ts 的工厂）或外部 runner（W5-E /
- *   宿主，经 `env.runners`）；同一 `task(agent=…)` 入口；
- * - 并发池（`subagents.maxConcurrent`，缺省 4）+ 排队上限（`maxPending`，缺省 16，超出报错不要重试）；
- * - 前台（等结果）/ 后台（立即返回 taskId，完成后 `<task-notification>` 走父会话 followUp 队列）；
- * - `taskId` 续聊：句柄保留 4 个（`subagents.retainSessions`，LRU，释放的只是内存，JSONL 永在），被释放或 resume 后按会话
- *   文件 / 外部会话 id 重新接上；
- * - 结果 > 50 KB 保留头尾并全文落 `outputs/`；轮数耗尽加说明；worktree 隔离；
- * - 事件 `subagent_start / update / end`；父会话 `custom{ama.task}` 记任务快照（带 `status`），
- *   resume 时据此重建（未完成标 `interrupted`）。
- * - [W6-A] 子 Agent 视图的 `live()` / `message()`（实现在 subagent-direct.ts）。
- * - [W7-B1] 缺省后台、前台转后台 `background()`、通知投递与 `settled()`（subagent-background.ts）。
+ * 每个根会话一份（按会话 id 登记；compose-agents.ts 的扩展在会话构造时建，SDK / 测试直接构造的会话在首次
+ * task 时以缺省环境懒建）。职责：解析类型（catalog）→ 选 runner（ama 子会话或 `env.runners` 的外部 / 宿主
+ * runner）；并发池（`subagents.maxConcurrent`，缺省 4）+ 排队上限（`maxPending`，缺省 16，超出报错不要重试）；
+ * 前台（等结果）/ 后台（立即返回 taskId，完成后 `<task-notification>` 走父会话 followUp 队列）；`taskId` 续聊
+ * （句柄保留 `subagents.retainSessions` 个，LRU，JSONL 永在，释放后按会话文件 / 外部会话 id 重接）；结果 > 50 KB
+ * 保留头尾并全文落 `outputs/`；worktree 隔离；事件 `subagent_start / update / end`，父会话 `custom{ama.task}` 记
+ * 快照、resume 时重建（未完成标 `interrupted`）。[W6-A] 视图 `live()` / `message()`（subagent-direct.ts）；
+ * [W7-B1] 缺省后台、转后台 `background()`、通知与 `settled()`（subagent-background.ts）；[#267] 后台寿命上限
+ * `extend()` / `takeExpired()`（subagent-lifetime.ts）。
  */
 
 import { tmpdir } from "node:os";
@@ -33,12 +29,10 @@ import { MAX_TURNS_NOTE, capTaskText, writeTaskOutput } from "../agents/result.j
 import {
   SubagentPool,
   TASK_CUSTOM_TYPE,
-  applyRunnerEvent,
   flushText,
   newRecord,
   rebuildRecords,
   recordData,
-  startEvent,
   taskStats,
   type AmaRunnerSpec,
   type ProgressSink,
@@ -49,8 +43,11 @@ import {
 import {
   registerTaskControl,
   unregisterTaskControl,
+  type ExpiredTask,
   type TaskControl,
 } from "../agents/task-control.js";
+import type { ExtendOutcome } from "../tools/background-jobs.js";
+import type { TimeoutTimers } from "../tools/timers.js";
 import type { AgentDefinition, AgentInfo } from "../agents/types.js";
 import { ZERO_USAGE } from "./loop.js";
 import type { SessionCore } from "./session-core.js";
@@ -69,6 +66,14 @@ import {
   waitForTask,
   type BackgroundReason,
 } from "./subagent-background.js";
+import { startHandle } from "./subagent-handle.js";
+import {
+  armLifetime,
+  clearLifetime,
+  extendLifetime,
+  takeExpiredTasks,
+  type LifetimeEnv,
+} from "./subagent-lifetime.js";
 
 export const DEFAULT_SUBAGENT_CONCURRENCY = 4;
 export const DEFAULT_MAX_PENDING = 16;
@@ -91,6 +96,10 @@ export interface SubagentEnvironment {
   background?: boolean;
   /** [W7-B1] 前台任务运行超过该毫秒数自动转后台（`subagents.autoBackgroundAfterMs`）；0 / 不设关闭。 */
   autoBackgroundAfterMs?: number;
+  /** [#267] 后台任务寿命上限（`subagents.backgroundMaxMs`，组装根给缺省 1 小时）；0 / 不设不限。 */
+  backgroundMaxMs?: number;
+  /** [#267] 寿命计时器（测试注入手动时钟）。 */
+  timers?: TimeoutTimers;
 }
 
 /** 注册表需要的父会话能力（`SessionCore`；followUp 为 AgentSessionImpl 的公开方法）。 */
@@ -171,6 +180,29 @@ export class SubagentRegistry implements TaskControl {
     return this.env.now?.() ?? Date.now();
   }
 
+  private lifetimeEnv(): LifetimeEnv {
+    const env: LifetimeEnv = { now: () => this.now() };
+    if (this.env.backgroundMaxMs !== undefined) env.backgroundMaxMs = this.env.backgroundMaxMs;
+    if (this.env.timers !== undefined) env.timers = this.env.timers;
+    return env;
+  }
+
+  /** [#267] 后台任务起寿命计时（从此刻起算）；到点按 stop 处理。 */
+  private armLifetime(record: TaskRecord): void {
+    armLifetime(record, this.lifetimeEnv(), () => record.controller?.abort());
+  }
+
+  /** [#267] 续命一次（task_ctl extend）。 */
+  extend(taskId: string, ms?: number): ExtendOutcome {
+    const record = this.tasks.get(taskId);
+    return extendLifetime(record, this.lifetimeEnv(), () => record?.controller?.abort(), ms);
+  }
+
+  /** [#267] 到点被停止、尚未经提醒通道通知的任务。 */
+  takeExpired(): ExpiredTask[] {
+    return takeExpiredTasks(this.tasks.values());
+  }
+
   // -------------------------------------------------------------------------
   // 视图
   // -------------------------------------------------------------------------
@@ -230,6 +262,11 @@ export class SubagentRegistry implements TaskControl {
       afterMs: this.env.autoBackgroundAfterMs ?? 0,
       outputFile: (id) => this.outputFileFor(id),
     });
+    // [#267] 转后台的任务从转换时刻起算寿命
+    for (const id of moved) {
+      const record = this.tasks.get(id);
+      if (record !== undefined) this.armLifetime(record);
+    }
     return [...new Set([...moved, ...this.waits.detach(taskId)])];
   }
 
@@ -342,6 +379,7 @@ export class SubagentRegistry implements TaskControl {
     let timer: NodeJS.Timeout | undefined;
     const running = this.execute(record, request, ama, controller.signal).finally(() => {
       clearTimeout(timer);
+      clearLifetime(record, this.lifetimeEnv());
       parentSignal?.removeEventListener("abort", onParentAbort);
       delete record.foregroundWaiter;
       delete record.running;
@@ -351,6 +389,7 @@ export class SubagentRegistry implements TaskControl {
     record.running = running;
     const file = this.outputFileFor(record.info.taskId);
     if (background) {
+      this.armLifetime(record);
       void running.then((result) => this.notifier.notify(record, result));
       return startedResult(record, file, running);
     }
@@ -407,60 +446,19 @@ export class SubagentRegistry implements TaskControl {
     }
   }
 
-  private async handleFor(
+  private handleFor(
     record: TaskRecord,
     request: SubagentRequest,
     ama: AmaRunnerFactory,
     signal: AbortSignal,
   ): Promise<TaskHandle> {
-    const live = record.handle;
-    const direct = record.directNext === true;
-    delete record.directNext;
-    if (live !== undefined) {
-      this.touch(record.info.taskId);
-      this.emitStart(record, live);
-      if (direct && live.message !== undefined) await live.message(request.prompt, "send");
-      else await live.send(request.prompt);
-      return live;
-    }
-    const ref = record.info.sessionRef;
-    const runner =
-      record.agent.runner === "ama"
-        ? ama({
-            taskId: record.info.taskId,
-            agent: record.agent,
-            request,
-            ...(record.modelRef === undefined ? {} : { modelRef: record.modelRef }),
-            cwd: record.cwd,
-            ...(ref?.sessionFile === undefined ? {} : { resumeFile: ref.sessionFile }),
-            isolated: record.worktree !== undefined,
-            ...(direct ? { origin: "direct" } : {}),
-          })
-        : this.env.runners?.(record.agent);
-    if (runner === undefined) throw new Error(`runner ${record.agent.runner} is not available`);
-    const handle: TaskHandle = await runner.start({
-      prompt: request.prompt,
-      cwd: record.cwd,
+    return startHandle(record, request, ama, signal, {
+      runners: (agent) => this.env.runners?.(agent),
       mode: this.host.options.permission?.mode ?? "default",
-      ...(record.modelRef === undefined ? {} : { model: record.modelRef }),
-      ...(ref !== undefined && record.agent.runner !== "ama" ? { resume: ref.sessionId } : {}),
-      ...(request.budgetUsd === undefined ? {} : { budgetUsd: request.budgetUsd }),
-      taskId: record.info.taskId,
-      signal,
-      onEvent: (event) => applyRunnerEvent(record, event, this.sink()),
+      touch: (taskId) => this.touch(taskId),
+      emit: (event) => this.host.emit(event),
+      sink: () => this.sink(),
     });
-    record.handle = handle;
-    record.info.sessionRef = {
-      runner: record.agent.runner,
-      sessionId: handle.id,
-      ...(handle.sessionFile === undefined ? {} : { sessionFile: handle.sessionFile }),
-    };
-    this.emitStart(record, handle);
-    return handle;
-  }
-
-  private emitStart(record: TaskRecord, handle: TaskHandle): void {
-    this.host.emit(startEvent(record, handle));
   }
 
   private sink(): ProgressSink {
