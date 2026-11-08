@@ -16,7 +16,7 @@ type BranchSource = { branch(): readonly SessionEntry[] };
 
 /**
  * [#268] 宿主总线 `session_start` 的载荷：`reason: "resume"` 时带 `uncleanEnd`（上一轮没有正常结束，
- * 判定只看会话文件，见 session/unclean-end.ts；host-api 1.2）。
+ * 判定只看会话文件，见 session/unclean-end.ts；host-api 1.3）。
  */
 export function hostSessionStart(
   session: {

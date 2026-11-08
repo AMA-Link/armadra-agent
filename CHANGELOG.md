@@ -11,9 +11,10 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 - **Recovery reminder after an unclean end**: when a session is resumed (`--resume` / `--continue`, `/resume`, RPC `switch_session`, ACP `session/load`, a `taskId` continuation reopening a sub-agent session) and its last turn did not end normally — tool calls without results, an `aborted` stop that was not a user interrupt, or a turn without its end marker — a one-time reminder goes out through the reminder channel (`ama.reminder` with `details.recovery`, not the system prompt, so the prompt prefix is unchanged) before the first new prompt: it lists the tool calls of that turn (bash: first word of the command; write / edit: the path; never outputs) and asks the model to inspect the workspace, git history and external state before repeating any external action. The decision reads only the session file; a clean exit, an Esc interrupt or a crash before any tool ran does not trigger it, and a second resume does not repeat it. Interrupted sub-agent tasks carry the same note in `task_ctl` `list` / `output` / `wait`. See [docs/reference/session-format.md](docs/reference/session-format.md) (#268).
 
-### Host adapter
+### Host
 
-- **host-api 1.2**: the `session_start` event carries `uncleanEnd` when `reason` is `resume`, using the same decision (#268).
+- **Host resource namespace, read through the built-in `read`** (host-api 1.2): `api.resources.register({ scheme, describe, read })` exposes host data as `scheme://path`; the model pages it with `read`'s `offset` / `limit`, the result carries the `(untrusted)` marking of `web_fetch`, obeys the same truncation and session caps, and runs as permission class `read` (never asks, so the host's `read` must be side-effect free). The system prompt's tools section gains one sorted line listing the schemes, fixed at session start; an unregistered scheme returns an error listing the registered ones, `http(s)://` points to `web_fetch`, and codemode scripts can call `tools.read({ path: "scheme://…" })`. `@armadra/agent/host` exports `pageResourceText`. See [docs/reference/host-api.md](docs/reference/host-api.md) "Host resources" (#270).
+- **host-api 1.3**: the `session_start` event carries `uncleanEnd` when `reason` is `resume`, using the same decision (#268).
 
 ## 0.15.1 (2026-11-06)
 

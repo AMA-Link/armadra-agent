@@ -177,6 +177,9 @@ function systemInput(
   if (index !== "") system.skillsIndex = index;
   const host = hostInstructions(record);
   if (host.length > 0) system.hostInstructions = host;
+  // [#270] 宿主资源行：会话开始时固定（注册表已冻结），作为 tools 节的一部分随之稳定
+  const resources = record.assembly.host.resources ?? [];
+  if (resources.length > 0) system.hostResources = resources;
   const hookContext = hookContextOf();
   if (hookContext !== undefined && hookContext !== "") system.hookContext = hookContext;
   return system;
