@@ -6,6 +6,7 @@
  * - 工具本身不折叠：校验后把这一次调用放进 `details.report`，由 ama runner（session-subagent.ts）按运行折叠
  *   成 `SubagentResult.report`；工具结果文案固定英文。
  * - `humanAction` 的 schema 不写 `type`（子集不支持可空类型）：运行时接受字符串或 `null`。
+ * - `sequential`：同一轮里多个 `report` 按调用顺序执行，折叠时的「最后一次」是确定的。
  */
 
 import { REPORT_STATES, REPORT_TEXT_MAX, isReportState } from "../agents/report.js";
@@ -76,7 +77,8 @@ export function createReportTool(): ToolDefinition<ReportInput> {
       additionalProperties: false,
     },
     permission: "read",
-    executionMode: "parallel",
+    // 同一轮里多个 report 按消息里的顺序依次执行，「最后一次」才确定（并行会按完成顺序折叠）
+    executionMode: "sequential",
     promptSnippet: "report: sub-agents report their state to the main agent",
     async execute(input, ctx): Promise<ToolResult> {
       if (ctx.depth < 1) return fail(REPORT_PARENT_REJECTION);

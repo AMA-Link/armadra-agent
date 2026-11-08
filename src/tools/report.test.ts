@@ -82,6 +82,7 @@ describe("report 工具", () => {
       additionalProperties: false,
     });
     expect(tool.permission).toBe("read");
+    expect(tool.executionMode).toBe("sequential");
     expect(tool.promptSnippet).toContain("report:");
   });
 });

@@ -49,7 +49,7 @@ describe("ToolRegistry", () => {
       grep: "parallel",
       ls: "parallel",
       read: "parallel",
-      report: "parallel", // [#269] 子会话的报告工具（task 的伴随工具）
+      report: "sequential", // [#269] 子会话的报告工具：同轮多次调用按顺序折叠
       task: "parallel", // [W5-G] 同轮多个 task 并行（D23）
       task_ctl: "parallel",
       todo: "parallel",
