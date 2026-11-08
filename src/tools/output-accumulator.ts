@@ -93,6 +93,15 @@ export class OutputAccumulator {
     this.memoryBytes = 0;
   }
 
+  /**
+   * [#266] 把到目前为止的全部输出落盘并返回路径（已落盘的直接返回）；之后的 `append` 继续追加到同一文件。
+   * 前台命令转后台时用：后台任务表从这个文件读输出。
+   */
+  persist(): string {
+    if (this.spilledTo === undefined) this.spill();
+    return this.spilledTo as string;
+  }
+
   /** 当前滚动尾部（已清洗、尾截断），给流式 onUpdate。 */
   tail(maxLines = 50): string {
     return truncateTail(sanitizeOutput(this.tailText), { maxLines, maxBytes: this.maxBytes })

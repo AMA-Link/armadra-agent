@@ -200,8 +200,8 @@
 | `auto_retry_start`                                   | `attempt`、`maxAttempts`、`delayMs`、`errorMessage`                                                                                                                                                                                              |
 | `auto_retry_end`                                     | `success`、`attempt`、`finalError?`                                                                                                                                                                                                              |
 | `permission_request`                                 | `requestId`、`toolName`、`input`、`reason: mode \| dangerous \| hook`、`hookReason?`、`timeoutMs`、`preview?`、`autoDecision?`（auto 模式下为什么询问）、`context?`（来源，见「子 Agent 事件」）                                                 |
-| `permission_resolved`                                | `requestId`、`decision`                                                                                                                                                                                                                          |
-| `permission_mode_changed`                            | `mode`                                                                                                                                                                                                                                           |
+| `permission_resolved`                                | `requestId`、`decision`、`reason?: mode_changed`（切换权限模式时按新模式自动作答，客户端据此收起审批界面）                                                                                                                                       |
+| `permission_mode_changed`                            | `mode`、`reevaluated?: { allowed, denied }`（切换时自动放行 / 拒绝的待审批条数，都为 0 时不带）                                                                                                                                                  |
 | `model_changed`                                      | `model: { provider, id, channel? }`                                                                                                                                                                                                              |
 | `thinking_level_changed`                             | `level`                                                                                                                                                                                                                                          |
 | `entry_appended`                                     | `entry`（刚落盘的会话条目）                                                                                                                                                                                                                      |
@@ -275,11 +275,11 @@
 
 ### 预算、回退与后台命令事件（第五波 W5-H2）
 
-| 事件             | 字段                                                                                                                                                                                                  |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `limit_reached`  | `kind: turns \| cost`、`value`（本次运行的回合数 / 美元）、`limit`；`limits.*`（config，`-p` 另有 `--max-turns` / `--max-cost`）到限时每次运行每类一次，随后 `agent_settled{warning:"limit_reached"}` |
-| `model_fallback` | `from`、`to`（`{ provider, id, channel? }`）、`reason`（触发的错误文本）；可重试错误在 overloaded 时或重试用尽后切到 `fallbackModel` 重试一次，回复后切回（另有两次 `model_changed`）                 |
-| `background_job` | `jobId`、`phase: started \| exited \| stopped`、`command`、`pid?`、`outputPath?`、`exitCode?`；`bash{background:true}` 启动的后台命令                                                                 |
+| 事件             | 字段                                                                                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `limit_reached`  | `kind: turns \| cost`、`value`（本次运行的回合数 / 美元）、`limit`；`limits.*`（config，`-p` 另有 `--max-turns` / `--max-cost`）到限时每次运行每类一次，随后 `agent_settled{warning:"limit_reached"}`                                                                                             |
+| `model_fallback` | `from`、`to`（`{ provider, id, channel? }`）、`reason`（触发的错误文本）；可重试错误在 overloaded 时或重试用尽后切到 `fallbackModel` 重试一次，回复后切回（另有两次 `model_changed`）                                                                                                             |
+| `background_job` | `jobId`、`phase: started \| exited \| stopped`、`command`、`pid?`、`outputPath?`、`exitCode?`；`bash{background:true}` 启动的后台命令，以及超过 `tools.bashAutoBackgroundAfterMs` 原地转后台的前台命令（转换时发 `started`，#266）；到达 `tools.bashBackgroundMaxMs` 被停止时发 `stopped`（#267） |
 
 重复调用检测（同 run 同名同参第 5 次）结束 run 时 `agent_settled{warning:"repeated_tool_call"}`。
 
@@ -370,6 +370,7 @@
 3. 客户端回 `permission_response{requestId, decision}`。`allow_session` 在本会话内记住同一工具与归一化输入前缀，不落盘。先于请求到达的回答会暂存，等请求出现时使用。
 4. 回答者顺序：宿主 broker（`HostApi.approvals.setBroker`）→ RPC 客户端 → 无人作答 deny。审批串行，同一时刻只有一个在等。
 5. 超时：`timeoutMs`（缺省 600 000，即 10 分钟；环境变量 `AMA_APPROVAL_TIMEOUT_MS` 可改）内没有回答 → 服务端按 deny 处理并发 `permission_resolved`。运行被中断时同样 deny，即使客户端已经放行。
+6. 切换权限模式（`set_permission_mode`，或会话自己切换，例如计划批准）：在等的与排队的审批按新模式重判——新模式放行的自动 allow、拒绝的自动 deny（模型收到的结果写明切换），仍要问的保持不动；被自动作答的发 `permission_resolved{reason:"mode_changed"}`，`permission_mode_changed` 带 `reevaluated{allowed, denied}`。宿主 broker 已接手的、危险命令、外部 Agent 的请求不动。详见 [permissions.md](../guides/permissions.md)「切换模式时的待审批」。
 
 ## 计划审批
 

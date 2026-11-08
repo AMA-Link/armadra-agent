@@ -44,7 +44,7 @@ import { expandPromptCommand, type PromptTemplate } from "../skills/templates.js
 import { PresetToolRegistry } from "../tools/presets.js";
 import type { ToolDefinition } from "../tools/types.js";
 import { openSession } from "./compose-store.js";
-import { bridgeEvent } from "./compose-events.js";
+import { bridgeEvent, hostSessionStart } from "./compose-events.js";
 import { composeExtensions } from "./compose-extensions.js";
 import { attachMemory, withMemorySection } from "./compose-memory.js";
 import type { MemoryRuntime } from "../memory/runtime.js";
@@ -54,7 +54,7 @@ import type { Runtime } from "./runtime.js";
 import { msg } from "../i18n/index.js";
 import type { HookContextOverrides } from "../hooks/types.js";
 
-export { bridgeEvent } from "./compose-events.js";
+export { bridgeEvent, hostSessionStart } from "./compose-events.js";
 
 /** createRuntimeDeps 闭包里跨步骤共享的状态。 */
 export interface ComposeState {
@@ -177,6 +177,9 @@ function systemInput(
   if (index !== "") system.skillsIndex = index;
   const host = hostInstructions(record);
   if (host.length > 0) system.hostInstructions = host;
+  // [#270] 宿主资源行：会话开始时固定（注册表已冻结），作为 tools 节的一部分随之稳定
+  const resources = record.assembly.host.resources ?? [];
+  if (resources.length > 0) system.hostResources = resources;
   const hookContext = hookContextOf();
   if (hookContext !== undefined && hookContext !== "") system.hookContext = hookContext;
   return system;
@@ -468,13 +471,7 @@ export async function switchSession(
   const next = buildSession(record, manager, old.model(), old.thinkingLevel(), record.hookContext);
   record.current = next;
   assembly.onSessionReplaced(next);
-  const file = next.state.sessionFile;
-  await assembly.events.emit("session_start", {
-    sessionId: next.state.sessionId,
-    ...(file !== undefined ? { sessionFile: file } : {}),
-    cwd: next.cwd,
-    reason: source,
-  });
+  await assembly.events.emit("session_start", hostSessionStart(next, source));
   const outcome = await assembly.hooks.run("SessionStart", { source }).catch(() => undefined);
   hookContext = outcome?.additionalContext;
   // 会话自身的 session_start 由模式在重新订阅之后调 `announceStart` 发（否则订阅者收不到）。
@@ -547,13 +544,7 @@ export async function createSessionAlongside(
     () => hookContext,
     false,
   );
-  const file = next.state.sessionFile;
-  await assembly.events.emit("session_start", {
-    sessionId: next.state.sessionId,
-    ...(file !== undefined ? { sessionFile: file } : {}),
-    cwd: next.cwd,
-    reason: request.kind,
-  });
+  await assembly.events.emit("session_start", hostSessionStart(next, request.kind));
   const outcome = await assembly.hooks
     .run("SessionStart", { source: request.kind }, undefined, hookFieldsOf(next))
     .catch(() => undefined);

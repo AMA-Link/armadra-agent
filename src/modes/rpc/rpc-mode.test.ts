@@ -405,6 +405,61 @@ describe("RPC set_permission_mode", () => {
   });
 });
 
+/** [#271] auto 下等分类器期间切模式：请求还没进链，进链前按新模式补判。 */
+describe("RPC set_permission_mode：分类器未归时切模式", () => {
+  /** 分类器的回答停在闸门 `classify` 上（fake 供应商按顺序消费脚本，分类请求拿到第二条）。 */
+  const classified = (command: string): FakeResponse[] => [
+    { steps: [{ toolCall: { name: "bash", arguments: { command } } }] },
+    { gate: "classify", text: '{"decision":"ask","reason":"unknown script"}' },
+    { text: "after" },
+  ];
+  const classifying = (d: Driver): boolean =>
+    d.lines.some((l) => l["type"] === "tool_execution_start") &&
+    !d.lines.some((l) => l["type"] === "permission_request");
+
+  it("切到 full-auto：不弹审批直接执行", async () => {
+    const { lines } = await drive(classified("echo classify-me"), async (d) => {
+      d.send({ type: "set_client_capabilities", capabilities: ["approvals"] });
+      d.send({ id: "m0", type: "set_permission_mode", mode: "auto" });
+      await d.waitFor((l) => l["id"] === "m0");
+      d.send({ type: "prompt", message: "go" });
+      await d.waitFor(() => classifying(d), "classifier pending");
+      d.send({ type: "set_permission_mode", mode: "full-auto" });
+      await d.waitFor((l) => l["type"] === "permission_mode_changed" && l["mode"] === "full-auto");
+      h.fake.release("classify");
+      await d.waitFor(settled);
+    });
+    expect(lines.filter(isRequest)).toEqual([]);
+    const end = lines.find((l) => l["type"] === "tool_execution_end") as {
+      isError: boolean;
+      result: { content: string };
+    };
+    expect(end.isError).toBe(false);
+    expect(end.result.content).toContain("classify-me");
+  });
+
+  it("切到 plan：不弹审批直接拒绝，说明写明切换", async () => {
+    const { lines } = await drive(classified("node scripts/gen.js"), async (d) => {
+      d.send({ type: "set_client_capabilities", capabilities: ["approvals"] });
+      d.send({ id: "m0", type: "set_permission_mode", mode: "auto" });
+      await d.waitFor((l) => l["id"] === "m0");
+      d.send({ type: "prompt", message: "go" });
+      await d.waitFor(() => classifying(d), "classifier pending");
+      d.send({ type: "set_permission_mode", mode: "plan" });
+      await d.waitFor((l) => l["type"] === "permission_mode_changed" && l["mode"] === "plan");
+      h.fake.release("classify");
+      await d.waitFor(settled);
+    });
+    expect(lines.filter(isRequest)).toEqual([]);
+    const end = lines.find((l) => l["type"] === "tool_execution_end") as {
+      isError: boolean;
+      result: { content: string };
+    };
+    expect(end.isError).toBe(true);
+    expect(end.result.content).toContain('switched to "plan"');
+  });
+});
+
 describe("RPC get_session_stats.cache [W3-C2]", () => {
   it("形状：三态、最近 / 会话命中率、未命中按原因、保温状态、余量；未命中与余量事件在流里", async () => {
     sharedCacheReporting.clear();
@@ -456,3 +511,79 @@ function settledCount(d: Driver): number {
 function isRequest(line: Line): boolean {
   return line["type"] === "permission_request";
 }
+
+/** [#271] set_permission_mode 时重判在等的审批。 */
+describe("RPC set_permission_mode 重判待审批", () => {
+  it("切到 full-auto：在等的 bash 自动允许，resolved 带 reason，permission_mode_changed 带条数", async () => {
+    const { lines } = await drive(
+      [
+        { steps: [{ toolCall: { name: "bash", arguments: { command: "echo re-eval" } } }] },
+        { text: "ran" },
+      ],
+      async (d) => {
+        d.send({ type: "set_client_capabilities", capabilities: ["approvals"] });
+        d.send({ type: "prompt", message: "go" });
+        await d.waitFor(isRequest, "permission_request");
+        d.send({ id: "m", type: "set_permission_mode", mode: "full-auto" });
+        await d.waitFor(settled);
+      },
+    );
+    expect(lines.find((l) => l["type"] === "permission_resolved")).toMatchObject({
+      decision: "allow",
+      reason: "mode_changed",
+    });
+    expect(lines.find((l) => l["type"] === "permission_mode_changed")).toEqual({
+      type: "permission_mode_changed",
+      mode: "full-auto",
+      reevaluated: { allowed: 1, denied: 0 },
+    });
+    const end = lines.find((l) => l["type"] === "tool_execution_end") as { isError: boolean };
+    expect(end.isError).toBe(false);
+    expect(JSON.stringify(end)).toContain("re-eval");
+  });
+
+  it("切到 plan：在等的写入自动拒绝，给模型的说明写明切换；危险命令不动", async () => {
+    const { lines } = await drive(
+      [
+        {
+          steps: [{ toolCall: { name: "write", arguments: { path: "note.txt", content: "x\n" } } }],
+        },
+        { steps: [{ toolCall: { name: "bash", arguments: { command: "git push --force" } } }] },
+        { text: "done" },
+      ],
+      async (d) => {
+        d.send({ type: "set_client_capabilities", capabilities: ["approvals"] });
+        d.send({ type: "prompt", message: "go" });
+        await d.waitFor(isRequest, "permission_request");
+        d.send({ type: "set_permission_mode", mode: "plan" });
+        const second = await d.waitFor(
+          (l) => isRequest(l) && d.lines.filter(isRequest).length === 2,
+          "dangerous request",
+        );
+        d.send({ type: "set_permission_mode", mode: "full-auto" });
+        await d.waitFor(
+          (l) => l["type"] === "permission_mode_changed" && l["mode"] === "full-auto",
+        );
+        expect(
+          d.lines.filter((l) => l["type"] === "permission_resolved").map((l) => l["requestId"]),
+        ).not.toContain(second["requestId"]);
+        d.send({ type: "permission_response", requestId: second["requestId"], decision: "deny" });
+        await d.waitFor(settled);
+      },
+    );
+    const resolved = lines.filter((l) => l["type"] === "permission_resolved");
+    expect(resolved).toHaveLength(2);
+    expect(resolved[0]).toMatchObject({ decision: "deny", reason: "mode_changed" });
+    expect(resolved[1]).toMatchObject({ decision: "deny" });
+    expect(resolved[1]).not.toHaveProperty("reason");
+    const changes = lines.filter((l) => l["type"] === "permission_mode_changed");
+    expect(changes[0]).toMatchObject({ mode: "plan", reevaluated: { allowed: 0, denied: 1 } });
+    expect(changes[1]).toEqual({ type: "permission_mode_changed", mode: "full-auto" });
+    const ends = lines.filter((l) => l["type"] === "tool_execution_end") as {
+      result: { content: string };
+    }[];
+    expect(ends[0]!.result.content).toContain('switched to "plan"');
+    expect(ends[0]!.result.content).toContain("Plan mode is active");
+    expect(ends[1]!.result.content).toContain("The user denied bash");
+  });
+});

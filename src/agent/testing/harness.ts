@@ -22,6 +22,8 @@ export interface HarnessOptions extends Partial<
   script: ScriptSource;
   /** 会话目录；缺省内存会话。 */
   dir?: string;
+  /** 重开已有的会话文件（resume）；与 `dir` 二选一。 */
+  file?: string;
   cwd?: string;
   delayMs?: number;
 }
@@ -38,11 +40,15 @@ export interface Harness {
 }
 
 export function createHarness(options: HarnessOptions): Harness {
-  const { script, dir, cwd = "/work", delayMs, ...rest } = options;
+  const { script, dir, file, cwd = "/work", delayMs, ...rest } = options;
   const model = rest.model ?? fakeModel();
   const scripted = createScriptedApi(script, delayMs === undefined ? {} : { delayMs });
   const manager =
-    dir === undefined ? SessionManager.inMemory(cwd) : SessionManager.create(dir, cwd);
+    file !== undefined
+      ? SessionManager.open(file)
+      : dir === undefined
+        ? SessionManager.inMemory(cwd)
+        : SessionManager.create(dir, cwd);
   const session = new AgentSessionImpl({
     retry: { baseDelayMs: 1, maxDelayMs: 5 },
     abortGraceMs: 50,

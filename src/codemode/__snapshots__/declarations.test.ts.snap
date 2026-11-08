@@ -12,7 +12,7 @@ declare const tools: {
     description?: string;
     background?: boolean;
     job?: string;
-    action?: "wait" | "output" | "stop";
+    action?: "wait" | "output" | "stop" | "extend";
   }): Promise<BashResult>;
   /** Replace text in a file (read it first). Give all changes to a file as edits[] in one call; each oldText matches the original file and must be unique (unless replaceAll), short and non-overlapping. */
   edit(args: {
@@ -91,12 +91,12 @@ declare const tools: {
     maxTurns?: number;
     context?: "fork" | "fresh";
   }): Promise<string>;
-  /** Manage sub-agent tasks started by task: list them, wait for one, stop it, read its output, or send it a follow-up message (runs in background). */
+  /** Manage sub-agent tasks started by task: list them, wait for one, stop it, read its output, send it a follow-up message (runs in background), or extend a background task's lifetime once. */
   task_ctl(args: {
-    action: "list" | "wait" | "stop" | "output" | "send";
+    action: "list" | "wait" | "stop" | "output" | "send" | "extend";
     /** Required except for list */
     taskId?: string;
-    /** wait only (default 30000) */
+    /** wait: how long (default 30000); extend: extra lifetime in ms */
     timeoutMs?: number;
     /** send only */
     prompt?: string;

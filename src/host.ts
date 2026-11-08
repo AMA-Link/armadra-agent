@@ -4,3 +4,10 @@
 
 export { HOST_API_MINOR, HOST_API_VERSION } from "./host/types.js";
 export type * from "./host/types.js";
+// [#270] 宿主资源：分页辅助与上限常量
+export {
+  HOST_RESOURCE_TIMEOUT_MS,
+  MAX_HOST_RESOURCES,
+  RESOURCE_DESCRIBE_MAX,
+  pageResourceText,
+} from "./tools/resource-ref.js";

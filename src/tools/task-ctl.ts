@@ -11,8 +11,13 @@
  *   `bindTaskCtlWaitCap`）；其它预设不变。
  * - [W7-B1] `wait` 被转后台（`background()`，TUI `Ctrl+B` / RPC `background_task`）打断时立即返回固定
  *   文案，要求模型不要再等。
+ * - [#267] `extend` = 给后台任务续命一次（`timeoutMs` 为增量，缺省与 `subagents.backgroundMaxMs` 相同，封顶一个
+ *   上限）；到点被停止的任务经提醒通道告知模型（agent/subagent-lifetime.ts）。
+ * - [#268] resume 后重建为 `interrupted` 的任务：`list` 行、`output` 头部与 `wait` 都附同一句（上一次运行
+ *   没结束就停了，副作用可能只做了一半，重复外部动作前先核实）。
  */
 
+import { extendTaskText } from "../agent/subagent-lifetime.js";
 import { capTaskText, formatTokens, waitDetachedText } from "../agents/result.js";
 import { taskControl } from "../agents/task-control.js";
 import { nestedTaskRejection } from "./task.js";
@@ -26,6 +31,11 @@ export const COORDINATOR_WAIT_MAX_MS = 5_000;
 
 const waitCaps = new WeakMap<object, number>();
 
+/** [#268] 被打断（上一次运行异常结束）的任务：固定英文，`list` / `output` / `wait` 共用。 */
+export const INTERRUPTED_TASK_NOTE =
+  "it was interrupted when a previous run of this session ended abruptly, so its side effects may be " +
+  "partial; inspect the workspace, git history and external state before repeating any of its actions";
+
 /**
  * [#242] 组装根把 `wait` 的超时上限绑到 `task_ctl` 工具（`coordinator` 预设）；没绑定按 `MAX_WAIT_MS`。
  * 工具描述与参数 schema 不变（其它预设逐字节不变）；被封顶时在超时回复里说明。
@@ -35,8 +45,9 @@ export function bindTaskCtlWaitCap(tool: ToolDefinition | undefined, capMs: numb
 }
 
 export interface TaskCtlInput {
-  action: "list" | "wait" | "stop" | "output" | "send";
+  action: "list" | "wait" | "stop" | "output" | "send" | "extend";
   taskId?: string;
+  /** wait：等待时长；[#267] extend：续命增量。 */
   timeoutMs?: number;
   /** send：追加给任务的消息。 */
   prompt?: string;
@@ -53,7 +64,8 @@ function line(task: TaskInfo, now: number): string {
   parts.push(`${Math.round(((task.endedAt ?? now) - task.startedAt) / 1000)}s`);
   if (task.background) parts.push("background");
   const text = parts.join(" · ");
-  return task.description === "" ? text : `${text} — ${task.description}`;
+  const described = task.description === "" ? text : `${text} — ${task.description}`;
+  return task.status === "interrupted" ? `${described} (${INTERRUPTED_TASK_NOTE})` : described;
 }
 
 async function send(input: TaskCtlInput, ctx: ToolContext): Promise<ToolResult> {
@@ -76,13 +88,17 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
     label: "TaskCtl",
     description:
       "Manage sub-agent tasks started by task: list them, wait for one, stop it, read its " +
-      "output, or send it a follow-up message (runs in background).",
+      "output, send it a follow-up message (runs in background), or extend a background task's " +
+      "lifetime once.",
     parameters: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["list", "wait", "stop", "output", "send"] },
+        action: { type: "string", enum: ["list", "wait", "stop", "output", "send", "extend"] },
         taskId: { type: "string", description: "Required except for list" },
-        timeoutMs: { type: "number", description: `wait only (default ${DEFAULT_WAIT_MS})` },
+        timeoutMs: {
+          type: "number",
+          description: `wait: how long (default ${DEFAULT_WAIT_MS}); extend: extra lifetime in ms`,
+        },
         prompt: { type: "string", description: "send only" },
       },
       required: ["action"],
@@ -112,9 +128,21 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
           return send(input, ctx);
         case "output": {
           const text = control.output(taskId) ?? "";
-          const head = info.status === "running" ? `Task ${taskId} is running; output so far:` : "";
+          const head =
+            info.status === "running"
+              ? `Task ${taskId} is running; output so far:`
+              : info.status === "interrupted"
+                ? `Task ${taskId} was interrupted (${INTERRUPTED_TASK_NOTE}); output so far:`
+                : "";
           const body = capTaskText(text, info.outputFile).text || "(no output yet)";
           return { content: head === "" ? body : `${head}\n${body}` };
+        }
+        case "extend": {
+          const ms = input.timeoutMs;
+          if (ms !== undefined && (!Number.isFinite(ms) || ms <= 0))
+            return fail("timeoutMs for extend must be a positive number of milliseconds");
+          const outcome = control.extend(taskId, ms);
+          return { content: extendTaskText(taskId, outcome), isError: !outcome.ok };
         }
         case "stop": {
           const result = await control.stop(taskId);
@@ -129,6 +157,8 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
           const signal = control.detachSignal(taskId);
           const result = await control.wait(taskId, timeout, { signal });
           if (result === undefined && signal.aborted) return { content: waitDetachedText(taskId) };
+          if (result === undefined && control.get(taskId)?.status === "interrupted")
+            return { content: `Task ${taskId} was interrupted (${INTERRUPTED_TASK_NOTE}).` };
           if (result === undefined) {
             const turns = control.get(taskId)?.turns ?? 0;
             const capped =

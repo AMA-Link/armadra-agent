@@ -241,6 +241,16 @@ export interface TaskRecord {
    * `detachParent` 解绑父 signal 与进度回调（父回合 Esc 不再连带停止它）。
    */
   foregroundWaiter?: { resolve(result: SubagentResult): void; detachParent(): void };
+  /**
+   * [#267] 后台寿命上限（agent/subagent-lifetime.ts）：后台启动或转后台时起计时，到点按 stop 处理；
+   * `extended` 后不能再续。结束时清掉。
+   */
+  lifetime?: { maxMs: number; extended: boolean; since: number; timer?: unknown };
+  /**
+   * [#267] 到达寿命上限被停止；`taken` = 提醒通道已取走；`relaunched` = 取走前又被续聊重启（此时不等它结束就
+   * 报告，报告的是上一次运行）。重启时已取走的标记直接清掉。
+   */
+  expired?: { maxMs: number; taken: boolean; relaunched?: true };
 }
 
 export function newRecord(

@@ -168,3 +168,65 @@ describe("models.enabled", () => {
     expect(merged.config.models?.enabled).toEqual(["openai/gpt-5"]);
   });
 });
+
+describe("[#266 / #267] 长命令转后台与后台寿命的键", () => {
+  it("整数 ≥ 0（0 = 关 / 不限）；负数与非数字是 error", () => {
+    expect(
+      validateConfig({
+        version: 1,
+        tools: { bashAutoBackgroundAfterMs: 0, bashBackgroundMaxMs: 0 },
+        subagents: { backgroundMaxMs: 0 },
+      }),
+    ).toEqual([]);
+    const bad = validateConfig({
+      version: 1,
+      tools: { bashAutoBackgroundAfterMs: -1, bashBackgroundMaxMs: "2h" },
+      subagents: { backgroundMaxMs: -5 },
+    });
+    expect(bad.map((d) => [d.severity, d.path])).toEqual([
+      ["error", "tools.bashAutoBackgroundAfterMs"],
+      ["error", "tools.bashBackgroundMaxMs"],
+      ["error", "subagents.backgroundMaxMs"],
+    ]);
+    // 上限 2^31 − 1 ms：更大的值 Node 会钳成 1 ms，等于立刻到期
+    const huge = validateConfig({
+      version: 1,
+      tools: { bashBackgroundMaxMs: 2 ** 31 },
+      subagents: { backgroundMaxMs: 2 ** 31 },
+    });
+    expect(huge.map((d) => d.path)).toEqual([
+      "tools.bashBackgroundMaxMs",
+      "subagents.backgroundMaxMs",
+    ]);
+    expect(validateConfig({ version: 1, tools: { bashBackgroundMaxMs: 2 ** 31 - 1 } })).toEqual([]);
+  });
+
+  it("只认用户级：项目级写了被忽略并 warning，用户级的值保留", () => {
+    const result = restrictProjectConfig(
+      {
+        version: 1,
+        tools: { bashAutoBackgroundAfterMs: 1, bashBackgroundMaxMs: 0 },
+        subagents: { backgroundMaxMs: 0 },
+      },
+      "default",
+    );
+    expect(result.accepted).toEqual({});
+    const text = result.warnings.join("\n");
+    for (const key of [
+      "tools.bashAutoBackgroundAfterMs",
+      "tools.bashBackgroundMaxMs",
+      "subagents.backgroundMaxMs",
+    ])
+      expect(text).toContain(key);
+    const merged = mergeConfigLayers({
+      user: {
+        version: 1,
+        tools: { bashBackgroundMaxMs: 60_000 },
+        subagents: { backgroundMaxMs: 1 },
+      },
+      project: { version: 1, tools: { bashBackgroundMaxMs: 0 }, subagents: { backgroundMaxMs: 0 } },
+    });
+    expect(merged.config.tools?.bashBackgroundMaxMs).toBe(60_000);
+    expect(merged.config.subagents?.backgroundMaxMs).toBe(1);
+  });
+});

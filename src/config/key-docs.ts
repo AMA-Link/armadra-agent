@@ -26,7 +26,8 @@ import {
 const IMPLICIT_DEFAULTS: Partial<AmaConfig> = {
   providers: {},
   permission: { builtinDeny: true, autoSafeCommands: [] },
-  tools: { default: [] },
+  // [#267] 寿命上限；[#266] bashAutoBackgroundAfterMs 的缺省由运行方式决定（dynamicDefaults）
+  tools: { default: [], bashBackgroundMaxMs: 7_200_000 },
   codemode: { inlineBudget: DEFAULT_INLINE_BUDGET, requireStrict: false, maxHeapMb: 256 },
   cache: { ...DEFAULT_CACHE_CONFIG },
   request: {
@@ -71,6 +72,7 @@ const IMPLICIT_DEFAULTS: Partial<AmaConfig> = {
     maxPending: 16,
     background: "auto",
     autoBackgroundAfterMs: 0,
+    backgroundMaxMs: 3_600_000,
     retainSessions: 4,
     forkMaxContextRatio: 0.5,
   },
