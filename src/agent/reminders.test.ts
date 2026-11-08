@@ -246,11 +246,11 @@ describe("提醒通道（W5-H2 H3）", () => {
     expect(jobs.get(slow.id)?.status).toBe("stopped");
   });
 
-  it("子会话只管后台任务：没有 beforePrompts / onEvent", () => {
+  it("子会话只管后台任务与恢复提醒：没有 onEvent，干净会话的 beforePrompts 不追加", () => {
     const h = createHarness({ script: [{ text: "ok" }], depth: 1 });
     const ext = createRemindersExtension(h.session, {});
-    expect(ext.beforePrompts).toBeUndefined();
     expect(ext.onEvent).toBeUndefined();
+    expect(ext.beforePrompts?.({ core: h.session }, [])).toEqual([]);
     ext.dispose?.();
   });
 });
