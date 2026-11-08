@@ -5,6 +5,16 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Sessions
+
+- **Recovery reminder after an unclean end**: when a session is resumed (`--resume` / `--continue`, `/resume`, RPC `switch_session`, ACP `session/load`, a `taskId` continuation reopening a sub-agent session) and its last turn did not end normally — tool calls without results, an `aborted` stop that was not a user interrupt, or a turn without its end marker — a one-time reminder goes out through the reminder channel (`ama.reminder` with `details.recovery`, not the system prompt, so the prompt prefix is unchanged) before the first new prompt: it lists the tool calls of that turn (bash: first word of the command; write / edit: the path; never outputs) and asks the model to inspect the workspace, git history and external state before repeating any external action. The decision reads only the session file; a clean exit, an Esc interrupt or a crash before any tool ran does not trigger it, and a second resume does not repeat it. Interrupted sub-agent tasks carry the same note in `task_ctl` `list` / `output` / `wait`. See [docs/reference/session-format.md](docs/reference/session-format.md) (#268).
+
+### Host adapter
+
+- **host-api 1.2**: the `session_start` event carries `uncleanEnd` when `reason` is `resume`, using the same decision (#268).
+
 ## 0.15.1 (2026-11-06)
 
 ### Maintenance

@@ -4,6 +4,16 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 会话
+
+- **异常中断后恢复会话时的恢复提醒**：恢复会话（`--resume` / `--continue`、`/resume`、RPC `switch_session`、ACP `session/load`、`taskId` 续聊重开子会话）时，上一轮若没有正常结束——工具调用缺结果、不是人主动中断的 `aborted`、回合没有结束标记——在第一个新提示前经提醒通道（`ama.reminder`，带 `details.recovery`；不进系统提示，前缀不变）注入一次恢复提醒：列出那一轮调用过的工具（bash 只给命令第一个词，write / edit 给路径，不带输出），要求先检查工作区、git 历史和外部状态再决定要不要重复外部动作。判定只读会话文件；干净退出、Esc 中断、还没跑任何工具就崩溃的不触发，第二次恢复不重复。被打断的子 Agent 任务在 `task_ctl` 的 `list` / `output` / `wait` 里附同一句说明。见 [docs/reference/session-format.md](docs/reference/session-format.md)（#268）。
+
+### 宿主适配器
+
+- **host-api 1.2**：`session_start` 事件在 `reason` 为 `resume` 时带 `uncleanEnd`，用同一个判定（#268）。
+
 ## 0.15.1（2026-11-06）
 
 ### 维护
