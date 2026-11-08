@@ -314,6 +314,35 @@ describe("ApprovalBrokerChain.reevaluatePending", () => {
     expect(chain.reevaluatePending("full-auto")).toEqual({ allowed: [], denied: [] });
   });
 
+  it("已中止的运行：排队条目立即按 aborted 结算、不重判不计数", async () => {
+    const pipeline = new PermissionPipeline({ mode: "default", rules: [], cwd: "/w" });
+    const by: AnsweredBy[] = [];
+    const chain = new ApprovalBrokerChain({ onResolved: (_r, _d, b) => by.push(b) });
+    const ui = waitingUi();
+    chain.setUiBroker(ui.broker);
+    const first = chain.ask(
+      gated(pipeline, "live", "bash", "execute", { command: "make" }),
+      signal(),
+    );
+    const gone = new AbortController();
+    const queued = chain.ask(
+      gated(pipeline, "gone", "write", "write", { path: "a", content: "" }),
+      gone.signal,
+    );
+    await tick();
+    expect(chain.pendingCount).toBe(2);
+    gone.abort();
+    expect(await queued).toBe("deny");
+    expect(chain.pendingCount).toBe(1);
+    pipeline.setMode("full-auto");
+    const summary = chain.reevaluatePending("full-auto");
+    expect(summary.allowed.map((r) => r.requestId)).toEqual(["live"]);
+    expect(await first).toBe("allow");
+    expect(by).toEqual(["aborted", "mode"]);
+    await tick();
+    expect(ui.asked.map((r) => r.requestId)).toEqual(["live"]);
+  });
+
   it("reevaluatePendingApprovals：只认链本身，返回条数", async () => {
     const pipeline = new PermissionPipeline({ mode: "default", rules: [], cwd: "/w" });
     const chain = new ApprovalBrokerChain();

@@ -54,6 +54,9 @@ interface Entry {
   settled?: { decision: ApprovalDecision; by: AnsweredBy };
   /** 结算时 abort：关掉正在等的 UI。 */
   cancel: AbortController;
+  /** 运行的 signal：中止即按 aborted 结算、出表（排队的不再等，重判不计入）。 */
+  signal: AbortSignal;
+  onAbort(): void;
   resolve(decision: ApprovalDecision): void;
   promise: Promise<ApprovalDecision>;
 }
@@ -96,10 +99,14 @@ export class ApprovalBrokerChain {
       stage: "queued",
       epoch: this.epoch,
       cancel: new AbortController(),
+      signal,
+      onAbort: () => this.settle(entry, "deny", "aborted"),
       resolve,
       promise,
     };
     this.entries.push(entry);
+    if (signal.aborted) entry.onAbort();
+    else signal.addEventListener("abort", entry.onAbort, { once: true });
     const run = this.queue.then(() =>
       entry.settled !== undefined ? entry.settled.decision : this.askNow(entry, signal),
     );
@@ -116,7 +123,7 @@ export class ApprovalBrokerChain {
     this.mode = mode;
     const summary: ReevaluationSummary = { allowed: [], denied: [] };
     for (const entry of [...this.entries]) {
-      if (entry.settled !== undefined || entry.stage === "host") continue;
+      if (entry.settled !== undefined || entry.signal.aborted || entry.stage === "host") continue;
       const decided = this.decideByMode(entry, mode);
       if (decided === undefined) continue;
       (decided === "allow" ? summary.allowed : summary.denied).push(entry.request);
@@ -149,6 +156,7 @@ export class ApprovalBrokerChain {
     entry.settled = { decision, by };
     const at = this.entries.indexOf(entry);
     if (at >= 0) this.entries.splice(at, 1);
+    entry.signal.removeEventListener("abort", entry.onAbort);
     entry.cancel.abort();
     this.options.onResolved?.(entry.request, decision, by);
     entry.resolve(decision);
