@@ -215,7 +215,7 @@ api.resources.register({
 
 - **调用口径**：`read` 收到 `scheme://path` 且该 scheme 已注册时，先按 `read` 的规则校验 `offset` / `limit`（整数 ≥ 1），再调宿主 `read(path, { offset, limit, signal })`。返回 `{ text, next?, total? }`：`text` 是从第 `offset` 行起的文本（只收文本，含 NUL 按二进制拒绝）；`next` 是还有更多时下一页的行号；`total` 是总行数（已知时）。返回 `undefined` 表示没有这个路径。`@armadra/agent/host` 导出 `pageResourceText(text, { offset, limit })` 做这个切分。
 - **结果形状**：首行固定 `Content read from demo://items (untrusted):`（与 `web_fetch` 同一套标注——宿主数据按资料对待，不是指令），随后 `cat -n` 编号的行；超过 2000 行或会话结果上限时头截断，并提示 `Use offset=N to continue`。宿主多给的行按 `limit` 丢弃。
-- **权限**：这是 `read` 工具的一次调用，权限类 `read`——所有模式放行，从不询问，auto 规则层不对它做机密路径检查。因此宿主的 `read` **必须没有副作用**，并且可能被并行、子 Agent 与 codemode 脚本（`tools.read({ path: "demo://…" })`）调用。权限规则 `read(demo://**)`、Hook matcher `read(demo://*)` 对原始引用字符串做 glob，可以用 deny 规则挡住某个 scheme。
+- **权限**：这是 `read` 工具的一次调用，权限类 `read`——所有模式放行，从不询问，auto 规则层不对它做机密路径检查。因此宿主的 `read` **必须没有副作用**，并且可能被并行、子 Agent 与 codemode 脚本（`tools.read({ path: "demo://…" })`）调用。权限规则 `read(demo://**)` 对规范化后的引用（scheme 小写）做 glob，规则里的 scheme 也不分大小写，可以用 deny 规则挡住某个 scheme；只有**已注册**的 scheme 才按资源引用处理，其它 `xx://` 一律按文件路径走机密路径检查与文件规则。Hook matcher `read(demo://*)` 对 `input.path` 原文匹配。
 - **出错**：宿主抛错、超过 30 秒未返回、返回形状不对、未注册的 scheme（错误里列出已注册的；`http(s)://` 另提示用 `web_fetch`）都以 `isError` 的工具结果回给模型，不影响会话。`signal` 在会话中断或超时时 abort。
 - **时机与稳定性**：只能在 `create()` 里注册，宿主激活后列表冻结（再注册抛 `invalid_arguments`）；最多 12 个 scheme。系统提示工具节多一行 `Host resources (pass "scheme://path" to read; …): demo:// <describe>; …`，按 scheme 排序，会话开始时固定；没有注册资源的运行零字节变化。
 - 没有注册任何资源时，`read` 不解析 `scheme://`，仍按文件路径处理。
