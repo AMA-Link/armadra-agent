@@ -92,6 +92,8 @@ stdin 是一个 JSON 对象，写完即关闭。所有事件共有：
 | `Notification`          | `notification: { kind: approval \| settled \| error \| retry, message }`                                         |
 | `PostRewind`            | `entryId`（回滚到的用户消息）、`mode: both \| conversation \| code`、`files`（被恢复或删除的文件，仅对话时为空） |
 
+**宿主资源引用**：`read` 的 `path` 若是已注册的宿主资源引用（见 [host-api.md](../reference/host-api.md)「宿主资源」），交给 matcher 与 Hook 脚本的 `toolInput.path` 都是规范形式 `小写scheme://path`（与权限规则、会话记忆和 read 实际读取看到的一致）；未注册的 scheme 与普通文件路径保持原文，`write` / `edit` 等其它工具不做此处理。
+
 **codemode**：脚本里经 `tools.*` 发起的每次调用都单独经过 PreToolUse / PostToolUse，matcher 按**真实工具名**匹配（`bash`，不是 `codemode`），输入多两个字段：`viaCodemode: true` 与 `parentToolCallId`（外层 `codemode` 调用的 id）。`codemode` 调用本身也作为一次工具调用经过两个事件。模型直接发起的调用不带这两个字段。
 
 环境变量（便于 shell 脚本）：`AMA_HOOK_EVENT`、`AMA_SESSION_ID`、`AMA_CWD`，工具事件另有 `AMA_TOOL_NAME`，`read` / `write` / `edit` 另有 `AMA_FILE`（目标路径）。
@@ -152,15 +154,16 @@ Hook 在权限管线之前，是因为它是用户策略（可以改输入、可
 
 只对 `PreToolUse` / `PostToolUse` 生效，其它事件忽略 matcher。
 
-| 写法                            | 匹配                                                                                                                        |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| 缺省、`""`、`*`                 | 全部工具                                                                                                                    |
-| `bash`                          | 精确匹配工具名                                                                                                              |
-| `write\|edit`                   | 多选（括号外的 `\|` 分隔）                                                                                                  |
-| `canvas_*`                      | glob：`*` 任意字符串、`?` 单个字符                                                                                          |
-| `bash(git push*)`               | 先匹配工具名，再对参数文本做 glob：bash 是 `command`，文件类工具是 `path`，其它工具是输入的 JSON 文本                       |
-| `web_fetch(*docs.example.org*)` | `web_fetch` 的参数文本是整个 `url`（含协议与查询串，`*` 跨 `/`）；与权限规则 `web_fetch(<pattern>)` 的 `host/path` 语义不同 |
-| `/regex/flags`                  | 对工具名做正则                                                                                                              |
+| 写法                            | 匹配                                                                                                                              |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 缺省、`""`、`*`                 | 全部工具                                                                                                                          |
+| `bash`                          | 精确匹配工具名                                                                                                                    |
+| `write\|edit`                   | 多选（括号外的 `\|` 分隔）                                                                                                        |
+| `canvas_*`                      | glob：`*` 任意字符串、`?` 单个字符                                                                                                |
+| `bash(git push*)`               | 先匹配工具名，再对参数文本做 glob：bash 是 `command`，文件类工具是 `path`，其它工具是输入的 JSON 文本                             |
+| `web_fetch(*docs.example.org*)` | `web_fetch` 的参数文本是整个 `url`（含协议与查询串，`*` 跨 `/`）；与权限规则 `web_fetch(<pattern>)` 的 `host/path` 语义不同       |
+| `read(demo://*)`                | `read` 的 `path` 若是**已注册**的宿主资源引用，先规范成 `小写scheme://path` 再匹配，`DEMO://x` 也命中；matcher 里的 scheme 写小写 |
+| `/regex/flags`                  | 对工具名做正则                                                                                                                    |
 
 ## 运行环境
 
