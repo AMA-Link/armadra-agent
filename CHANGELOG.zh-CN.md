@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 宿主
+
+- **宿主资源命名空间，内置 `read` 读 `scheme://path`**（host-api 1.2）：`api.resources.register({ scheme, describe, read })` 把宿主数据暴露成 `scheme://path`；模型用 `read` 的 `offset` / `limit` 分页，结果带与 `web_fetch` 同一套的 `(untrusted)` 标注，走同一截断规则与会话结果上限，权限类 `read`（从不询问，所以宿主的 `read` 不得有副作用）。系统提示工具节多一行按 scheme 排序的资源清单，会话开始时固定；未注册的 scheme 报错并列出已注册的，`http(s)://` 指向 `web_fetch`，codemode 脚本里同样可以 `tools.read({ path: "scheme://…" })`。`@armadra/agent/host` 导出 `pageResourceText`。见 [docs/reference/host-api.md](docs/reference/host-api.md)「宿主资源」（#270）。
+
 ## 0.15.1（2026-11-06）
 
 ### 维护

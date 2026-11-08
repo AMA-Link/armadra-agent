@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Host
+
+- **Host resource namespace, read through the built-in `read`** (host-api 1.2): `api.resources.register({ scheme, describe, read })` exposes host data as `scheme://path`; the model pages it with `read`'s `offset` / `limit`, the result carries the `(untrusted)` marking of `web_fetch`, obeys the same truncation and session caps, and runs as permission class `read` (never asks, so the host's `read` must be side-effect free). The system prompt's tools section gains one sorted line listing the schemes, fixed at session start; an unregistered scheme returns an error listing the registered ones, `http(s)://` points to `web_fetch`, and codemode scripts can call `tools.read({ path: "scheme://…" })`. `@armadra/agent/host` exports `pageResourceText`. See [docs/reference/host-api.md](docs/reference/host-api.md) "Host resources" (#270).
+
 ## 0.15.1 (2026-11-06)
 
 ### Maintenance

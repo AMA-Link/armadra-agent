@@ -5,7 +5,7 @@ English · [简体中文](../../reference/host-api.md)
 > Translated from the Chinese [docs/reference/host-api.md](../../reference/host-api.md) as of commit `979608b`. When the two differ, the Chinese
 > version is authoritative.
 
-A host adapter is a local JS module that ama loads at startup and hands a `HostApi`. With it the adapter can register tools, append to the system prompt, observe events, answer approvals, inject user messages and show notifications and status in the interface. The Armadra canvas plugs in as a host adapter (the canvas tools `canvas_*` / `context_*` are all registered by the adapter). The types are defined in `src/host/types.ts` and exported from `@armadra/agent/host`; `HOST_API_VERSION = 1`, `HOST_API_MINOR = 1` (host-api 1.1, see "Versioning"). The design rationale is in [design.md](../../design/design.md) §6.2, §6.3 and §11.1 step 13 (Chinese).
+A host adapter is a local JS module that ama loads at startup and hands a `HostApi`. With it the adapter can register tools, append to the system prompt, observe events, answer approvals, inject user messages and show notifications and status in the interface. The Armadra canvas plugs in as a host adapter (the canvas tools `canvas_*` / `context_*` are all registered by the adapter). The types are defined in `src/host/types.ts` and exported from `@armadra/agent/host`; `HOST_API_VERSION = 1`, `HOST_API_MINOR = 2` (host-api 1.2, see "Versioning"). The design rationale is in [design.md](../../design/design.md) §6.2, §6.3 and §11.1 step 13 (Chinese).
 
 ## Module shape
 
@@ -60,7 +60,8 @@ export function create(api) {
 | Minor | First ama version | Added                                                                                              |
 | ----- | ----------------- | -------------------------------------------------------------------------------------------------- |
 | 0     | —                 | Every existing member (optional facets such as `cache?` and `runners?.provide` still need a check) |
-| 1     | Unreleased        | `minor`, `runners?.onDone` (see "Runner done event")                                               |
+| 1     | 0.11.0            | `minor`, `runners?.onDone` (see "Runner done event")                                               |
+| 2     | Unreleased        | `resources?.register` / `resources?.list` (see "Host resources")                                   |
 
 ## HostApi
 
@@ -84,6 +85,8 @@ export function create(api) {
 | `cache?.onWarmingDecision(handler)`             | Veto hook for cache warming (see "Cache warming"); an optional facet missing in older runtimes, so check `api.cache !== undefined` before use                                                                                                     |
 | `runners?.provide(runner)`                      | Injects a sub-agent runner: `id` is the name in `task(agent=<id>)` and `description` goes into the task tool description; with a host, ama starts no external CLI of its own and only uses runners injected here; returns an unsubscribe function |
 | `runners?.onDone(handler)`                      | Called whenever a round of a host runner ends (see "Runner done event"); returns an unsubscribe function. Since host-api 1.1, so check `typeof api.runners?.onDone === "function"` before use                                                     |
+| `resources?.register(resource)`                 | Registers a read-only resource namespace `scheme://…` that the built-in `read` reads (see "Host resources"); only callable inside `create()`. Since host-api 1.2, so check `api.resources !== undefined` before use                               |
+| `resources?.list()`                             | The registered schemes, sorted by name                                                                                                                                                                                                            |
 | `minor?`                                        | `HOST_API_MINOR` (see "Versioning"); missing in older runtimes                                                                                                                                                                                    |
 
 During `create()` the session is not assembled yet: `session.*` returns the values fixed at startup, and `sendUser` is rejected with `busy`. To send a message at startup, wait for the `session_start` event.
@@ -198,6 +201,29 @@ interface RunnerDoneEvent {
 - ama may call `wait()` several times in one round (the task entry and the registry each once); the event is sent once. Calling `wait()` again after the round settled, without a new `send` / `interrupt`, sends nothing. An `interrupt` while running is followed to the end by the current round instead of starting another.
 - Only host-injected runners are covered; ama's own sub-sessions (`general` / `explore` / `plan`) still report through `subagent_start` / `subagent_end`.
 - Use: the host no longer needs to poll whether the coordinator is still waiting on a task — the event says ama's side of it has ended.
+
+## Host resources
+
+`api.resources.register({ scheme, describe, read })` (host-api 1.2): the host exposes its own data (work items, events, source texts, …) as a read-only namespace, and the model reads it with the built-in `read` tool as `scheme://path`. No tool per kind of data, so the tool table and the prompt prefix do not grow with the data; paging, truncation and continuation are handled by ama in one place.
+
+```ts
+api.resources.register({
+  scheme: "demo", // ^[a-z][a-z0-9+.-]{1,31}$; reserved names such as http / https / file / data are refused
+  describe: "Work items: demo://items, demo://items/<id>", // one line, at most 120 characters; goes into the system prompt
+  read(path, { offset, limit, signal }) {
+    // path is the text after "://"; offset is the 1-based first line, limit the maximum number of lines (optional)
+    if (path !== "items") return undefined; // no such path
+    return pageResourceText(allItemsText, { offset, limit }); // { text, next?, total? }
+  },
+});
+```
+
+- **Call contract**: when `read` receives `scheme://path` for a registered scheme it first validates `offset` / `limit` by its usual rules (integers ≥ 1), then calls the host's `read(path, { offset, limit, signal })`. The result is `{ text, next?, total? }`: `text` is the text starting at line `offset` (text only; a NUL byte is refused as binary), `next` is the line number of the next page when there is more, `total` the total number of lines when known. Returning `undefined` means the path does not exist. `@armadra/agent/host` exports `pageResourceText(text, { offset, limit })` for the slicing.
+- **Result shape**: the first line is always `Content read from demo://items (untrusted):` (the same marking as `web_fetch` — host data is material, not instructions), followed by `cat -n` numbered lines; beyond 2000 lines or the session's result cap the output is head-truncated with a `Use offset=N to continue` note. Lines beyond `limit` that the host returned anyway are dropped.
+- **Permissions**: this is a call of the `read` tool with permission class `read` — allowed in every mode, never asks, and the auto rule layer skips its secret-path check. The host's `read` therefore **must have no side effects**, and it may be called in parallel, from sub-agents and from codemode scripts (`tools.read({ path: "demo://…" })`). Permission rules `read(demo://**)` and hook matchers `read(demo://*)` glob the raw reference string, so a deny rule can block a scheme.
+- **Errors**: a throwing host, no answer within 30 seconds, an invalid result shape and an unregistered scheme (the error lists the registered ones; `http(s)://` additionally points to `web_fetch`) all come back to the model as `isError` tool results and do not affect the session. `signal` aborts when the session is interrupted or the deadline passes.
+- **Timing and stability**: registration is only possible inside `create()`; the list is frozen once the host is activated (a later `register` throws `invalid_arguments`), with at most 12 schemes. The tools section of the system prompt gains one line, `Host resources (pass "scheme://path" to read; …): demo:// <describe>; …`, sorted by scheme and fixed at session start; a run without resources changes by zero bytes.
+- Without any registered resource `read` does not parse `scheme://` and treats the path as a file path.
 
 ## Exit
 
