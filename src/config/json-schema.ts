@@ -197,6 +197,7 @@ function w5Sections(): Record<string, Schema> {
       defaultModel: str(),
       background: oneOf(SUBAGENT_BACKGROUND_MODES),
       autoBackgroundAfterMs: num(0),
+      backgroundMaxMs: num(0),
       retainSessions: num(0),
       forkMaxContextRatio: num(0.05, 0.95),
     }),
@@ -307,6 +308,8 @@ function buildBaseSchema(): Schema {
         default: strings,
         maxToolResultChars: num(1),
         bashTimeoutMs: num(1),
+        bashAutoBackgroundAfterMs: num(0),
+        bashBackgroundMaxMs: num(0),
         disabled: strings,
       }),
       codemode: object({

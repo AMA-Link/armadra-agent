@@ -221,6 +221,7 @@ export async function bootstrap(
       cwd: sessionCwd,
       mode,
       paths: { configDir: paths.configDir, dataDir: paths.dataDir },
+      embedded: profile !== undefined,
       memory: resolveMemory({
         config,
         cwd: sessionCwd,

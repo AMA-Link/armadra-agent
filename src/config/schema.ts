@@ -341,12 +341,22 @@ export function validateConfig(value: unknown): Diagnostic[] {
     c,
     value,
     "tools",
-    ["preset", "default", "maxToolResultChars", "bashTimeoutMs", "disabled"],
+    [
+      "preset",
+      "default",
+      "maxToolResultChars",
+      "bashTimeoutMs",
+      "bashAutoBackgroundAfterMs",
+      "bashBackgroundMaxMs",
+      "disabled",
+    ],
     (s, p) => {
       c.oneOf(s, "preset", p, TOOLS_PRESET_INPUTS);
       c.stringArray(s, "default", p);
       c.number(s, "maxToolResultChars", p, 1);
       c.number(s, "bashTimeoutMs", p, 1);
+      c.number(s, "bashAutoBackgroundAfterMs", p, 0);
+      c.number(s, "bashBackgroundMaxMs", p, 0);
       c.stringArray(s, "disabled", p);
     },
   );

@@ -180,6 +180,13 @@ export interface ToolsConfig {
   default?: string[];
   maxToolResultChars?: number;
   bashTimeoutMs?: number;
+  /**
+   * [#266] 前台 bash 运行超过该毫秒数原地转后台；0 关闭。不设时按运行方式定：`--mode rpc` / `--mode acp`、
+   * 嵌入宿主（有 profile）或 `coordinator` 预设下 15000，独立交互 / `-p` 下 0。只认用户级 / profile。
+   */
+  bashAutoBackgroundAfterMs?: number;
+  /** [#267] 后台 bash 任务的寿命上限（毫秒），到点杀进程树并提醒模型；缺省 7 200 000（2 小时），0 不限。 */
+  bashBackgroundMaxMs?: number;
   disabled?: string[];
 }
 

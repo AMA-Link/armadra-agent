@@ -16,6 +16,8 @@ const dynamicDefaultsEn = {
   "codemode.mode": "follows the tool preset",
   "ui.ascii": "auto-detected",
   "ui.statusLine": "full in a standalone terminal, compact in an embedding host (with a profile)",
+  "tools.bashAutoBackgroundAfterMs":
+    "15000 under --mode rpc / acp, in an embedding host (with a profile) or with the coordinator preset; 0 (off) in a standalone terminal and with -p",
   "plan.directory": "<data dir>/plans",
   "plan.model": "unset: keep the current model",
   "plan.thinkingLevel": "unset: keep the current thinking level",
@@ -42,6 +44,8 @@ const dynamicDefaultsZh = {
   "codemode.mode": "跟随预设",
   "ui.ascii": "自动检测",
   "ui.statusLine": "独立终端 full，嵌入宿主（有 profile）compact",
+  "tools.bashAutoBackgroundAfterMs":
+    "--mode rpc / acp、嵌入宿主（有 profile）或 coordinator 预设下 15000；独立终端与 -p 下 0（关）",
   "plan.directory": "<数据目录>/plans",
   "plan.model": "不设：沿用当前模型",
   "plan.thinkingLevel": "不设：沿用当前思考强度",
@@ -107,6 +111,10 @@ const keysEn = {
   "tools.maxToolResultChars":
     "Character limit for one tool result in the context; beyond it head and tail are kept",
   "tools.bashTimeoutMs": "Default bash timeout (ms; overridable per call, max 600000)",
+  "tools.bashAutoBackgroundAfterMs":
+    "Move a foreground bash command that is still running after this many ms to a background job without restarting it (the tool returns the output so far); 0 disables; must be below the timeout; user level only",
+  "tools.bashBackgroundMaxMs":
+    "Lifetime cap for background bash jobs (ms); the process tree is killed when it is reached and the model is told; a job moved from the foreground counts from the move; 0 = unlimited; one extension via bash {job, action: extend}; user level only",
   "tools.disabled": "Disabled tool names; accumulated across levels",
   codemode:
     "codemode: the model writes scripts that call tools in batches (docs/guides/codemode.md)",
@@ -232,6 +240,8 @@ const keysEn = {
     "Whether task runs in the background by default: auto = background in the TUI / RPC / ACP and foreground with -p; always / never are fixed. The call argument and the agent type's background: override it; user, project and host level",
   "subagents.autoBackgroundAfterMs":
     "Move a foreground task to the background after it has run this many milliseconds; 0 disables; user and project level",
+  "subagents.backgroundMaxMs":
+    "Lifetime cap for background sub-agent tasks (ms): stopped when reached and the model is told; a task moved from the foreground counts from the move; 0 = unlimited; one extension via task_ctl extend; user level only",
   models: "Model aliases and the model picker list; user level only (effective from wave 5 W5-G)",
   "models.aliases": "Models that model: fast / strong in sub-agent definitions point to",
   "models.aliases.fast": "Model for the fast alias provider/model[@channel]",
@@ -294,6 +304,10 @@ const keysZh = {
     "在预设上微调：+name 加、-name 去，不带前缀的名字整组替换预设的内置工具；只认用户级",
   "tools.maxToolResultChars": "单条工具结果进上下文的字符上限，超出保留首尾",
   "tools.bashTimeoutMs": "bash 缺省超时（毫秒，单次调用可覆盖，最大 600000）",
+  "tools.bashAutoBackgroundAfterMs":
+    "前台 bash 运行超过该毫秒数仍未结束时原地转为后台任务，不重启进程（工具返回到此刻的输出）；0 关闭；须小于超时；只认用户级",
+  "tools.bashBackgroundMaxMs":
+    "后台 bash 任务的寿命上限（毫秒）：到点杀掉进程树并告诉模型；从前台转来的从转换时刻起算；0 不限；可用 bash {job, action: extend} 续命一次；只认用户级",
   "tools.disabled": "禁用的工具名；各层累加",
   codemode: "codemode：模型写脚本批量调用工具（docs/guides/codemode.md）",
   "codemode.mode":
@@ -402,6 +416,8 @@ const keysZh = {
   "subagents.background":
     "task 缺省是否后台：auto = TUI / RPC / ACP 下后台、-p 下前台；always / never 固定。调用参数与类型定义的 background: 优先；用户、项目、宿主级都认",
   "subagents.autoBackgroundAfterMs": "前台任务运行超过该毫秒数自动转后台；0 关闭；用户、项目级都认",
+  "subagents.backgroundMaxMs":
+    "后台子 Agent 任务的寿命上限（毫秒）：到点停止并告诉模型；从前台转来的从转换时刻起算；0 不限；可用 task_ctl extend 续命一次；只认用户级",
   models: "模型别名与模型选择器清单；只认用户级（第五波 W5-G 起生效）",
   "models.aliases": "子 Agent 定义里 model: fast / strong 指向的模型",
   "models.aliases.fast": "fast 别名的模型 provider/model[@channel]",

@@ -107,6 +107,9 @@ const ROWS: readonly Row[] = [
   row("codemode.maxHeapMb", "tools", "restart", "deny"),
   row("tools.maxToolResultChars", "tools", "nextSession", "deny"),
   row("tools.bashTimeoutMs", "tools", "restart", "deny"),
+  // [#266 / #267] 长命令转后台与后台寿命；缺省由运行方式决定的键也是面板行（显示规则）
+  row("tools.bashAutoBackgroundAfterMs", "tools", "restart", "deny"),
+  row("tools.bashBackgroundMaxMs", "tools", "restart", "deny"),
   row("images.resize", "tools", "restart", "deny"),
   row("hooks.timeoutMs", "tools", "restart", "deny"),
   row("compaction.enabled", "context", "now", "any"),
@@ -152,6 +155,7 @@ const ROWS: readonly Row[] = [
   // [W7-B2] 改 task 工具描述（缺省后台 / 前台两种文案），故 prefix
   row("subagents.background", "agents", "restart", "any", { prefix: true }),
   row("subagents.autoBackgroundAfterMs", "agents", "restart", "any"),
+  row("subagents.backgroundMaxMs", "agents", "restart", "deny"),
   // [W6-M]
   row("memory.enabled", "memory", "nextSession", "tighten", { envOverride: "AMA_MEMORY" }),
   row("memory.subagents", "memory", "nextSession", "deny"),
