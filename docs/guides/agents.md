@@ -130,7 +130,8 @@ ama 再跑一轮、在消息里要求「不要调用工具、直接给最终报�
 | `send`   | 向任务追加一条消息并放到后台运行（等价于 `task{taskId, prompt, background:true}`）                      |
 | `extend` | 给后台任务续命一次（`timeoutMs` 为增量，缺省与上限相同，封顶一个上限）；见「长命令与后台寿命」          |
 
-`coordinator` 预设下 `wait` 的超时封顶 5 000 毫秒（含缺省与更大的 `timeoutMs`），超时回复里说明被封顶、完成后会有通知；其它预设不变。
+`coordinator` 预设下 `wait` 的超时封顶 5 000 毫秒（含缺省与更大的 `timeoutMs`），超时回复里说明被封顶、完成后会有通知；
+`bash {job, action: "wait"}` 同样封顶（#242）；其它预设不变。
 
 ### 长命令与后台寿命
 
