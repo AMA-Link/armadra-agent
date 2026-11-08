@@ -8,9 +8,12 @@
  *   信号退出 `128 + signo`；非零退出码 → isError；
  * - 注入 `AMA_*` 环境变量（shell.ts）。shell 退出后不等仍占着管道的后台进程。
  * - [W5-H2] 后台命令（§8.3 H6，不加新工具）：`{ command, background: true }` 立即返回
- *   `{ jobId, outputPath, pid }`；`{ job, action: "wait" | "output" | "stop" }` 查询 / 结束
- *   （background-jobs.ts，按会话登记，会话 dispose 时回收进程树；退出经提醒通道通知）。查询输出同样按
- *   会话结果上限尾截断（#155）。
+ *   `{ jobId, outputPath, pid }`；`{ job, action: "wait" | "output" | "stop" | "extend" }` 查询 / 结束 / 续命
+ *   （bash-jobs.ts + background-jobs.ts，按会话登记，会话 dispose 时回收进程树；退出经提醒通道通知）。
+ * - [#266] 前台命令运行超过 `autoBackgroundAfterMs`（0 关）仍未结束时**原地转后台**：不重启进程，清掉超时计时器、
+ *   解绑 abort、停止流式更新，把已累积输出落盘为任务输出文件，交给后台任务表登记（`adopt`），工具立即返回
+ *   `{ jobId, outputPath, movedToBackground: true, output }`；之后受 [#267] 寿命上限约束（从转换时刻起算），
+ *   原来的 120 / 600 s 超时不再生效。阈值 ≥ 超时时超时先到，照旧杀掉、不转。
  * - **进程只在 `spawnShell` 里创建**（前台与后台共用）。[S2] `sandbox.bash: auto` 且有能限制写入的
  *   OS 沙箱时在这一处包一层（src/sandbox/bash.ts）；`sandbox: false` 不包装（权限管线照常审批）。
  *   失败输出像是被沙箱拒绝时末尾追加一行说明。
@@ -31,8 +34,23 @@ import {
   type ProcessDeps,
 } from "./process-tree.js";
 import { OutputAccumulator } from "./output-accumulator.js";
-import { formatSize, resolveOutputDir, safeFileName, toolOutputBytes } from "./truncate.js";
-import { jobsForSession, type BackgroundJobs, type Job } from "./background-jobs.js";
+import {
+  DEFAULT_MAX_LINES,
+  formatSize,
+  resolveOutputDir,
+  safeFileName,
+  toolOutputBytes,
+} from "./truncate.js";
+import type { BackgroundJobs } from "./background-jobs.js";
+import {
+  backgroundMaxMs,
+  fail,
+  jobAction,
+  jobsOf,
+  movedResult,
+  startBackground,
+} from "./bash-jobs.js";
+import { REAL_TIMERS, type TimeoutTimers } from "./timers.js";
 import {
   looksLikeSandboxDenial,
   runsSandboxed,
@@ -48,9 +66,12 @@ const UPDATE_THROTTLE_MS = 100;
 /** shell 退出后等管道关闭的上限（后台子进程可能一直占着）。 */
 const STDIO_DRAIN_MS = 200;
 
+export { DEFAULT_BASH_AUTO_BACKGROUND_MS, DEFAULT_BASH_BACKGROUND_MAX_MS } from "./bash-jobs.js";
+
 export interface BashInput {
   /** 前台 / 后台命令；查询后台任务时不给。 */
   command?: string;
+  /** 前台：超时；`wait`：等待时长；[#267] `extend`：续命增量（缺省与上限相同）。 */
   timeoutMs?: number;
   cwd?: string;
   description?: string;
@@ -58,7 +79,7 @@ export interface BashInput {
   background?: boolean;
   /** [W5-H2] 后台任务 id（与 action 一起用）。 */
   job?: string;
-  action?: "wait" | "output" | "stop";
+  action?: "wait" | "output" | "stop" | "extend";
   /** [S2] false：不经 OS 沙箱运行（走正常审批）。只在沙箱生效时出现在 schema 里。 */
   sandbox?: boolean;
 }
@@ -97,6 +118,15 @@ export interface BashDetails extends BashStructured {
 export interface BashToolOptions {
   /** config.tools.bashTimeoutMs；缺省 120 000。 */
   defaultTimeoutMs?: number;
+  /**
+   * [#266] config.tools.bashAutoBackgroundAfterMs（组装根按运行模式定缺省）：前台命令运行超过该毫秒数
+   * 原地转后台；0 / 不设关闭。
+   */
+  autoBackgroundAfterMs?: number;
+  /** [#267] config.tools.bashBackgroundMaxMs：后台任务寿命上限；缺省 2 小时，0 不限。 */
+  backgroundMaxMs?: number;
+  /** [#266 / #267] 阈值与寿命计时器（测试注入手动时钟）；缺省真实 setTimeout。 */
+  timers?: TimeoutTimers;
   /** 测试注入：固定 shell 选择。 */
   shell?(): ShellConfig;
   /** 测试注入：杀树参数（宽限时间等）。 */
@@ -143,10 +173,6 @@ export function spawnShell(
   });
 }
 
-function fail(message: string): ToolResult {
-  return { content: message, isError: true };
-}
-
 interface ExitInfo {
   code: number | null;
   signal: NodeJS.Signals | null;
@@ -183,12 +209,17 @@ function waitForExit(child: ChildProcess): Promise<ExitInfo> {
   });
 }
 
+function hasExited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
 export async function executeBash(
   input: BashInput,
   ctx: ToolContext,
   options: BashToolOptions = {},
 ): Promise<ToolResult> {
-  if (input.job !== undefined) return jobAction(input, ctx, options);
+  if (input.job !== undefined)
+    return jobAction(input, ctx, options, MAX_BASH_TIMEOUT_MS, DEFAULT_JOB_WAIT_MS);
   if (input.action !== undefined) return fail("action needs job (a background job id)");
   if (typeof input.command !== "string" || input.command.trim() === "") {
     return fail("command must be a non-empty string");
@@ -228,7 +259,22 @@ export async function executeBash(
         }
       : undefined;
   if (input.background === true)
-    return startBackground(command, { cwd, env, shell, isWindows, sandbox }, ctx, options);
+    return startBackground(
+      command,
+      (fd) =>
+        spawnShell(shell, command, {
+          cwd,
+          env,
+          detached: !isWindows,
+          stdio: ["ignore", fd, fd],
+          ...(sandbox === undefined ? {} : { sandbox }),
+        }),
+      shell.shell,
+      cwd,
+      sandbox !== undefined,
+      ctx,
+      options,
+    );
   const started = Date.now();
   const acc = new OutputAccumulator({
     maxBytes: toolOutputBytes(ctx.maxResultChars),
@@ -251,6 +297,7 @@ export async function executeBash(
   const pid = child.pid;
   if (pid !== undefined && !isWindows) trackProcessGroup(pid);
 
+  let moved = false;
   let lastUpdate = 0;
   let pendingUpdate: NodeJS.Timeout | undefined;
   const emitUpdate = () => {
@@ -260,7 +307,7 @@ export async function executeBash(
   };
   const onData = (chunk: Buffer) => {
     acc.append(chunk);
-    if (pendingUpdate) return;
+    if (moved || pendingUpdate) return;
     const wait = Math.max(0, lastUpdate + UPDATE_THROTTLE_MS - Date.now());
     pendingUpdate = setTimeout(emitUpdate, wait);
   };
@@ -284,13 +331,56 @@ export async function executeBash(
   };
   ctx.signal.addEventListener("abort", onAbort, { once: true });
 
+  // [#266] 阈值到了仍在跑 → 原地转后台（已退出的不转：让正常路径收尾）
+  const timers = options.timers ?? REAL_TIMERS;
+  const afterMs = options.autoBackgroundAfterMs ?? 0;
+  let resolveMoved: ((result: ToolResult) => void) | undefined;
+  const movedPromise = new Promise<ToolResult>((resolve) => {
+    resolveMoved = resolve;
+  });
+  const moveTimer =
+    afterMs > 0
+      ? timers.set(() => {
+          if (moved || hasExited(child) || timedOut || aborted) return;
+          moved = true;
+          clearTimeout(timer);
+          ctx.signal.removeEventListener("abort", onAbort);
+          if (pendingUpdate) {
+            clearTimeout(pendingUpdate);
+            pendingUpdate = undefined;
+          }
+          const outputPath = acc.persist();
+          const job = jobsOf(ctx, options).adopt(command, {
+            cwd,
+            outputPath,
+            child,
+            startedAt: started,
+            maxMs: backgroundMaxMs(options),
+            ...(options.processDeps === undefined ? {} : { processDeps: options.processDeps }),
+            ...(options.timers === undefined ? {} : { timers: options.timers }),
+          });
+          resolveMoved?.(
+            movedResult(job, acc.tail(DEFAULT_MAX_LINES), afterMs, sandbox !== undefined, command),
+          );
+        }, afterMs)
+      : undefined;
+
+  const exited = waitForExit(child);
+  // 转后台后这个 promise 没人等了：出错不能变成 unhandled rejection
+  exited.catch(() => undefined);
   let exit: ExitInfo;
   try {
-    exit = await waitForExit(child);
+    const outcome = await Promise.race([
+      exited.then((info) => ({ kind: "exit" as const, info })),
+      movedPromise.then((result) => ({ kind: "moved" as const, result })),
+    ]);
+    if (outcome.kind === "moved") return outcome.result;
+    exit = outcome.info;
   } catch (err) {
     return fail(`Failed to run command with ${shell.shell}: ${(err as Error).message}`);
   } finally {
     clearTimeout(timer);
+    if (moveTimer !== undefined) timers.clear(moveTimer);
     ctx.signal.removeEventListener("abort", onAbort);
     if (pendingUpdate) {
       // 冲掉节流中的最后一次更新，保证 UI 看到的尾部是完整的。
@@ -347,121 +437,6 @@ export async function executeBash(
   };
 }
 
-// ---------------------------------------------------------------------------
-// [W5-H2] 后台命令
-// ---------------------------------------------------------------------------
-
-function jobsOf(ctx: ToolContext, options: BashToolOptions): BackgroundJobs {
-  return options.jobs ? options.jobs(ctx.sessionId) : jobsForSession(ctx.sessionId);
-}
-
-function startBackground(
-  command: string,
-  spawnInfo: {
-    cwd: string;
-    env: NodeJS.ProcessEnv;
-    shell: ShellConfig;
-    isWindows: boolean;
-    sandbox: SpawnShellOptions["sandbox"];
-  },
-  ctx: ToolContext,
-  options: BashToolOptions,
-): ToolResult {
-  const { cwd, env, shell, isWindows, sandbox } = spawnInfo;
-  const outputPath = join(
-    resolveOutputDir(ctx.outputDir),
-    safeFileName(`bash-bg-${ctx.toolCallId}.log`),
-  );
-  let job: Job;
-  try {
-    job = jobsOf(ctx, options).start(command, {
-      cwd,
-      outputPath,
-      ...(options.processDeps === undefined ? {} : { processDeps: options.processDeps }),
-      spawn: (fd) =>
-        spawnShell(shell, command, {
-          cwd,
-          env,
-          detached: !isWindows,
-          stdio: ["ignore", fd, fd],
-          ...(sandbox === undefined ? {} : { sandbox }),
-        }),
-    });
-  } catch (err) {
-    return fail(`Failed to start shell ${shell.shell}: ${(err as Error).message}`);
-  }
-  const structured: BackgroundStart = { jobId: job.id, outputPath: job.outputPath };
-  if (job.pid !== undefined) structured.pid = job.pid;
-  if (sandbox !== undefined) structured.sandboxed = true;
-  return {
-    content:
-      `Started background job ${job.id}${job.pid !== undefined ? ` (pid ${job.pid})` : ""}; ` +
-      `output: ${job.outputPath}. Check it with bash {"job":"${job.id}","action":"wait"|"output"|"stop"}; ` +
-      "you will be told when it exits.",
-    structured,
-    details: { ...structured, background: true, command, cwd },
-  };
-}
-
-function jobStatusLine(job: Job): string {
-  const state =
-    job.status === "running"
-      ? "still running"
-      : job.status === "stopped"
-        ? `stopped (exit code ${job.exitCode ?? "?"})`
-        : `exited with code ${job.exitCode ?? "?"}`;
-  return `[job ${job.id} ${state}; output: ${job.outputPath}]`;
-}
-
-async function jobAction(
-  input: BashInput,
-  ctx: ToolContext,
-  options: BashToolOptions,
-): Promise<ToolResult> {
-  const id = input.job as string;
-  if (input.command !== undefined || input.background === true || input.sandbox !== undefined)
-    return fail("job queries take only job, action and timeoutMs");
-  const action = input.action ?? "output";
-  const jobs = jobsOf(ctx, options);
-  if (jobs.get(id) === undefined) {
-    const known = jobs.list().map((job) => job.id);
-    return fail(
-      `Unknown background job ${id}${known.length > 0 ? ` (jobs: ${known.join(", ")})` : ""}`,
-    );
-  }
-  if (action === "stop") {
-    const job = (await jobs.stop(id)) as Job;
-    const out = jobs.output(id, { maxBytes: toolOutputBytes(ctx.maxResultChars) });
-    const text = out?.content ?? "";
-    return {
-      content: `${text === "" ? "(no output)" : text}\n\n${jobStatusLine(job)}`,
-      structured: { jobId: id, status: job.status, exit_code: job.exitCode ?? null },
-    };
-  }
-  if (action === "wait") {
-    const waitMs = input.timeoutMs ?? DEFAULT_JOB_WAIT_MS;
-    if (!Number.isFinite(waitMs) || waitMs <= 0 || waitMs > MAX_BASH_TIMEOUT_MS)
-      return fail(`timeoutMs must be between 1 and ${MAX_BASH_TIMEOUT_MS}`);
-    await jobs.wait(id, waitMs, ctx.signal);
-  }
-  const out = jobs.output(id, { maxBytes: toolOutputBytes(ctx.maxResultChars) });
-  if (out === undefined) return fail(`Unknown background job ${id}`);
-  const job = out.job;
-  if (job.status !== "running") jobs.markSeen(id);
-  const parts = [out.content === "" ? "(no output)" : out.content];
-  if (out.truncated)
-    parts.push(
-      `[Output truncated: showing the last ${out.outputLines} of ${out.totalLines} lines ` +
-        `(${formatSize(out.totalBytes)} total). Full output: ${job.outputPath}]`,
-    );
-  parts.push(jobStatusLine(job));
-  return {
-    content: parts.join("\n\n"),
-    isError: job.status === "exited" && job.exitCode !== 0,
-    structured: { jobId: id, status: job.status, exit_code: job.exitCode ?? null },
-  };
-}
-
 /** [S2] 沙箱生效时追加到描述末尾的一句（会话内不变）。 */
 export function sandboxDescription(sandbox: BashSandbox | undefined): string {
   if (sandbox?.active !== true) return "";
@@ -488,7 +463,7 @@ export function createBashTool(options: BashToolOptions = {}): ToolDefinition<Ba
         description: { type: "string" },
         background: { type: "boolean" },
         job: { type: "string" },
-        action: { type: "string", enum: ["wait", "output", "stop"] },
+        action: { type: "string", enum: ["wait", "output", "stop", "extend"] },
         // [S2] 只在沙箱生效时出现：沙箱关闭的会话工具 schema 与以前逐字节相同
         ...(sandboxed ? { sandbox: { type: "boolean" } } : {}),
       },

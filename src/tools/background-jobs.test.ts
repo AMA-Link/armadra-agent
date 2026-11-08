@@ -2,9 +2,11 @@
  * 后台 bash（W5-H2 H6）：真子进程（POSIX）；查询形状与权限按 read 处理跨平台。
  */
 
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { manualTimers } from "../../test/helpers/manual-timers.js";
 import { makeTmpDir, makeToolContext } from "../../test/helpers/tool-context.js";
 import { PermissionPipeline } from "../permissions/pipeline.js";
 import { BackgroundJobs, isBackgroundJobQuery, type JobChange } from "./background-jobs.js";
@@ -140,5 +142,96 @@ describe.runIf(posix)("后台 bash（真子进程）", () => {
     const full = jobs.output("bg1");
     expect(full?.truncated).toBe(false);
     expect(full?.content).toContain("row-1-");
+  });
+});
+
+describe("[#266 / #267] adopt 与寿命上限（Node 子进程，跨平台）", () => {
+  const sleeper = () =>
+    spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+    });
+
+  it("adopt 登记已在运行的进程：moved、startedAt 保留、寿命从登记时刻起；退出后 exited 并由 takeExited 取走", async () => {
+    const timers = manualTimers();
+    const child = sleeper();
+    const startedAt = Date.now() - 5000;
+    const job = jobs.adopt("node sleep", {
+      cwd: tmp.dir,
+      outputPath: join(tmp.dir, "moved.log"),
+      child,
+      startedAt,
+      maxMs: 1000,
+      timers,
+    });
+    expect(job).toMatchObject({ id: "bg1", moved: true, status: "running", startedAt });
+    expect(job.lifetime).toMatchObject({ maxMs: 1000, extended: false });
+    expect(job.lifetime!.since).toBeGreaterThanOrEqual(startedAt + 5000);
+    expect(timers.pending()).toEqual([{ ms: 1000 }]);
+    child.kill();
+    const done = await jobs.wait("bg1", 5000);
+    expect(done?.status).toBe("exited");
+    expect(timers.pending()).toEqual([]); // 结束时清掉寿命计时器
+    expect(jobs.takeExited().map((j) => j.id)).toEqual(["bg1"]);
+  });
+
+  it("寿命到点：按 stop 杀树、标 expired、事件 stopped；仍经 takeExited 通知；0 不限不起计时器", async () => {
+    const timers = manualTimers();
+    const phases: JobChange["phase"][] = [];
+    jobs.onChange((change) => phases.push(change.phase));
+    const job = jobs.start("node sleep", {
+      cwd: tmp.dir,
+      outputPath: join(tmp.dir, "cap.log"),
+      spawn: (fd) =>
+        spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], {
+          stdio: ["ignore", fd, fd],
+          detached: process.platform !== "win32",
+        }),
+      maxMs: 60_000,
+      timers,
+      processDeps: { graceMs: 200 },
+    });
+    expect(timers.pending()).toEqual([{ ms: 60_000 }]);
+    timers.fire(0);
+    const done = await jobs.wait(job.id, 10_000);
+    expect(done).toMatchObject({ status: "stopped", expired: true });
+    expect(phases).toEqual(["started", "stopped"]);
+    expect(jobs.takeExited().map((j) => j.id)).toEqual([job.id]);
+    expect(jobs.takeExited()).toEqual([]);
+    const free = jobs.start("node free", {
+      cwd: tmp.dir,
+      outputPath: join(tmp.dir, "free.log"),
+      spawn: (fd) =>
+        spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: ["ignore", fd, fd] }),
+      maxMs: 0,
+      timers,
+    });
+    expect(free.lifetime).toBeUndefined();
+    expect(timers.pending()).toEqual([]);
+    await jobs.wait(free.id, 5000);
+  });
+
+  it("extend：一次加 min(ms, 上限)、重排计时器；再续 already_extended；未知 / 已结束分别报错", async () => {
+    const timers = manualTimers();
+    const job = jobs.start("node sleep", {
+      cwd: tmp.dir,
+      outputPath: join(tmp.dir, "ext.log"),
+      spawn: (fd) =>
+        spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], {
+          stdio: ["ignore", fd, fd],
+          detached: process.platform !== "win32",
+        }),
+      maxMs: 60_000,
+      timers,
+    });
+    expect(jobs.extend(job.id, 10_000)).toEqual({ ok: true, addedMs: 10_000, totalMs: 70_000 });
+    expect(job.lifetime).toMatchObject({ maxMs: 70_000, extended: true });
+    expect(timers.delays).toHaveLength(2);
+    expect(timers.pending()).toHaveLength(1);
+    expect(jobs.extend(job.id)).toEqual({ ok: false, reason: "already_extended" });
+    expect(jobs.extend("bg9")).toEqual({ ok: false, reason: "unknown" });
+    await jobs.stop(job.id);
+    expect(jobs.extend(job.id)).toEqual({ ok: false, reason: "not_running" });
+    expect(timers.pending()).toEqual([]);
   });
 });

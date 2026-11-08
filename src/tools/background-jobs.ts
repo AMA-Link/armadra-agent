@@ -4,8 +4,13 @@
  * - `start`：调用方（bash.ts）给出 `spawn(stdout)`——**进程只在 bash.ts 的 `spawnShell` 里创建**，
  *   这里只拿到 ChildProcess；stdout / stderr 直接写进 `outputPath`（文件描述符交给子进程，ama 退出也不
  *   会因管道断开而 SIGPIPE）。POSIX 自成进程组并登记（进程退出时同步 SIGKILL 残留组）。
+ * - [#266] `adopt`：把一个**已在运行**的前台进程登记为后台任务（不重启）；输出由调用方继续写进
+ *   `outputPath`（bash.ts 的 OutputAccumulator 落盘后逐块追加），这里只管生命周期与查询。
  * - `wait(id, timeoutMs)`：等到退出或超时；`stop(id)`：杀整棵树（SIGTERM → 宽限 → SIGKILL）；
  *   `output(id, options?)`：读输出文件尾部（缺省 2000 行 / 50 KB，调用方可传字节上限）。
+ * - [#267] 寿命上限：`maxMs > 0` 时从登记时刻（转后台的从转换时刻）起计时，到点按 stop 杀树、标 `expired`，
+ *   但**不**算已通知——提醒通道照常经 `takeExited` 告诉模型；`extend(id, ms)` 续命一次，增量封顶一个上限。
+ *   计时器可注入（`timers`，测试用手动时钟）。
  * - 生命周期事件经 `onChange` 发出（started / exited / stopped）；`takeExited()` 取走尚未通知的已退出
  *   任务（提醒通道 reminders.ts 据此告诉模型「后台命令 jobId 已退出（码 N）」）。
  * - 按会话 id 登记（`jobsForSession`）；`disposeSessionJobs` 在会话 dispose 时回收进程树。
@@ -22,9 +27,17 @@ import {
   untrackProcessGroup,
   type ProcessDeps,
 } from "./process-tree.js";
+import { REAL_TIMERS, type TimeoutTimers } from "./timers.js";
 import { truncateTail, type TruncateOptions, type TruncateResult } from "./truncate.js";
 
 export type JobStatus = "running" | "exited" | "stopped";
+
+/** [#267] 寿命上限：从 `since`（登记时刻；转后台的 = 转换时刻）起 `maxMs`（含续命增量）；`extended` 后不能再续。 */
+export interface JobLifetime {
+  maxMs: number;
+  extended: boolean;
+  since: number;
+}
 
 export interface Job {
   id: string;
@@ -37,19 +50,43 @@ export interface Job {
   /** 退出码（信号退出为 128 + signo）；运行中 undefined。 */
   exitCode?: number;
   endedAt?: number;
+  /** [#266] 由前台命令转来（不重启进程）。 */
+  moved?: true;
+  /** [#267] 寿命上限；不设 = 不限。 */
+  lifetime?: JobLifetime;
+  /** [#267] 到达寿命上限被停止。 */
+  expired?: true;
 }
 
-export interface JobStartOptions {
+interface JobCommonOptions {
   cwd: string;
   outputPath: string;
+  processDeps?: ProcessDeps;
+  /** [#267] 寿命上限（毫秒）；0 / 不设 = 不限。 */
+  maxMs?: number;
+  /** [#267] 寿命计时器（测试注入）。 */
+  timers?: TimeoutTimers;
+}
+
+export interface JobStartOptions extends JobCommonOptions {
   /** 用给定的输出文件描述符启动进程（bash.ts 的 spawnShell）。 */
   spawn(outputFd: number): ChildProcess;
-  processDeps?: ProcessDeps;
+}
+
+export interface JobAdoptOptions extends JobCommonOptions {
+  /** 已在运行的进程（bash.ts 前台启动的）。 */
+  child: ChildProcess;
+  startedAt: number;
 }
 
 export type JobChange = { phase: "started" | "exited" | "stopped"; job: Job };
 
-/** 后台 bash 的查询形状：`{ job, action: wait | stop | output }`，不带 command。 */
+/** [#267] `extend` 的结果。 */
+export type ExtendOutcome =
+  | { ok: true; addedMs: number; totalMs: number }
+  | { ok: false; reason: "unknown" | "not_running" | "no_cap" | "already_extended" };
+
+/** 后台 bash 的查询形状：`{ job, action: wait | stop | output | extend }`，不带 command。 */
 export function isBackgroundJobQuery(toolName: string, input: unknown): boolean {
   if (toolName !== "bash" || typeof input !== "object" || input === null) return false;
   const record = input as { command?: unknown; job?: unknown };
@@ -62,6 +99,8 @@ interface Entry {
   notified: boolean;
   stopping: boolean;
   processDeps: ProcessDeps | undefined;
+  timers: TimeoutTimers;
+  lifetimeTimer?: unknown;
 }
 
 export class BackgroundJobs {
@@ -78,16 +117,34 @@ export class BackgroundJobs {
     } finally {
       closeSync(fd);
     }
+    return this.register(child, command, Date.now(), options, false);
+  }
+
+  /** [#266] 登记一个已在运行的前台进程（输出文件由调用方继续写）。 */
+  adopt(command: string, options: JobAdoptOptions): Job {
+    return this.register(options.child, command, options.startedAt, options, true);
+  }
+
+  private register(
+    child: ChildProcess,
+    command: string,
+    startedAt: number,
+    options: JobCommonOptions,
+    moved: boolean,
+  ): Job {
     const id = `bg${++this.seq}`;
     const job: Job = {
       id,
       command,
       cwd: options.cwd,
       outputPath: options.outputPath,
-      startedAt: Date.now(),
+      startedAt,
       status: "running",
     };
+    if (moved) job.moved = true;
     if (child.pid !== undefined) job.pid = child.pid;
+    const maxMs = options.maxMs ?? 0;
+    if (maxMs > 0) job.lifetime = { maxMs, extended: false, since: Date.now() };
     const isWindows = (options.processDeps?.platform ?? process.platform) === "win32";
     if (job.pid !== undefined && !isWindows) trackProcessGroup(job.pid);
     const entry: Entry = {
@@ -95,9 +152,11 @@ export class BackgroundJobs {
       notified: false,
       stopping: false,
       processDeps: options.processDeps,
+      timers: options.timers ?? REAL_TIMERS,
       done: new Promise<void>((resolve) => {
         const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
           if (job.status !== "running") return resolve();
+          this.clearLifetime(entry);
           job.exitCode = exitCodeOf(code, signal);
           job.endedAt = Date.now();
           job.status = entry.stopping ? "stopped" : "exited";
@@ -113,6 +172,7 @@ export class BackgroundJobs {
     };
     child.unref();
     this.entries.set(id, entry);
+    if (maxMs > 0) this.armLifetime(entry, maxMs);
     this.notify({ phase: "started", job });
     return job;
   }
@@ -149,12 +209,29 @@ export class BackgroundJobs {
     const entry = this.entries.get(id);
     if (entry === undefined) return undefined;
     if (entry.job.status !== "running") return entry.job;
-    entry.stopping = true;
     // 已经由调用方知道结果：停止的任务不再经提醒通道通知
     entry.notified = true;
-    if (entry.job.pid !== undefined) await killProcessTree(entry.job.pid, entry.processDeps);
-    await entry.done;
+    await this.kill(entry);
     return entry.job;
+  }
+
+  /** [#267] 续命一次：加 `min(ms, maxMs)`（ms 不给 = 一个上限）。 */
+  extend(id: string, ms?: number): ExtendOutcome {
+    const entry = this.entries.get(id);
+    if (entry === undefined) return { ok: false, reason: "unknown" };
+    const { job } = entry;
+    if (job.status !== "running") return { ok: false, reason: "not_running" };
+    const lifetime = job.lifetime;
+    if (lifetime === undefined) return { ok: false, reason: "no_cap" };
+    if (lifetime.extended) return { ok: false, reason: "already_extended" };
+    const cap = lifetime.maxMs;
+    const addedMs = Math.min(Math.max(ms ?? cap, 1), cap);
+    lifetime.extended = true;
+    lifetime.maxMs = cap + addedMs;
+    // 重新起计时器：剩余时间 + 增量（用已知的截止时刻算，不读墙钟以外的状态）
+    this.clearLifetime(entry);
+    this.armLifetime(entry, Math.max(0, lifetime.since + lifetime.maxMs - Date.now()));
+    return { ok: true, addedMs, totalMs: lifetime.maxMs };
   }
 
   /** 输出文件尾部（缺省 2000 行 / 50 KB；调用方可传字节上限，#155）。 */
@@ -201,6 +278,28 @@ export class BackgroundJobs {
   async disposeAll(): Promise<void> {
     await Promise.all([...this.entries.keys()].map((id) => this.stop(id).catch(() => undefined)));
     this.listeners.clear();
+  }
+
+  private armLifetime(entry: Entry, ms: number): void {
+    entry.lifetimeTimer = entry.timers.set(() => {
+      entry.lifetimeTimer = undefined;
+      if (entry.job.status !== "running") return;
+      // 到点按 stop 处理，但模型不知道：保留 notified = false，提醒通道会报「寿命上限」
+      entry.job.expired = true;
+      void this.kill(entry);
+    }, ms);
+  }
+
+  private clearLifetime(entry: Entry): void {
+    if (entry.lifetimeTimer === undefined) return;
+    entry.timers.clear(entry.lifetimeTimer);
+    entry.lifetimeTimer = undefined;
+  }
+
+  private async kill(entry: Entry): Promise<void> {
+    entry.stopping = true;
+    if (entry.job.pid !== undefined) await killProcessTree(entry.job.pid, entry.processDeps);
+    await entry.done;
   }
 
   private notify(change: JobChange): void {
