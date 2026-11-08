@@ -405,6 +405,61 @@ describe("RPC set_permission_mode", () => {
   });
 });
 
+/** [#271] auto 下等分类器期间切模式：请求还没进链，进链前按新模式补判。 */
+describe("RPC set_permission_mode：分类器未归时切模式", () => {
+  /** 分类器的回答停在闸门 `classify` 上（fake 供应商按顺序消费脚本，分类请求拿到第二条）。 */
+  const classified = (command: string): FakeResponse[] => [
+    { steps: [{ toolCall: { name: "bash", arguments: { command } } }] },
+    { gate: "classify", text: '{"decision":"ask","reason":"unknown script"}' },
+    { text: "after" },
+  ];
+  const classifying = (d: Driver): boolean =>
+    d.lines.some((l) => l["type"] === "tool_execution_start") &&
+    !d.lines.some((l) => l["type"] === "permission_request");
+
+  it("切到 full-auto：不弹审批直接执行", async () => {
+    const { lines } = await drive(classified("echo classify-me"), async (d) => {
+      d.send({ type: "set_client_capabilities", capabilities: ["approvals"] });
+      d.send({ id: "m0", type: "set_permission_mode", mode: "auto" });
+      await d.waitFor((l) => l["id"] === "m0");
+      d.send({ type: "prompt", message: "go" });
+      await d.waitFor(() => classifying(d), "classifier pending");
+      d.send({ type: "set_permission_mode", mode: "full-auto" });
+      await d.waitFor((l) => l["type"] === "permission_mode_changed" && l["mode"] === "full-auto");
+      h.fake.release("classify");
+      await d.waitFor(settled);
+    });
+    expect(lines.filter(isRequest)).toEqual([]);
+    const end = lines.find((l) => l["type"] === "tool_execution_end") as {
+      isError: boolean;
+      result: { content: string };
+    };
+    expect(end.isError).toBe(false);
+    expect(end.result.content).toContain("classify-me");
+  });
+
+  it("切到 plan：不弹审批直接拒绝，说明写明切换", async () => {
+    const { lines } = await drive(classified("node scripts/gen.js"), async (d) => {
+      d.send({ type: "set_client_capabilities", capabilities: ["approvals"] });
+      d.send({ id: "m0", type: "set_permission_mode", mode: "auto" });
+      await d.waitFor((l) => l["id"] === "m0");
+      d.send({ type: "prompt", message: "go" });
+      await d.waitFor(() => classifying(d), "classifier pending");
+      d.send({ type: "set_permission_mode", mode: "plan" });
+      await d.waitFor((l) => l["type"] === "permission_mode_changed" && l["mode"] === "plan");
+      h.fake.release("classify");
+      await d.waitFor(settled);
+    });
+    expect(lines.filter(isRequest)).toEqual([]);
+    const end = lines.find((l) => l["type"] === "tool_execution_end") as {
+      isError: boolean;
+      result: { content: string };
+    };
+    expect(end.isError).toBe(true);
+    expect(end.result.content).toContain('switched to "plan"');
+  });
+});
+
 describe("RPC get_session_stats.cache [W3-C2]", () => {
   it("形状：三态、最近 / 会话命中率、未命中按原因、保温状态、余量；未命中与余量事件在流里", async () => {
     sharedCacheReporting.clear();

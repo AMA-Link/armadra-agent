@@ -24,6 +24,7 @@ import type {
   Decision,
   ModeReevaluationOutcome,
   PermissionCheckInput,
+  PermissionMode,
   PermissionRequestContext,
 } from "../permissions/types.js";
 import type { ToolContext, ToolResult } from "../tools/types.js";
@@ -204,6 +205,7 @@ export async function gateToolCall(
   let denyMessage: string | undefined;
   let autoDecision: AutoDecision | undefined;
   let checkInputFor: PermissionCheckInput | undefined;
+  let modeAtCheck: PermissionMode | undefined;
   if (permission !== undefined) {
     const checkInput: PermissionCheckInput = {
       toolName: call.name,
@@ -214,6 +216,7 @@ export async function gateToolCall(
     if (hookDecision !== undefined) checkInput.hookDecision = hookDecision;
     if (hookReason !== undefined) checkInput.hookReason = hookReason;
     checkInputFor = checkInput;
+    modeAtCheck = permission.mode;
     const verdict = permission.check(checkInput);
     decision = verdict.decision;
     approvalReason = verdict.approvalReason ?? "mode";
@@ -260,8 +263,24 @@ export async function gateToolCall(
     if (hookReason !== undefined) request.hookReason = hookReason;
     if (autoDecision !== undefined) request.autoDecision = autoDecision;
     // [#271] 切换权限模式时按新模式重判同一调用（Hook 决策沿用、不调分类器：classify 仍算 ask）
-    if (permission !== undefined && checkInputFor !== undefined)
+    if (permission !== undefined && checkInputFor !== undefined) {
       request.reevaluation = { check: () => permission.check(checkInputFor) };
+      // 等分类器期间切了模式（请求还没进链、链补判不到）：进链前按新模式同步再判一次
+      if (permission.mode !== modeAtCheck) {
+        const again = request.reevaluation.check();
+        if (again.decision !== "ask") {
+          const outcome: ModeReevaluationOutcome = {
+            mode: permission.mode,
+            decision: again.decision,
+          };
+          if (again.message !== undefined) outcome.message = again.message;
+          request.reevaluation.outcome = outcome;
+          if (again.decision === "deny")
+            return withAuto({ block: true, reason: modeChangedDenial(call.name, outcome) });
+          return withAuto(replaced ? { input } : {});
+        }
+      }
+    }
     const preview = safePreview(core, request);
     if (preview !== undefined) request.preview = preview;
     const answer = await requestApproval(core, request, ctx.signal);
