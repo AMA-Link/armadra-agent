@@ -87,7 +87,14 @@ describe("createRuntimeDeps + bootstrap", () => {
       tools: { preset: "minimal", default: ["+task", "-bash"] },
     });
     // [W5-C0] task_ctl 随 task 暴露
-    expect((await names([])).tools).toEqual(["edit", "read", "task", "task_ctl", "write"]);
+    expect((await names([])).tools).toEqual([
+      "edit",
+      "read",
+      "report",
+      "task",
+      "task_ctl",
+      "write",
+    ]);
   });
 
   it("coordinator 预设带 task 时 task 缺省后台（#242）；default 预设 -p 仍前台", async () => {

@@ -30,14 +30,17 @@ const STRICT = detectSandboxCapability("25.0.0", new Set(["--permission"]));
 
 /**
  * 上限（token，字符 / 4）。codemode-only 原为 1775（实测 1752）；web_fetch 进内置工具后 `only` 模式要内联
- * 它的声明（+83，实测 1835），放宽到 1900（docs/design/design.md §9.1）。
+ * 它的声明（+83，实测 1835），放宽到 1900；[#269] 子 Agent 的 `report` 工具是 task 的伴随工具，父子会话的
+ * 工具表都有它（子会话工具表与父逐字节一致才能复用缓存前缀），`only` 模式内联它的声明（+76，实测 1911），
+ * 放宽到 1950（docs/design/design.md §9.1）。
  */
-const PROMPT_BUDGETS = { default: 2000, minimal: 800, "codemode-only": 1900 } as const;
+const PROMPT_BUDGETS = { default: 2000, minimal: 800, "codemode-only": 1950 } as const;
 /**
  * default + task（`tools.default: ["+task"]`，按需打开）：task 描述带子 Agent 类型清单，加上 web_fetch 后
- * 实测 -p 2099 / 交互 2116（原 1980 / 1997，紧贴 2000），单列一档，与 default+memory 同理。
+ * 实测 -p 2099 / 交互 2116（原 1980 / 1997，紧贴 2000），单列一档，与 default+memory 同理；[#269] `report`
+ * 随 task 进表（描述、schema 与 tools 节一行），实测 -p 2203 / 交互 2220，放宽到 2250。
  */
-const TASK_BUDGET = 2150;
+const TASK_BUDGET = 2250;
 /** [W6-M] 记忆开启时 default 预设的上限（docs/history/wave6-plan.md §3.6、§10）。 */
 const MEMORY_BUDGET = 2350;
 

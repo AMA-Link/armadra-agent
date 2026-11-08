@@ -256,7 +256,7 @@ describe("描述与缓存稳定", () => {
       "Your direct tools are callable here too, same arguments: bash, edit, glob, grep, read, web_fetch, write (tools.bash resolves to BashResult; the others to text).",
     );
     expect(text).toContain("interface BashResult");
-    expect(text).toContain("Callable only from scripts: ls, task, task_ctl, todo.");
+    expect(text).toContain("Callable only from scripts: ls, report, task, task_ctl, todo.");
     expect(text).not.toContain("declare const tools");
     expect(text).not.toMatch(/\b(bash|read|ls)\(args/);
     // 只依赖工具名：顺序无关、字节稳定
