@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## 0.17.1 (2026-11-10)
+
+### Maintenance
+
+- **Patch release aligned with the unified version**: no changes in the agent; the fixes in this patch are in the Armadra app.
+
 ## 0.17.0 (2026-11-10)
 
 ### Maintenance
