@@ -152,14 +152,6 @@
       }
     },
     {
-      "id": "claude-sonnet-4-5",
-      "promptCache": {
-        "short": 300,
-        "long": 3600,
-        "minTokens": 1024
-      }
-    },
-    {
       "id": "claude-haiku-4-5",
       "promptCache": {
         "short": 300,

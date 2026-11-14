@@ -34,7 +34,6 @@
     },
     {
       "id": "qwen3.7-max",
-      "maxTokens": 131072,
       "compat": {
         "supportsReasoningEffort": false
       }

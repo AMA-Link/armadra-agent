@@ -47,23 +47,6 @@
         "high": "high",
         "xhigh": null
       }
-    },
-    {
-      "id": "qwen/qwen3.6-27b",
-      "thinkingLevelMap": {
-        "off": "none",
-        "minimal": null,
-        "low": null,
-        "medium": null,
-        "high": "default",
-        "xhigh": null
-      }
-    },
-    {
-      "id": "llama-3.3-70b-versatile"
-    },
-    {
-      "id": "llama-3.1-8b-instant"
     }
   ]
 }
