@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 维护
+
+- **刷新 models.dev 快照（2026-11-13）**：去掉上游已下线模型的目录覆盖（Groq `qwen/qwen3.6-27b`、`llama-3.3-70b-versatile`、`llama-3.1-8b-instant`；Anthropic `claude-sonnet-4-5`；MiniMax M2.x，小模型改为 `MiniMax-M3.1-Flash`；火山引擎 `doubao-seed-2-0-code-preview-260215`）。`ama models discover` 对能经目录别名解析的中转 id 不再报「未匹配」。每周刷新作业在自检失败或开不出 PR 时判失败。
+
 ## 0.17.3（2026-11-13）
 
 ### 维护

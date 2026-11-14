@@ -2,6 +2,47 @@
   "api": "https://api.meta.ai/v1",
   "id": "meta",
   "models": {
+    "muse-ember-1.0": {
+      "canonical_model_id": "meta/muse-ember-1.0",
+      "cost": {
+        "cache_read": 0.004,
+        "context_over_200k": {
+          "cache_read": 0.012,
+          "input": 0.3,
+          "output": 1.5
+        },
+        "input": 0.1,
+        "output": 0.5,
+        "tiers": [
+          {
+            "cache_read": 0.012,
+            "input": 0.3,
+            "output": 1.5,
+            "tier": {
+              "size": 200000,
+              "type": "context"
+            }
+          }
+        ]
+      },
+      "family": "muse",
+      "limit": {
+        "context": 1048576,
+        "output": 524288
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ]
+      },
+      "name": "Muse Ember",
+      "reasoning": true,
+      "release_date": "2026-11-09"
+    },
     "muse-spark-1.1": {
       "canonical_model_id": "meta/muse-spark-1.1",
       "cost": {

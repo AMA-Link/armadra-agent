@@ -80,7 +80,7 @@ describe("[ME-D] 中转模型继承官方目录（D10）", () => {
 
   it("models.dev 不可用时窗口与输出上限取目录值（输出按 models.dev 口径封顶）", () => {
     const { entry, metadata } = enrichEntry({ id: "deepseek-v4-flash" }, none);
-    expect(entry.contextWindow).toBe(1_000_000);
+    expect(entry.contextWindow).toBe(1_048_576);
     expect(entry.maxTokens).toBe(MODELS_DEV_MAX_OUTPUT);
     expect(metadata.sources.contextWindow).toBe("catalog-alias");
     expect(metadata.sources.cost).toBe("default");

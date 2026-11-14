@@ -34,7 +34,7 @@ import {
   writeDiscoveredCache,
   type DiscoveredCacheModel,
 } from "../../ai/providers/discovered-cache.js";
-import { withCustomDefaults } from "../../ai/providers/catalog.js";
+import { catalogByAlias, withCustomDefaults } from "../../ai/providers/catalog.js";
 import { describeModelsDev, loadModelsDevIndex } from "../../ai/providers/models-dev-cache.js";
 import { matchLabel, modelsDevFields } from "../../ai/providers/models-dev.js";
 import type { Api, Model, ProviderData, ProviderRegistryApi } from "../../ai/types.js";
@@ -272,7 +272,12 @@ async function run(ctx: ModelsActionContext): Promise<number> {
   const unmatched = new Set<string>();
   for (const model of found) {
     const known = configured.get(model.id);
-    const match = mdIndex.match(model.id);
+    // 目录别名指向官方条目时按它的快照 ref 再找一次：中转站的 id 在聚合源下架后，
+    // 运行时仍经别名继承窗口（enrich 的 catalog-alias），不该报「未匹配」
+    const aliasRef = catalogByAlias(model.id)?.snapshotRef;
+    const match =
+      mdIndex.match(model.id) ??
+      (aliasRef !== undefined ? mdIndex.match(model.id, aliasRef) : undefined);
     const fields = match !== undefined ? modelsDevFields(match.model) : undefined;
     if (fields?.toolCall === false) noTools.add(model.id);
     if (match === undefined) unmatched.add(model.id);

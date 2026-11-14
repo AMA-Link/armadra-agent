@@ -342,7 +342,7 @@ describe("新增内置供应商", () => {
     ["minimax/MiniMax-M3", "messages", "anthropic-messages", "https://api.minimax.cn/anthropic"],
     ["minimax/MiniMax-M3@responses", "responses", "openai-responses", "https://api.minimax.cn/v1"],
     [
-      "minimax/MiniMax-M2.7@messages-intl",
+      "minimax/MiniMax-M3@messages-intl",
       "messages-intl",
       "anthropic-messages",
       "https://api.minimax.io/anthropic",
@@ -372,10 +372,9 @@ describe("新增内置供应商", () => {
     expect(model(registry(), ref)).toMatchObject({ channel, api, baseUrl });
   });
 
-  it("目录按模型限定渠道：MiniMax M2.x 没有 Responses", () => {
+  it("目录按模型限定渠道：StepFun step-3.5-flash 没有 Responses", () => {
     const r = registry();
-    expect(model(r, "minimax/MiniMax-M2.7").channels).not.toContain("responses");
-    expect(r.findModel("minimax/MiniMax-M2.7@responses")).toMatchObject({
+    expect(r.findModel("stepfun/step-3.5-flash@responses")).toMatchObject({
       ok: false,
       reason: "channel_not_found",
     });
