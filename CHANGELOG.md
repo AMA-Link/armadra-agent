@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Maintenance
+
+- **models.dev snapshot refreshed (2026-11-13)**: catalog overrides for models removed upstream are dropped (Groq `qwen/qwen3.6-27b`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`; Anthropic `claude-sonnet-4-5`; MiniMax M2.x, small model now `MiniMax-M3.1-Flash`; Volcengine `doubao-seed-2-0-code-preview-260215`). `ama models discover` no longer warns "unmatched" for relay ids that resolve through a catalog alias. The weekly refresh workflow now fails when its CI check fails or the PR cannot be opened.
+
 ## 0.17.3 (2026-11-13)
 
 ### Maintenance
