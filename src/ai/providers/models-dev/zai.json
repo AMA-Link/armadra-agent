@@ -3,6 +3,7 @@
   "id": "zai",
   "models": {
     "glm-4.5": {
+      "canonical_model_id": "zhipuai/glm-4.5",
       "cost": {
         "cache_read": 0.11,
         "cache_write": 0,
@@ -10,6 +11,9 @@
         "output": 2.2
       },
       "family": "glm",
+      "interleaved": {
+        "field": "reasoning_content"
+      },
       "knowledge": "2025-04",
       "limit": {
         "context": 131072,
@@ -25,6 +29,7 @@
       "release_date": "2025-07-28"
     },
     "glm-4.5-air": {
+      "canonical_model_id": "zhipuai/glm-4.5-air",
       "cost": {
         "cache_read": 0.03,
         "cache_write": 0,
@@ -32,6 +37,9 @@
         "output": 1.1
       },
       "family": "glm-air",
+      "interleaved": {
+        "field": "reasoning_content"
+      },
       "knowledge": "2025-04",
       "limit": {
         "context": 131072,
@@ -47,6 +55,7 @@
       "release_date": "2025-07-28"
     },
     "glm-4.5-flash": {
+      "canonical_model_id": "zhipuai/glm-4.5-flash",
       "cost": {
         "cache_read": 0,
         "cache_write": 0,
@@ -54,6 +63,9 @@
         "output": 0
       },
       "family": "glm-flash",
+      "interleaved": {
+        "field": "reasoning_content"
+      },
       "knowledge": "2025-04",
       "limit": {
         "context": 131072,
@@ -69,11 +81,17 @@
       "release_date": "2025-07-28"
     },
     "glm-4.5v": {
+      "canonical_model_id": "zhipuai/glm-4.5v",
       "cost": {
+        "cache_read": 0.11,
+        "cache_write": 0,
         "input": 0.6,
         "output": 1.8
       },
       "family": "glm",
+      "interleaved": {
+        "field": "reasoning_content"
+      },
       "knowledge": "2025-04",
       "limit": {
         "context": 64000,
@@ -91,6 +109,7 @@
       "release_date": "2025-08-11"
     },
     "glm-4.6": {
+      "canonical_model_id": "zhipuai/glm-4.6",
       "cost": {
         "cache_read": 0.11,
         "cache_write": 0,
@@ -98,6 +117,9 @@
         "output": 2.2
       },
       "family": "glm",
+      "interleaved": {
+        "field": "reasoning_content"
+      },
       "knowledge": "2025-04",
       "limit": {
         "context": 204800,
@@ -113,11 +135,17 @@
       "release_date": "2025-09-30"
     },
     "glm-4.6v": {
+      "canonical_model_id": "zhipuai/glm-4.6v",
       "cost": {
+        "cache_read": 0.05,
+        "cache_write": 0,
         "input": 0.3,
         "output": 0.9
       },
       "family": "glm",
+      "interleaved": {
+        "field": "reasoning_content"
+      },
       "knowledge": "2025-04",
       "limit": {
         "context": 128000,
@@ -143,6 +171,9 @@
         "output": 0
       },
       "family": "glm-flash",
+      "interleaved": {
+        "field": "reasoning_content"
+      },
       "limit": {
         "context": 128000,
         "output": 32768
@@ -159,6 +190,7 @@
       "release_date": "2025-12-08"
     },
     "glm-4.7": {
+      "canonical_model_id": "zhipuai/glm-4.7",
       "cost": {
         "cache_read": 0.11,
         "cache_write": 0,
@@ -184,6 +216,7 @@
       "release_date": "2025-12-22"
     },
     "glm-4.7-flash": {
+      "canonical_model_id": "zhipuai/glm-4.7-flash",
       "cost": {
         "cache_read": 0,
         "cache_write": 0,
@@ -191,6 +224,9 @@
         "output": 0
       },
       "family": "glm-flash",
+      "interleaved": {
+        "field": "reasoning_content"
+      },
       "knowledge": "2025-04",
       "limit": {
         "context": 200000,
@@ -206,6 +242,7 @@
       "release_date": "2026-01-19"
     },
     "glm-4.7-flashx": {
+      "canonical_model_id": "zhipuai/glm-4.7-flashx",
       "cost": {
         "cache_read": 0.01,
         "cache_write": 0,
@@ -213,6 +250,9 @@
         "output": 0.4
       },
       "family": "glm-flash",
+      "interleaved": {
+        "field": "reasoning_content"
+      },
       "knowledge": "2025-04",
       "limit": {
         "context": 200000,
@@ -253,6 +293,7 @@
       "release_date": "2026-02-12"
     },
     "glm-5-turbo": {
+      "canonical_model_id": "zhipuai/glm-5-turbo",
       "cost": {
         "cache_read": 0.24,
         "cache_write": 0,
@@ -408,6 +449,7 @@
       "release_date": "2026-09-18"
     },
     "glm-5v-turbo": {
+      "canonical_model_id": "zhipuai/glm-5v-turbo",
       "cost": {
         "cache_read": 0.24,
         "cache_write": 0,

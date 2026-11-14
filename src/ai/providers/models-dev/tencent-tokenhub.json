@@ -47,6 +47,29 @@
       "reasoning": true,
       "release_date": "2026-04-20"
     },
+    "hy4": {
+      "canonical_model_id": "tencent/hy4",
+      "cost": {
+        "cache_read": 0.042,
+        "input": 0.834,
+        "output": 2.501
+      },
+      "family": "Hy",
+      "limit": {
+        "context": 1048576,
+        "input": 983010,
+        "output": 65536
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "name": "Hy4",
+      "reasoning": true,
+      "release_date": "2026-11-04"
+    },
     "hy4-preview": {
       "canonical_model_id": "tencent/hy4-preview",
       "cost": {

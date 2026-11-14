@@ -27,7 +27,7 @@
       "family": "gemini-pro",
       "knowledge": "2025-01",
       "limit": {
-        "context": 131072,
+        "context": 1048576,
         "output": 65536
       },
       "modalities": {
@@ -69,7 +69,7 @@
       "family": "gemini-pro",
       "knowledge": "2025-01",
       "limit": {
-        "context": 131072,
+        "context": 1048576,
         "output": 65536
       },
       "modalities": {
@@ -88,22 +88,8 @@
     "gemini-2.5-computer-use-preview-10-2025": {
       "canonical_model_id": "google/gemini-2.5-computer-use-preview-10-2025",
       "cost": {
-        "context_over_200k": {
-          "input": 2.5,
-          "output": 15
-        },
         "input": 1.25,
-        "output": 10,
-        "tiers": [
-          {
-            "input": 2.5,
-            "output": 15,
-            "tier": {
-              "size": 200000,
-              "type": "context"
-            }
-          }
-        ]
+        "output": 10
       },
       "family": "gemini-pro",
       "knowledge": "2025-01",
@@ -546,6 +532,58 @@
       "reasoning": true,
       "release_date": "2026-10-13"
     },
+    "gemini-4-carbon": {
+      "canonical_model_id": "google/gemini-4-carbon",
+      "cost": {
+        "cache_read": 0.1,
+        "input": 2,
+        "output": 10
+      },
+      "family": "gemini",
+      "knowledge": "2026-03",
+      "limit": {
+        "context": 1048576,
+        "output": 32768
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ]
+      },
+      "name": "Gemini 4 Carbon",
+      "reasoning": true,
+      "release_date": "2026-11-10"
+    },
+    "gemini-4-hydrogen": {
+      "canonical_model_id": "google/gemini-4-hydrogen",
+      "cost": {
+        "cache_read": 0.075,
+        "input": 1.5,
+        "output": 7.5
+      },
+      "family": "gemini",
+      "knowledge": "2026-03",
+      "limit": {
+        "context": 1048576,
+        "output": 65536
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ]
+      },
+      "name": "Gemini 4 Hydrogen",
+      "reasoning": true,
+      "release_date": "2026-11-12"
+    },
     "gemini-flash-latest": {
       "cost": {
         "cache_read": 0.075,
@@ -596,7 +634,53 @@
       "reasoning": true,
       "release_date": "2026-07-21"
     },
+    "gemini-pro-latest": {
+      "canonical_model_id": "google/gemini-3.1-pro-preview",
+      "cost": {
+        "cache_read": 0.2,
+        "context_over_200k": {
+          "cache_read": 0.4,
+          "input": 4,
+          "output": 18
+        },
+        "input": 2,
+        "output": 12,
+        "tiers": [
+          {
+            "cache_read": 0.4,
+            "input": 4,
+            "output": 18,
+            "tier": {
+              "size": 200000,
+              "type": "context"
+            }
+          }
+        ]
+      },
+      "family": "gemini-pro",
+      "knowledge": "2025-01",
+      "limit": {
+        "context": 1048576,
+        "output": 65536
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ]
+      },
+      "name": "Gemini Pro Latest",
+      "reasoning": true,
+      "release_date": "2026-02-19"
+    },
     "gemma-4-26b-a4b-it": {
+      "cost": {
+        "input": 0,
+        "output": 0
+      },
       "family": "gemma",
       "limit": {
         "context": 262144,
@@ -613,6 +697,10 @@
       "release_date": "2026-04-02"
     },
     "gemma-4-31b-it": {
+      "cost": {
+        "input": 0,
+        "output": 0
+      },
       "family": "gemma",
       "limit": {
         "context": 262144,

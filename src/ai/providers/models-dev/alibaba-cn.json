@@ -45,246 +45,11 @@
       "reasoning": true,
       "release_date": "2026-03-18"
     },
-    "deepseek-r1": {
-      "cost": {
-        "input": 0.574,
-        "output": 2.294
-      },
-      "family": "deepseek-thinking",
-      "limit": {
-        "context": 131072,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek R1",
-      "reasoning": true,
-      "release_date": "2025-01-01"
-    },
-    "deepseek-r1-0528": {
-      "cost": {
-        "input": 0.574,
-        "output": 2.294
-      },
-      "family": "deepseek-thinking",
-      "limit": {
-        "context": 131072,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek R1 0528",
-      "reasoning": true,
-      "release_date": "2025-05-28"
-    },
-    "deepseek-r1-distill-llama-70b": {
-      "cost": {
-        "input": 0.287,
-        "output": 0.861
-      },
-      "family": "deepseek-thinking",
-      "limit": {
-        "context": 32768,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek R1 Distill Llama 70B",
-      "reasoning": true,
-      "release_date": "2025-01-01"
-    },
-    "deepseek-r1-distill-llama-8b": {
-      "cost": {
-        "input": 0,
-        "output": 0
-      },
-      "family": "deepseek-thinking",
-      "limit": {
-        "context": 32768,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek R1 Distill Llama 8B",
-      "reasoning": true,
-      "release_date": "2025-01-01"
-    },
-    "deepseek-r1-distill-qwen-1-5b": {
-      "cost": {
-        "input": 0,
-        "output": 0
-      },
-      "family": "qwen",
-      "limit": {
-        "context": 32768,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek R1 Distill Qwen 1.5B",
-      "reasoning": true,
-      "release_date": "2025-01-01"
-    },
-    "deepseek-r1-distill-qwen-14b": {
-      "cost": {
-        "input": 0.144,
-        "output": 0.431
-      },
-      "family": "qwen",
-      "limit": {
-        "context": 32768,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek R1 Distill Qwen 14B",
-      "reasoning": true,
-      "release_date": "2025-01-01"
-    },
-    "deepseek-r1-distill-qwen-32b": {
-      "cost": {
-        "input": 0.287,
-        "output": 0.861
-      },
-      "family": "qwen",
-      "limit": {
-        "context": 32768,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek R1 Distill Qwen 32B",
-      "reasoning": true,
-      "release_date": "2025-01-01"
-    },
-    "deepseek-r1-distill-qwen-7b": {
-      "cost": {
-        "input": 0.072,
-        "output": 0.144
-      },
-      "family": "qwen",
-      "limit": {
-        "context": 32768,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek R1 Distill Qwen 7B",
-      "reasoning": true,
-      "release_date": "2025-01-01"
-    },
-    "deepseek-v3": {
-      "cost": {
-        "input": 0.287,
-        "output": 1.147
-      },
-      "family": "deepseek",
-      "limit": {
-        "context": 65536,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek V3",
-      "reasoning": false,
-      "release_date": "2024-12-01"
-    },
-    "deepseek-v3-1": {
-      "cost": {
-        "input": 0.574,
-        "output": 1.721
-      },
-      "family": "deepseek",
-      "limit": {
-        "context": 131072,
-        "output": 65536
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek V3.1",
-      "reasoning": false,
-      "release_date": "2025-01-01"
-    },
-    "deepseek-v3-2-exp": {
-      "cost": {
-        "input": 0.287,
-        "output": 0.431
-      },
-      "family": "deepseek",
-      "limit": {
-        "context": 131072,
-        "output": 65536
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek V3.2 Exp",
-      "reasoning": false,
-      "release_date": "2025-01-01"
-    },
-    "deepseek-v4-flash": {
-      "canonical_model_id": "deepseek/deepseek-v4-flash",
-      "cost": {
-        "cache_read": 0.0028,
-        "input": 0.14,
-        "output": 0.28
-      },
-      "family": "deepseek-flash",
-      "interleaved": {
-        "field": "reasoning_content"
-      },
-      "knowledge": "2025-05",
-      "limit": {
-        "context": 1000000,
-        "output": 384000
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "DeepSeek V4 Flash",
-      "reasoning": true,
-      "release_date": "2026-04-24"
-    },
     "deepseek-v4-pro": {
       "canonical_model_id": "deepseek/deepseek-v4-pro",
       "cost": {
-        "cache_read": 0.003625,
-        "input": 0.435,
-        "output": 0.87
+        "input": 1.65,
+        "output": 3.301
       },
       "family": "deepseek-thinking",
       "interleaved": {
@@ -364,11 +129,14 @@
     },
     "glm-5.1": {
       "cost": {
-        "cache_read": 0.17,
+        "cache_read": 0.165,
+        "cache_write": 1.03125,
         "input": 0.825,
         "output": 3.301,
         "tiers": [
           {
+            "cache_read": 0.22,
+            "cache_write": 1.375,
             "input": 1.1,
             "output": 3.851,
             "tier": {
@@ -445,32 +213,12 @@
       "reasoning": true,
       "release_date": "2026-08-14"
     },
-    "kimi-k2-thinking": {
-      "cost": {
-        "input": 0.574,
-        "output": 2.294
-      },
-      "family": "kimi-thinking",
-      "interleaved": {
-        "field": "reasoning_content"
-      },
-      "limit": {
-        "context": 262144,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Moonshot Kimi K2 Thinking",
-      "reasoning": true,
-      "release_date": "2025-11-06"
-    },
     "kimi-k2.5": {
       "cost": {
+        "cache_read": 0.1148,
+        "cache_write": 0.7175,
         "input": 0.574,
-        "output": 2.411
+        "output": 3.011
       },
       "family": "kimi-k2",
       "interleaved": {
@@ -494,6 +242,8 @@
     },
     "kimi-k2.6": {
       "cost": {
+        "cache_read": 0.1858,
+        "cache_write": 1.16125,
         "input": 0.929,
         "output": 3.858
       },
@@ -568,46 +318,6 @@
       "reasoning": true,
       "release_date": "2026-01-27"
     },
-    "moonshot-kimi-k2-instruct": {
-      "cost": {
-        "input": 0.574,
-        "output": 2.294
-      },
-      "family": "kimi-k2",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Moonshot Kimi K2 Instruct",
-      "reasoning": false,
-      "release_date": "2025-01-01"
-    },
-    "qvq-max": {
-      "cost": {
-        "input": 1.147,
-        "output": 4.588
-      },
-      "family": "qvq",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ]
-      },
-      "name": "QVQ Max",
-      "reasoning": true,
-      "release_date": "2025-03-25"
-    },
     "qwen-deep-research": {
       "cost": {
         "input": 7.742,
@@ -650,8 +360,32 @@
     },
     "qwen-flash": {
       "cost": {
+        "cache_read": 0.0044,
+        "cache_write": 0.0275,
         "input": 0.022,
-        "output": 0.216
+        "output": 0.216,
+        "tiers": [
+          {
+            "cache_read": 0.0174,
+            "cache_write": 0.10875,
+            "input": 0.087,
+            "output": 0.861,
+            "tier": {
+              "size": 128000,
+              "type": "context"
+            }
+          },
+          {
+            "cache_read": 0.0346,
+            "cache_write": 0.21625,
+            "input": 0.173,
+            "output": 1.721,
+            "tier": {
+              "size": 256000,
+              "type": "context"
+            }
+          }
+        ]
       },
       "family": "qwen",
       "knowledge": "2024-04",
@@ -667,66 +401,6 @@
       "name": "Qwen Flash",
       "reasoning": true,
       "release_date": "2025-07-28"
-    },
-    "qwen-long": {
-      "cost": {
-        "input": 0.072,
-        "output": 0.287
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 10000000,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen Long",
-      "reasoning": false,
-      "release_date": "2025-01-25"
-    },
-    "qwen-math-plus": {
-      "cost": {
-        "input": 0.574,
-        "output": 1.721
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 4096,
-        "output": 3072
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen Math Plus",
-      "reasoning": false,
-      "release_date": "2024-08-16"
-    },
-    "qwen-math-turbo": {
-      "cost": {
-        "input": 0.287,
-        "output": 0.861
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 4096,
-        "output": 3072
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen Math Turbo",
-      "reasoning": false,
-      "release_date": "2024-09-19"
     },
     "qwen-max": {
       "cost": {
@@ -748,57 +422,34 @@
       "reasoning": false,
       "release_date": "2024-04-03"
     },
-    "qwen-omni-turbo": {
-      "cost": {
-        "input": 0.058,
-        "output": 0.23
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 32768,
-        "output": 2048
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio",
-          "video"
-        ]
-      },
-      "name": "Qwen-Omni Turbo",
-      "reasoning": false,
-      "release_date": "2025-01-19"
-    },
-    "qwen-omni-turbo-realtime": {
-      "cost": {
-        "input": 0.23,
-        "output": 0.918
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 32768,
-        "output": 2048
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio"
-        ]
-      },
-      "name": "Qwen-Omni Turbo Realtime",
-      "reasoning": false,
-      "release_date": "2025-05-08"
-    },
     "qwen-plus": {
       "cost": {
-        "cache_read": 0.012,
+        "cache_read": 0.023,
         "cache_write": 0.144,
         "input": 0.115,
-        "output": 0.287
+        "output": 0.287,
+        "tiers": [
+          {
+            "cache_read": 0.069,
+            "cache_write": 0.43125,
+            "input": 0.345,
+            "output": 2.868,
+            "tier": {
+              "size": 128000,
+              "type": "context"
+            }
+          },
+          {
+            "cache_read": 0.1378,
+            "cache_write": 0.86125,
+            "input": 0.689,
+            "output": 6.881,
+            "tier": {
+              "size": 256000,
+              "type": "context"
+            }
+          }
+        ]
       },
       "family": "qwen",
       "knowledge": "2024-04",
@@ -815,473 +466,44 @@
       "reasoning": true,
       "release_date": "2024-01-25"
     },
-    "qwen-plus-character": {
-      "cost": {
-        "input": 0.115,
-        "output": 0.287
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 32768,
-        "output": 4096
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen Plus Character",
-      "reasoning": false,
-      "release_date": "2024-01"
-    },
-    "qwen-turbo": {
-      "cost": {
-        "input": 0.044,
-        "output": 0.087
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 1000000,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen Turbo",
-      "reasoning": true,
-      "release_date": "2024-11-01"
-    },
-    "qwen-vl-max": {
-      "cost": {
-        "input": 0.23,
-        "output": 0.574
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ]
-      },
-      "name": "Qwen-VL Max",
-      "reasoning": false,
-      "release_date": "2024-04-08"
-    },
-    "qwen-vl-plus": {
-      "cost": {
-        "input": 0.115,
-        "output": 0.287
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ]
-      },
-      "name": "Qwen-VL Plus",
-      "reasoning": false,
-      "release_date": "2024-01-25"
-    },
-    "qwen2-5-14b-instruct": {
-      "cost": {
-        "input": 0.144,
-        "output": 0.431
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen2.5 14B Instruct",
-      "reasoning": false,
-      "release_date": "2024-09"
-    },
-    "qwen2-5-32b-instruct": {
-      "cost": {
-        "input": 0.287,
-        "output": 0.861
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen2.5 32B Instruct",
-      "reasoning": false,
-      "release_date": "2024-09"
-    },
-    "qwen2-5-72b-instruct": {
-      "cost": {
-        "input": 0.574,
-        "output": 1.721
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen2.5 72B Instruct",
-      "reasoning": false,
-      "release_date": "2024-09"
-    },
-    "qwen2-5-7b-instruct": {
-      "cost": {
-        "input": 0.072,
-        "output": 0.144
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen2.5 7B Instruct",
-      "reasoning": false,
-      "release_date": "2024-09"
-    },
-    "qwen2-5-coder-32b-instruct": {
-      "cost": {
-        "input": 0.287,
-        "output": 0.861
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen2.5-Coder 32B Instruct",
-      "reasoning": false,
-      "release_date": "2024-11"
-    },
-    "qwen2-5-coder-7b-instruct": {
-      "cost": {
-        "input": 0.144,
-        "output": 0.287
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen2.5-Coder 7B Instruct",
-      "reasoning": false,
-      "release_date": "2024-11"
-    },
-    "qwen2-5-math-72b-instruct": {
-      "cost": {
-        "input": 0.574,
-        "output": 1.721
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 4096,
-        "output": 3072
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen2.5-Math 72B Instruct",
-      "reasoning": false,
-      "release_date": "2024-09"
-    },
-    "qwen2-5-math-7b-instruct": {
-      "cost": {
-        "input": 0.144,
-        "output": 0.287
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 4096,
-        "output": 3072
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen2.5-Math 7B Instruct",
-      "reasoning": false,
-      "release_date": "2024-09"
-    },
-    "qwen2-5-omni-7b": {
-      "cost": {
-        "input": 0.087,
-        "output": 0.345
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 32768,
-        "output": 2048
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio",
-          "video"
-        ]
-      },
-      "name": "Qwen2.5-Omni 7B",
-      "reasoning": false,
-      "release_date": "2024-12"
-    },
-    "qwen2-5-vl-72b-instruct": {
-      "cost": {
-        "input": 2.294,
-        "output": 6.881
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ]
-      },
-      "name": "Qwen2.5-VL 72B Instruct",
-      "reasoning": false,
-      "release_date": "2024-09"
-    },
-    "qwen2-5-vl-7b-instruct": {
-      "cost": {
-        "input": 0.287,
-        "output": 0.717
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ]
-      },
-      "name": "Qwen2.5-VL 7B Instruct",
-      "reasoning": false,
-      "release_date": "2024-09"
-    },
-    "qwen3-14b": {
-      "cost": {
-        "input": 0.144,
-        "output": 0.574
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3 14B",
-      "reasoning": true,
-      "release_date": "2025-04"
-    },
-    "qwen3-235b-a22b": {
-      "cost": {
-        "input": 0.287,
-        "output": 1.147
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 131072,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3 235B-A22B",
-      "reasoning": true,
-      "release_date": "2025-04"
-    },
-    "qwen3-32b": {
-      "cost": {
-        "input": 0.287,
-        "output": 1.147
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 131072,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3 32B",
-      "reasoning": true,
-      "release_date": "2025-04"
-    },
-    "qwen3-8b": {
-      "cost": {
-        "input": 0.072,
-        "output": 0.287
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3 8B",
-      "reasoning": true,
-      "release_date": "2025-04"
-    },
-    "qwen3-coder-30b-a3b-instruct": {
-      "cost": {
-        "input": 0.216,
-        "output": 0.861,
-        "tiers": [
-          {
-            "input": 0.323,
-            "output": 1.291,
-            "tier": {
-              "size": 32000,
-              "type": "context"
-            }
-          },
-          {
-            "input": 0.538,
-            "output": 2.151,
-            "tier": {
-              "size": 128000,
-              "type": "context"
-            }
-          }
-        ]
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 262144,
-        "output": 65536
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3-Coder 30B-A3B Instruct",
-      "reasoning": false,
-      "release_date": "2025-04"
-    },
-    "qwen3-coder-480b-a35b-instruct": {
-      "cost": {
-        "input": 0.861,
-        "output": 3.441,
-        "tiers": [
-          {
-            "input": 1.291,
-            "output": 5.161,
-            "tier": {
-              "size": 32000,
-              "type": "context"
-            }
-          },
-          {
-            "input": 2.151,
-            "output": 8.602,
-            "tier": {
-              "size": 128000,
-              "type": "context"
-            }
-          }
-        ]
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 262144,
-        "output": 65536
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3-Coder 480B-A35B Instruct",
-      "reasoning": false,
-      "release_date": "2025-04"
-    },
     "qwen3-coder-flash": {
       "cost": {
+        "cache_read": 0.0288,
+        "cache_write": 0.18,
         "input": 0.144,
-        "output": 0.574
+        "output": 0.574,
+        "tiers": [
+          {
+            "cache_read": 0.0432,
+            "cache_write": 0.27,
+            "input": 0.216,
+            "output": 0.861,
+            "tier": {
+              "size": 32000,
+              "type": "context"
+            }
+          },
+          {
+            "cache_read": 0.0718,
+            "cache_write": 0.44875,
+            "input": 0.359,
+            "output": 1.434,
+            "tier": {
+              "size": 128000,
+              "type": "context"
+            }
+          },
+          {
+            "cache_read": 0.1434,
+            "cache_write": 0.89625,
+            "input": 0.717,
+            "output": 3.584,
+            "tier": {
+              "size": 256000,
+              "type": "context"
+            }
+          }
+        ]
       },
       "family": "qwen",
       "knowledge": "2025-04",
@@ -1298,137 +520,10 @@
       "reasoning": false,
       "release_date": "2025-07-28"
     },
-    "qwen3-coder-plus": {
-      "cost": {
-        "input": 0.574,
-        "output": 2.296,
-        "tiers": [
-          {
-            "input": 0.861,
-            "output": 3.444,
-            "tier": {
-              "size": 32000,
-              "type": "context"
-            }
-          },
-          {
-            "input": 1.435,
-            "output": 5.74,
-            "tier": {
-              "size": 128000,
-              "type": "context"
-            }
-          },
-          {
-            "input": 2.87,
-            "output": 28.7,
-            "tier": {
-              "size": 256000,
-              "type": "context"
-            }
-          }
-        ]
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 1048576,
-        "output": 65536
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3 Coder Plus",
-      "reasoning": false,
-      "release_date": "2025-07-23"
-    },
-    "qwen3-max": {
-      "cost": {
-        "input": 0.359,
-        "output": 1.434,
-        "tiers": [
-          {
-            "input": 0.574,
-            "output": 2.294,
-            "tier": {
-              "size": 32000,
-              "type": "context"
-            }
-          },
-          {
-            "input": 1.004,
-            "output": 4.014,
-            "tier": {
-              "size": 128000,
-              "type": "context"
-            }
-          }
-        ]
-      },
-      "family": "qwen",
-      "interleaved": {
-        "field": "reasoning_content"
-      },
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 262144,
-        "output": 65536
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3 Max",
-      "reasoning": true,
-      "release_date": "2026-01-23"
-    },
-    "qwen3-next-80b-a3b-instruct": {
-      "cost": {
-        "input": 0.144,
-        "output": 0.574
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 131072,
-        "output": 32768
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3-Next 80B-A3B Instruct",
-      "reasoning": false,
-      "release_date": "2025-09"
-    },
-    "qwen3-next-80b-a3b-thinking": {
-      "cost": {
-        "input": 0.144,
-        "output": 1.434
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 131072,
-        "output": 32768
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3-Next 80B-A3B (Thinking)",
-      "reasoning": true,
-      "release_date": "2025-09"
-    },
     "qwen3-omni-flash": {
       "cost": {
-        "input": 0.058,
-        "output": 0.23
+        "input": 0.258,
+        "output": 0.989
       },
       "family": "qwen",
       "knowledge": "2024-04",
@@ -1448,74 +543,34 @@
       "reasoning": true,
       "release_date": "2025-09-15"
     },
-    "qwen3-omni-flash-realtime": {
-      "cost": {
-        "input": 0.23,
-        "output": 0.918
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 65536,
-        "output": 16384
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio"
-        ]
-      },
-      "name": "Qwen3-Omni Flash Realtime",
-      "reasoning": false,
-      "release_date": "2025-09-15"
-    },
-    "qwen3-vl-235b-a22b": {
-      "cost": {
-        "input": 0.286705,
-        "output": 1.14682
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 131072,
-        "output": 32768
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ]
-      },
-      "name": "Qwen3-VL 235B-A22B",
-      "reasoning": true,
-      "release_date": "2025-04"
-    },
-    "qwen3-vl-30b-a3b": {
-      "cost": {
-        "input": 0.108,
-        "output": 0.431
-      },
-      "family": "qwen",
-      "knowledge": "2025-04",
-      "limit": {
-        "context": 131072,
-        "output": 32768
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ]
-      },
-      "name": "Qwen3-VL 30B-A3B",
-      "reasoning": true,
-      "release_date": "2025-04"
-    },
     "qwen3-vl-plus": {
       "cost": {
+        "cache_read": 0.028671,
+        "cache_write": 0.179191,
         "input": 0.143353,
-        "output": 1.433525
+        "output": 1.433525,
+        "tiers": [
+          {
+            "cache_read": 0.043,
+            "cache_write": 0.26875,
+            "input": 0.215,
+            "output": 2.15,
+            "tier": {
+              "size": 32000,
+              "type": "context"
+            }
+          },
+          {
+            "cache_read": 0.086,
+            "cache_write": 0.5375,
+            "input": 0.43,
+            "output": 4.301,
+            "tier": {
+              "size": 128000,
+              "type": "context"
+            }
+          }
+        ]
       },
       "family": "qwen",
       "knowledge": "2025-04",
@@ -1654,9 +709,28 @@
     "qwen3.6-flash": {
       "canonical_model_id": "alibaba/qwen3.6-flash",
       "cost": {
-        "cache_write": 0.234375,
-        "input": 0.1875,
-        "output": 1.125
+        "cache_read": 0.0165,
+        "cache_write": 0.20625,
+        "context_over_200k": {
+          "cache_read": 0.066,
+          "cache_write": 0.825,
+          "input": 0.66,
+          "output": 3.961
+        },
+        "input": 0.165,
+        "output": 0.99,
+        "tiers": [
+          {
+            "cache_read": 0.066,
+            "cache_write": 0.825,
+            "input": 0.66,
+            "output": 3.961,
+            "tier": {
+              "size": 256000,
+              "type": "context"
+            }
+          }
+        ]
       },
       "family": "qwen3.6",
       "limit": {
@@ -1674,44 +748,24 @@
       "reasoning": true,
       "release_date": "2026-04-27"
     },
-    "qwen3.6-max-preview": {
-      "cost": {
-        "cache_read": 0.132,
-        "input": 1.32,
-        "output": 7.9
-      },
-      "family": "qwen",
-      "limit": {
-        "context": 245800,
-        "output": 65536
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "Qwen3.6 Max Preview",
-      "reasoning": true,
-      "release_date": "2026-04-20"
-    },
     "qwen3.6-plus": {
       "cost": {
-        "cache_read": 0.05,
-        "cache_write": 0.625,
+        "cache_read": 0.0276,
+        "cache_write": 0.345,
         "context_over_200k": {
-          "cache_read": 0.2,
-          "cache_write": 2.5,
-          "input": 2,
-          "output": 6
+          "cache_read": 0.1101,
+          "cache_write": 1.37625,
+          "input": 1.101,
+          "output": 6.602
         },
-        "input": 0.5,
-        "output": 3,
+        "input": 0.276,
+        "output": 1.651,
         "tiers": [
           {
-            "cache_read": 0.2,
-            "cache_write": 2.5,
-            "input": 2,
-            "output": 6,
+            "cache_read": 0.1101,
+            "cache_write": 1.37625,
+            "input": 1.101,
+            "output": 6.602,
             "tier": {
               "size": 256000,
               "type": "context"
@@ -1739,13 +793,13 @@
     "qwen3.7-flash": {
       "canonical_model_id": "alibaba/qwen3.7-flash",
       "cost": {
-        "cache_read": 0.002962,
+        "cache_read": 0.005924,
         "cache_write": 0.03703,
         "input": 0.02962,
         "output": 0.1185,
         "tiers": [
           {
-            "cache_read": 0.008887,
+            "cache_read": 0.017774,
             "cache_write": 0.11109,
             "input": 0.08887,
             "output": 0.35549,
@@ -1755,7 +809,7 @@
             }
           },
           {
-            "cache_read": 0.017774,
+            "cache_read": 0.035548,
             "cache_write": 0.22218,
             "input": 0.17774,
             "output": 0.71098,
@@ -1786,15 +840,15 @@
     "qwen3.7-max": {
       "canonical_model_id": "alibaba/qwen3.7-max",
       "cost": {
-        "cache_read": 0.5,
-        "cache_write": 3.125,
-        "input": 2.5,
-        "output": 7.5
+        "cache_read": 0.33,
+        "cache_write": 2.0625,
+        "input": 1.65,
+        "output": 4.951
       },
       "family": "qwen",
       "limit": {
         "context": 1000000,
-        "output": 65536
+        "output": 131072
       },
       "modalities": {
         "input": [
@@ -1808,18 +862,24 @@
     "qwen3.7-plus": {
       "canonical_model_id": "alibaba/qwen3.7-plus",
       "cost": {
-        "cache_read": 0.05,
-        "cache_write": 0.625,
-        "input": 0.5,
-        "output": 3,
+        "cache_read": 0.0552,
+        "cache_write": 0.345,
+        "context_over_200k": {
+          "cache_read": 0.1652,
+          "cache_write": 1.0325,
+          "input": 0.826,
+          "output": 3.301
+        },
+        "input": 0.276,
+        "output": 1.101,
         "tiers": [
           {
-            "cache_read": 0.2,
-            "cache_write": 2.5,
-            "input": 2,
-            "output": 6,
+            "cache_read": 0.1652,
+            "cache_write": 1.0325,
+            "input": 0.826,
+            "output": 3.301,
             "tier": {
-              "size": 128000,
+              "size": 256000,
               "type": "context"
             }
           }
@@ -1845,8 +905,8 @@
     "qwen3.8-flash": {
       "canonical_model_id": "alibaba/qwen3.8-flash",
       "cost": {
-        "cache_read": 0.01187,
-        "cache_write": 0.14844,
+        "cache_read": 0.014844,
+        "cache_write": 0.185547,
         "input": 0.11875,
         "output": 0.40073
       },
@@ -1923,46 +983,6 @@
       "name": "Qwen3.8 Omni Flash",
       "reasoning": true,
       "release_date": "2026-09-17"
-    },
-    "qwq-32b": {
-      "cost": {
-        "input": 0.287,
-        "output": 0.861
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "QwQ 32B",
-      "reasoning": true,
-      "release_date": "2024-12"
-    },
-    "qwq-plus": {
-      "cost": {
-        "input": 0.23,
-        "output": 0.574
-      },
-      "family": "qwen",
-      "knowledge": "2024-04",
-      "limit": {
-        "context": 131072,
-        "output": 8192
-      },
-      "modalities": {
-        "input": [
-          "text"
-        ]
-      },
-      "name": "QwQ Plus",
-      "reasoning": true,
-      "release_date": "2025-03-05"
     },
     "siliconflow/deepseek-r1-0528": {
       "cost": {
