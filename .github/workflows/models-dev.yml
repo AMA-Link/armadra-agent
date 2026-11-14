@@ -137,3 +137,13 @@ jobs:
             echo "- 手动开 PR：$url"
             echo "- 根治：Settings → Actions → General 勾选「Allow GitHub Actions to create and approve pull requests」，或配置 secret \`MODELS_DEV_PR_TOKEN\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # 自检失败或 PR 没开成：分支与提示照留，但运行本身判失败，免得每周「成功」却没有快照合入
+      - name: fail when not landed
+        if: steps.ci.outcome == 'failure' || steps.pr.outcome == 'failure'
+        env:
+          CI_OUTCOME: ${{ steps.ci.outcome }}
+          PR_OUTCOME: ${{ steps.pr.outcome }}
+        run: |
+          echo "::error title=models-dev 未完成::pnpm run ci=$CI_OUTCOME，create PR=$PR_OUTCOME"
+          exit 1
