@@ -475,6 +475,11 @@ export interface StreamOptions {
   cacheRetention?: CacheRetention;
   sessionId?: string;
   /**
+   * 服务端线程键（Anthropic message threads），缺省 `sessionId`。fork 会话与根会话共用提示缓存键
+   * （`sessionId`），但各用自己的线程键，各续各的线程。
+   */
+  threadKey?: string;
+  /**
    * 本次请求不使用、也不替换服务端的续接状态（Anthropic message threads）。重放或重复上一条请求的
    * 调用（缓存保温、压缩摘要）必须置位，否则会占掉真实回合的续接点。
    */

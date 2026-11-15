@@ -380,6 +380,10 @@ describe("设置、TTL 与缓存键", () => {
     expect(cacheKeyOf(forked.manager)).toBe(h.manager.id);
     await forked.prompt("again");
     expect(h.scripted.calls.at(-1)!.options.sessionId).toBe(h.manager.id);
+    // fork 会话各用自己的线程键，不再禁用续接
+    expect(h.scripted.calls.at(-1)!.options.threadKey).toBe(forked.manager.id);
+    expect(h.scripted.calls.at(-1)!.options.disableContinuation).toBeUndefined();
+    expect(h.scripted.calls[0]!.options.threadKey).toBe(h.manager.id);
     const anchor2 = forked.manager.entries().at(-1)!;
     const second = await forked.fork(anchor2.id);
     expect(cacheKeyOf(second.manager)).toBe(h.manager.id);
