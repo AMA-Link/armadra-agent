@@ -38,11 +38,14 @@ import {
   buildAnthropicRequest,
   convertMessages,
   detectAnthropicCompat,
+  MESSAGE_THREADS_BETA,
 } from "./anthropic-request.js";
 import {
   prepareThread,
   recordThreadReply,
   sendThreadRequest,
+  threadEndpointKey,
+  threadsDisabled,
   type ThreadContext,
   type ThreadRequest,
 } from "./anthropic-threads.js";
@@ -205,6 +208,16 @@ async function run(
   const tracker = new BlockTracker(stream, createOutput(model));
   try {
     const request = buildAnthropicRequest(model, context, options);
+    const endpointBase = model.baseUrl ?? "https://api.anthropic.com";
+    const threadKey = options.threadKey ?? options.sessionId;
+    // 端点或会话已确认不支持线程：连 beta 头一起去掉（保温 / 摘要重放同样，头与真实回合一致）
+    if (
+      request.threads &&
+      threadsDisabled(threadEndpointKey(model.provider, endpointBase, model.id), threadKey)
+    ) {
+      request.threads = false;
+      request.betas = request.betas.filter((beta) => beta !== MESSAGE_THREADS_BETA);
+    }
     tracker.output.thinkingLevel = request.thinkingLevel;
     if (request.providerThinkingLevel !== undefined) {
       tracker.output.providerThinkingLevel = request.providerThinkingLevel;
@@ -224,8 +237,25 @@ async function run(
       idleTimeoutMs: idleTimeoutOf(options),
       onResponse: options.onResponse,
     };
-    const send = (next: unknown) =>
-      postWithMaxTokensFallback(model, url, { ...post, body: next }, "max_tokens");
+    const send = (next: unknown, dropThreadBeta?: boolean) =>
+      postWithMaxTokensFallback(
+        model,
+        url,
+        {
+          ...post,
+          body: next,
+          ...(dropThreadBeta === true
+            ? {
+                headers: buildHeaders(
+                  model,
+                  options,
+                  request.betas.filter((beta) => beta !== MESSAGE_THREADS_BETA),
+                ),
+              }
+            : {}),
+        },
+        "max_tokens",
+      );
     // 线程续接：只对真实回合；重放 / 摘要 / 探测 / 分类请求不碰线程状态。onPayload 换成非对象体时不续接。
     const threadCtx: ThreadContext = {
       provider: model.provider,
@@ -236,10 +266,10 @@ async function run(
     const prepared =
       request.threads &&
       fullBody !== undefined &&
-      options.sessionId !== undefined &&
+      threadKey !== undefined &&
       options.disableContinuation !== true &&
       (options.purpose === undefined || options.purpose === "turn")
-        ? prepareThread(threadCtx, options.sessionId, fullBody)
+        ? prepareThread(threadCtx, threadKey, fullBody)
         : undefined;
     let response: Response;
     let thread: ThreadRequest | undefined;

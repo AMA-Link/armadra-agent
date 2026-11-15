@@ -9,7 +9,8 @@
  * - 拒收带 `error.details.error_code`：`thread_not_found` / `thread_already_continued` /
  *   `thread_continue_in_flight` / `thread_fingerprint_mismatch` → 整请求新开线程重发一次；
  *   `thread_unsupported_request`，或没有错误码但 400 文案点名 `thread`（端点不认该字段）→ 去掉
- *   `thread` 整请求重发一次，并把该会话关掉线程。其它错误与线程无关，原样抛出。
+ *   `thread` 整请求重发一次，重发请求同时去掉线程 beta 头（端点可能连该头的值都拒收），并把该会话与
+ *   该端点 + 模型在本进程内关掉线程（之后的请求不再带头，也不再多吃一次 400）。其它错误与线程无关，原样抛出。
  *
  * 每个会话只记最近一次回复的续接点（一条回复只能续接一次）：取用即删，并发请求只会各自新开线程。
  * 续接点只在「线程内的前文与本次请求逐项一致」时使用：哈希覆盖端点、模型、system、tools、
@@ -37,6 +38,30 @@ interface ThreadEntry {
 
 const threadState = new Map<string, ThreadEntry | "off">();
 
+/** 已确认不支持线程的端点 + 模型（本进程内）；容量有限，超出丢最旧的。 */
+const offEndpoints = new Set<string>();
+const MAX_OFF_ENDPOINTS = 1000;
+
+export function threadEndpointKey(provider: string, baseUrl: string, modelId: unknown): string {
+  return JSON.stringify([provider, baseUrl, modelId]);
+}
+
+function markEndpointOff(endpoint: string): void {
+  offEndpoints.delete(endpoint);
+  offEndpoints.add(endpoint);
+  if (offEndpoints.size > MAX_OFF_ENDPOINTS) {
+    const oldest = offEndpoints.values().next().value;
+    if (oldest !== undefined) offEndpoints.delete(oldest);
+  }
+}
+
+/** 该端点 + 模型或该线程键已被关掉线程：请求既不带线程字段，也不带线程 beta 头。 */
+export function threadsDisabled(endpoint: string, threadKey: string | undefined): boolean {
+  return (
+    offEndpoints.has(endpoint) || (threadKey !== undefined && threadState.get(threadKey) === "off")
+  );
+}
+
 function setState(sessionId: string, value: ThreadEntry | "off"): void {
   threadState.delete(sessionId);
   threadState.set(sessionId, value);
@@ -48,8 +73,10 @@ function setState(sessionId: string, value: ThreadEntry | "off"): void {
 
 /** 忘掉一个会话的线程状态（会话结束时调用）；不传清空全部。 */
 export function forgetThreads(sessionId?: string): void {
-  if (sessionId === undefined) threadState.clear();
-  else threadState.delete(sessionId);
+  if (sessionId === undefined) {
+    threadState.clear();
+    offEndpoints.clear();
+  } else threadState.delete(sessionId);
 }
 
 /** 测试用：会话当前的状态。 */
@@ -88,12 +115,14 @@ function hashPrefix(ctx: ThreadContext, body: Json, messages: readonly unknown[]
 }
 
 export interface ThreadRequest {
+  /** 线程键（缺省 sessionId；fork 会话用自己的 id）。 */
   sessionId: string;
+  endpoint: string;
   body: Json;
 }
 
-function createRequest(sessionId: string, body: Json): ThreadRequest {
-  return { sessionId, body: { ...body, thread: { type: "create" } } };
+function createRequest(sessionId: string, endpoint: string, body: Json): ThreadRequest {
+  return { sessionId, endpoint, body: { ...body, thread: { type: "create" } } };
 }
 
 /** 本次请求的线程形态；会话已被关掉线程时返回 undefined（发普通请求）。 */
@@ -102,8 +131,9 @@ export function prepareThread(
   sessionId: string,
   body: Json,
 ): ThreadRequest | undefined {
+  const endpoint = threadEndpointKey(ctx.provider, ctx.baseUrl, body["model"]);
   const state = threadState.get(sessionId);
-  if (state === "off") return undefined;
+  if (state === "off" || offEndpoints.has(endpoint)) return undefined;
   const messages = Array.isArray(body["messages"]) ? (body["messages"] as unknown[]) : [];
   if (
     state !== undefined &&
@@ -115,6 +145,7 @@ export function prepareThread(
     const { system: _system, tools: _tools, ...rest } = body;
     return {
       sessionId,
+      endpoint,
       body: {
         ...rest,
         messages: messages.slice(state.prefixCount),
@@ -123,7 +154,7 @@ export function prepareThread(
     };
   }
   threadState.delete(sessionId);
-  return createRequest(sessionId, body);
+  return createRequest(sessionId, endpoint, body);
 }
 
 const NEW_THREAD_CODES: ReadonlySet<string> = new Set([
@@ -170,7 +201,7 @@ export interface SentThread {
 export async function sendThreadRequest(
   thread: ThreadRequest,
   full: Json,
-  send: (body: Json) => Promise<Response>,
+  send: (body: Json, dropThreadBeta?: boolean) => Promise<Response>,
   signal: AbortSignal,
 ): Promise<SentThread> {
   try {
@@ -179,11 +210,13 @@ export async function sendThreadRequest(
     const action = signal.aborted ? undefined : classifyThreadError(error);
     if (action === undefined) throw error;
     if (action === "new") {
-      const created = createRequest(thread.sessionId, full);
+      const created = createRequest(thread.sessionId, thread.endpoint, full);
       return { response: await send(created.body), thread: created };
     }
-    const response = await send(full);
+    // 先关再发：重发也失败时，同会话的下一次请求不再重复尝试
     setState(thread.sessionId, "off");
+    markEndpointOff(thread.endpoint);
+    const response = await send(full, true);
     return { response, thread: undefined };
   }
 }

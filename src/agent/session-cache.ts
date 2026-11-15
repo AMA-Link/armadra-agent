@@ -180,8 +180,8 @@ export class SessionCacheController {
           thinking: options.thinkingLevel,
         };
         subtaskMs = this.takeTaskMs(at);
-        // fork 出的会话与根会话共用缓存键：共用服务端线程会互相占掉续接点，只让根会话续接
-        if (this.cacheKey !== this.core.manager.id) sent.disableContinuation = true;
+        // fork 出的会话与根会话共用提示缓存键，但线程键各用自己的会话 id：各续各的服务端线程
+        if (sent.sessionId !== undefined) sent.threadKey = this.core.manager.id;
       } else if (purpose === "summary") {
         // 摘要续写 = 上一回合前缀 + 指令：续接会占掉那条回复的唯一续接点，并把摘要回复当成线程末端
         sent.disableContinuation = true;
@@ -397,9 +397,8 @@ export class SessionCacheController {
   dispose(): void {
     this.disposed = true;
     this.warmer.cancel();
-    // 会话结束，释放它的服务端续接点记录（fork 会话共用根缓存键，不动）
-    if (this.cacheKey !== undefined && this.cacheKey === this.core.manager.id)
-      forgetThreads(this.cacheKey);
+    // 会话结束，释放它的服务端续接点记录（线程键是会话自己的 id）
+    forgetThreads(this.core.manager.id);
   }
 
   // -------------------------------------------------------------------------

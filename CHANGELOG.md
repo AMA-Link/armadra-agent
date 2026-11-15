@@ -20,6 +20,10 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 - **Lenient tool-argument coercion**: when strict schema validation fails, the runner tries one schema-driven coercion pass (numeric strings to numbers, `"true"`/`"false"` to booleans, numbers/booleans to strings, a single value to a one-element array, a JSON string to an object/array, `null` dropped on optional properties) and re-validates; enums must still match exactly and defaults are never filled. The permission pipeline, hooks and the tool see the coerced arguments; the assistant message and session history keep the model's original call. Applies to codemode inner calls too.
 
+### Fixed
+
+- **Message threads fallback**: when a thread request is rejected as unsupported (error code, a 400 naming `thread`, or the endpoint refusing the beta header value), the resent full request now drops both `thread` and the threads beta header, and that session and that endpoint + model stop using threads for the rest of the process, so other sessions no longer pay the extra 400. Forked sessions now continue their own thread (new stream option `threadKey`, default `sessionId`) while sharing the prompt cache key. New manual check `scripts/verify-anthropic-threads.mjs` (real key, not run in CI).
+
 ### Model efficiency
 
 - **Anthropic message threads**: requests with a stable session id and `cacheRetention` not `none` now continue the previous reply on the server (beta `message-threads-2026-08-12`) and send only the new messages instead of the whole conversation. Compaction, rewinds and branch switches, and changes to the model, system prompt, tools or thinking level fall back to a full request that starts a new thread; so do thread-not-found style rejections (resent once). On by default only on `api.anthropic.com`; set `compat.messageThreads` to change it. New stream option `disableContinuation` keeps a request from using or replacing thread state; cache warming and compaction summaries set it. Token usage and cache reporting are unchanged. See `docs/guides/providers.md`.

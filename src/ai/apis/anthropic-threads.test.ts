@@ -364,18 +364,20 @@ describe("anthropic message threads：服务端拒绝", () => {
     expect(seen[3]?.body.thread).toEqual({ type: "continue", previous_message_id: r2.responseId });
   });
 
-  it("thread_unsupported_request → 去掉 thread 整请求重发，会话之后不再带 thread（beta 头照发）", async () => {
+  it("thread_unsupported_request → 去掉 thread 整请求重发，重发与之后的请求都不再带 thread 与线程 beta 头", async () => {
     const { seen, queue, sessionId } = harness();
     queue.push(() => reject("thread_unsupported_request"));
     const r1 = await send(context([user("q1")]), { sessionId });
     expect(seen).toHaveLength(2);
     expect(seen[0]?.body.thread).toEqual({ type: "create" });
     expect("thread" in seen[1]!.body).toBe(false);
+    expect(seen[0]?.betas).toContain(MESSAGE_THREADS_BETA);
+    expect(seen[1]?.betas).not.toContain(MESSAGE_THREADS_BETA);
     expect(threadStateOf(sessionId)).toBe("off");
     await send(context([user("q1"), r1, user("q2", 3)]), { sessionId });
     expect("thread" in seen[2]!.body).toBe(false);
     expect(seen[2]?.body.messages).toHaveLength(3);
-    expect(seen[2]?.betas).toContain(MESSAGE_THREADS_BETA);
+    expect(seen[2]?.betas).not.toContain(MESSAGE_THREADS_BETA);
   });
 
   it("端点不认 thread 字段（无错误码的 400）→ 同样去掉 thread 重发并关掉线程", async () => {
@@ -385,6 +387,49 @@ describe("anthropic message threads：服务端拒绝", () => {
     expect(seen).toHaveLength(2);
     expect("thread" in seen[1]!.body).toBe(false);
     expect(threadStateOf(sessionId)).toBe("off");
+  });
+
+  it("端点拒收 beta 头本身 → 只多一次请求；本会话与同端点新会话都不再带头", async () => {
+    const { seen, queue, sessionId } = harness();
+    queue.push(() =>
+      reject(
+        undefined,
+        "Unexpected value(s) `message-threads-2026-08-12` for the `anthropic-beta` header",
+      ),
+    );
+    // 注：文案同时点名 thread
+    const r1 = await send(context([user("q1")]), { sessionId });
+    expect(seen).toHaveLength(2);
+    expect(seen[1]?.betas).toEqual([]);
+    expect("thread" in seen[1]!.body).toBe(false);
+    await send(context([user("q1"), r1, user("q2", 3)]), { sessionId });
+    expect(seen).toHaveLength(3);
+    expect(seen[2]?.betas).toEqual([]);
+    expect("thread" in seen[2]!.body).toBe(false);
+    await send(context([user("other")]), { sessionId: `${sessionId}-other` });
+    expect(seen).toHaveLength(4);
+    expect(seen[3]?.betas).toEqual([]);
+    expect("thread" in seen[3]!.body).toBe(false);
+  });
+
+  it("new 类错误码重发保留线程 beta 头", async () => {
+    const { seen, queue, sessionId } = harness();
+    const r1 = await send(context([user("q1")]), { sessionId });
+    queue.push(() => reject("thread_not_found"));
+    await send(context([user("q1"), r1, user("q2", 3)]), { sessionId });
+    expect(seen).toHaveLength(3);
+    expect(seen[2]?.betas).toContain(MESSAGE_THREADS_BETA);
+    expect(seen[2]?.body.thread).toEqual({ type: "create" });
+  });
+
+  it("threadKey：同一缓存键下两个线程键各续各的线程", async () => {
+    const { seen, sessionId } = harness();
+    const a = await send(context([user("q1")]), { sessionId, threadKey: "a" });
+    const b = await send(context([user("q1")]), { sessionId, threadKey: "b" });
+    await send(context([user("q1"), a, user("q2", 3)]), { sessionId, threadKey: "a" });
+    await send(context([user("q1"), b, user("q2", 3)]), { sessionId, threadKey: "b" });
+    expect(seen[2]?.body.thread).toEqual({ type: "continue", previous_message_id: a.responseId });
+    expect(seen[3]?.body.thread).toEqual({ type: "continue", previous_message_id: b.responseId });
   });
 
   it("与线程无关的 400 原样报错，不重发", async () => {
