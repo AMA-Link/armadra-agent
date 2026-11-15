@@ -23,6 +23,7 @@ describe("check:portability", () => {
       "// portability-ok: 远端是 Linux",
       'run({ PATH: "/a:/b" });',
       'run({ PATH: "C:\\\\tools" });',
+      'run({ PATH: "C:\\\\Windows;D:\\\\bin" });',
     ].join("\n");
     expect(lines(text)).toEqual([]);
   });
