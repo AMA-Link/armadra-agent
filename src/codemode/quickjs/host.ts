@@ -104,7 +104,8 @@ export async function runQuickjs(request: SandboxRunRequest): Promise<SandboxRun
     memoryLimitBytes: heapMb > 0 ? heapMb * 1024 * 1024 : 0,
     flag,
   };
-  const options = { workerData: data, env: {}, name: "codemode-quickjs" };
+  // execArgv 清空：不继承宿主的 --input-type / --inspect 等只对主线程有意义的开关
+  const options = { workerData: data, env: {}, execArgv: [], name: "codemode-quickjs" };
   let worker: Worker;
   try {
     worker = source.eval
