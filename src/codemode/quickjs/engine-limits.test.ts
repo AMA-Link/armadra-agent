@@ -82,12 +82,52 @@ describe("QuickJS 引擎：期限、内存与隔离", () => {
     );
   });
 
-  it("栈溢出以脚本错误结束，宿主不受影响", async () => {
-    const result = await runQuickjs(request("function f() { return f() + 1; } f();"));
+  it("无界递归抛出可捕获的 RangeError，脚本继续运行", async () => {
+    const result = await runQuickjs(
+      request(`
+let depth = 0;
+function f() { depth++; return f() + 1; }
+text("before");
+try { f(); } catch (e) { text(e.name + ":" + e.message); }
+text("deep enough: " + (depth > 500));
+const viaMap = (n) => [n].map(viaMap);
+try { viaMap(0); } catch (e) { text("map " + e.name); }
+const o = { get x() { return this.x; } };
+try { o.x; } catch (e) { text("getter " + e.name); }
+async function g() { return await g(); }
+try { await g(); } catch (e) { text("async " + e.name); }
+text("after");`),
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.outputs).toEqual([
+      "before",
+      "RangeError:Maximum call stack size exceeded",
+      "deep enough: true",
+      "map RangeError",
+      "getter RangeError",
+      "async RangeError",
+      "after",
+    ]);
+  });
+
+  it("未捕获的无界递归以 RangeError 结束，此前的输出保留，宿主不受影响", async () => {
+    const result = await runQuickjs(request("text('kept'); function f() { return f() + 1; } f();"));
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/unbounded recursion|call stack/i);
+    expect(result.outputs).toEqual(["kept"]);
+    expect(result.error).toMatch(/^RangeError: Maximum call stack size exceeded/);
     const after = await runQuickjs(request("return 1 + 1"));
     expect(after.outputs).toEqual(["2"]);
+  });
+
+  it("原生递归（超深 JSON）仍会陷阱：转成同一句 RangeError，输出保留", async () => {
+    const result = await runQuickjs(
+      request(
+        `text("kept"); let o = []; for (let i = 0; i < 100000; i++) o = [o]; JSON.stringify(o);`,
+      ),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.outputs).toEqual(["kept"]);
+    expect(result.error).toMatch(/^RangeError: Maximum call stack size exceeded/);
   });
 
   it("内建对象已冻结（Error 原型除外）", async () => {

@@ -10,7 +10,7 @@
  *   `done`），反向是 `tool_result`（值已是 JSON 字符串）与 `abort`；
  * - 中断：QuickJS 的中断处理器读 `SharedArrayBuffer` 里的一个标志位；Promise 任务一件一件执行，每 64
  *   件再读一次标志，所以 `while (true) await null` 这类不经过解释器轮询点的循环也能停下；
- * - 内存：`qjs_set_memory_limit`；栈溢出以宿主 RangeError 的形式冒出来，此时 VM 不再可用，直接以失败结束；
+ * - 内存：`qjs_set_memory_limit`；JS 递归由 `qjs_set_max_stack_size` 转成脚本里可捕获的 RangeError；不经 JS 调用的原生递归仍会以宿主陷阱的形式冒出来，此时 VM 不再可用，直接以失败结束；
  * - 脚本等待一个永远不会落定的 Promise（没有未完成的工具调用）时立即失败，不拖到超时。
  *
  * 本文件**只能 import node: 内置模块与类型**：源码树里它被 Node 直接剥离类型运行（不经构建），打进
@@ -53,6 +53,12 @@ export type WorkerInMessage =
 const SCRIPT_FILENAME = "codemode-script.js";
 const BOOTSTRAP_FILENAME = "codemode-bootstrap.js";
 const JOBS_PER_POLL = 64;
+/**
+ * QuickJS 的 JS 调用栈上限（字节）。wasm 的 C 栈约 400 KB（超出即陷阱、整个实例作废），留出余量后取 320 KB：
+ * 脚本里的无界递归在这里抛出可捕获的 `RangeError: Maximum call stack size exceeded`，与 Node 引擎一致；
+ * 只有不经 JS 调用的原生递归（超深 JSON、超深嵌套字面量）仍可能直接陷阱，见 describeHostError。
+ */
+const MAX_STACK_BYTES = 320 * 1024;
 
 /** 先于引导脚本执行：冻结所有内建对象（Error 原型除外：子类里 `this.name = ...` 要能赋值）。 */
 const FREEZE_SOURCE = String.raw`(function () {
@@ -112,6 +118,7 @@ interface QjsExports {
   _initialize(): void;
   qjs_init(): number;
   qjs_set_memory_limit(bytes: number): void;
+  qjs_set_max_stack_size(bytes: number): void;
   qjs_set_interrupt_handler(enable: number): void;
   qjs_get_undefined(): number;
   qjs_get_true(): number;
@@ -202,6 +209,7 @@ class Vm {
     x._initialize();
     if (x.qjs_init() !== 0) throw new Error("Failed to initialize QuickJS");
     if (memoryLimitBytes > 0) x.qjs_set_memory_limit(memoryLimitBytes);
+    x.qjs_set_max_stack_size(MAX_STACK_BYTES);
     x.qjs_set_interrupt_handler(1);
     this.undef = x.qjs_get_undefined();
     this.yes = x.qjs_get_true();
@@ -500,8 +508,9 @@ function describeHostError(error: unknown): string {
     return "RangeError: Maximum call stack size exceeded";
   }
   if (error instanceof WebAssembly.RuntimeError) {
-    // QuickJS 在 WASI 上没有栈上限检查：无界递归把 wasm 栈写穿，表现为越界陷阱
-    return `Script crashed the QuickJS engine (likely unbounded recursion): ${text}`;
+    // 不经 JS 调用的原生递归越过了 JS 栈上限检查，把 wasm 栈写穿：实例作废、无法在脚本里捕获，
+    // 报与 Node 引擎同一句开头的错误（此前已产生的输出由主线程照常保留）
+    return `RangeError: Maximum call stack size exceeded (QuickJS engine trap: ${text})`;
   }
   return `codemode QuickJS engine failed: ${text}`;
 }

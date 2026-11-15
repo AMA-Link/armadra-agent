@@ -161,6 +161,17 @@ return JSON.stringify(hits) + "|" + failure;`,
     expect(result.outputs).toEqual(["[]"]);
   });
 
+  it("无界递归：RangeError 可捕获，脚本继续", async () => {
+    const result = await run(
+      request(`
+function f() { return f() + 1; }
+try { f(); } catch (e) { text(e.name + ":" + e.message); }
+text("after");`),
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.outputs).toEqual(["RangeError:Maximum call stack size exceeded", "after"]);
+  });
+
   it("image：三种入参形状、MIME 以文件头为准，最多 8 张", async () => {
     const result = await run(
       request(`
