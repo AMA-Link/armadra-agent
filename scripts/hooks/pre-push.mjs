@@ -65,6 +65,8 @@ const TEST_GLOBAL = [
 const BUILD =
   /^(src\/|assets\/|scripts\/build-bundle\.mjs$|package\.json$|pnpm-lock\.yaml$|tsconfig)/;
 const TEST_SOURCE = /\.test\.ts$/;
+/** 未跟踪时会被类型检查或测试读到的源码。 */
+const SOURCE = /\.(tsx?|mjs|js)$/;
 const MODELS_DEV =
   /^(scripts\/update-models-dev\.mjs$|test\/fixtures\/models-dev\/|src\/ai\/providers\/|\.github\/workflows\/models-dev\.yml$)/;
 const WORKFLOWS = [".github/workflows/models-dev.yml", ".github/workflows/ci.yml"];
@@ -111,7 +113,8 @@ export function planChecks(files, { base, exists = () => true } = {}) {
       ]
     : [];
   const everything = base === null || files.some((file) => TEST_GLOBAL.some((re) => re.test(file)));
-  const testable = files.some((file) => /^(src|test)\//.test(file));
+  // scripts/ 有被 src 的测试 import 的脚本（channel-probe、inline-json 等）。
+  const testable = files.some((file) => /^(src|test|scripts)\//.test(file));
   const after = [];
   if (everything || testable)
     after.push({
@@ -179,9 +182,50 @@ export function parseSkip(value) {
   };
 }
 
+/**
+ * 去掉 GIT_* 的环境。git 给钩子设的 GIT_DIR、GIT_INDEX_FILE 等会被子进程继承：
+ * 测试在临时目录里起的 git 会改到本仓库。
+ */
+export function cleanEnv(env = process.env) {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith("GIT_")));
+}
+
+function gitRaw(args) {
+  const result = spawnSync("git", args, { cwd: ROOT, encoding: "utf8", env: cleanEnv() });
+  return result.status === 0 ? result.stdout : null;
+}
+
 function git(args) {
-  const result = spawnSync("git", args, { cwd: ROOT, encoding: "utf8" });
-  return result.status === 0 ? result.stdout.trim() : null;
+  return gitRaw(args)?.trim() ?? null;
+}
+
+/** `git status --porcelain -z` 的条目：`{ code, path }`；改名只取新路径。 */
+export function parseStatus(text) {
+  const entries = [];
+  const parts = text.split("\0");
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (part.length < 4) continue;
+    const code = part.slice(0, 2);
+    entries.push({ code, path: part.slice(3) });
+    // 改名、复制的下一段是原路径。
+    if (code[0] === "R" || code[0] === "C") index += 1;
+  }
+  return entries;
+}
+
+/**
+ * 工作区里推送范围之外的东西：未跟踪的源码（`untrackedCode`，默认拦）、其它未跟踪
+ * 文件、范围外与范围内的未提交修改。检查跑在工作区上，这些都会让结果与 CI 不同。
+ */
+export function workingTreeReport(entries, changed, sourcePattern = SOURCE) {
+  const report = { untrackedCode: [], untrackedOther: [], outside: [], inside: [] };
+  for (const { code, path } of entries) {
+    if (code === "??")
+      (sourcePattern.test(path) ? report.untrackedCode : report.untrackedOther).push(path);
+    else if (code !== "!!") (changed.has(path) ? report.inside : report.outside).push(path);
+  }
+  return report;
 }
 
 function defaultBranch(remote) {
@@ -192,15 +236,26 @@ function defaultBranch(remote) {
   return null;
 }
 
-/** 已有的远端分支用远端旧值（强推时取合并基点），新分支用缺省分支的合并基点。 */
+/**
+ * 基点：远端旧值与本地新值的合并基点、缺省分支与本地新值的合并基点，取更靠近本地
+ * 新值的那个。新分支只有后者；变基后强推时前者落在很早的地方，后者才对。
+ */
 function baseOf(update, remote) {
-  if (
-    !ZERO.test(update.remoteSha) &&
-    git(["cat-file", "-e", `${update.remoteSha}^{commit}`]) !== null
-  )
-    return git(["merge-base", update.remoteSha, update.localSha]);
   const branch = defaultBranch(remote);
-  return branch ? git(["merge-base", branch, update.localSha]) : null;
+  const candidates = [
+    !ZERO.test(update.remoteSha) && git(["cat-file", "-e", `${update.remoteSha}^{commit}`]) !== null
+      ? git(["merge-base", update.remoteSha, update.localSha])
+      : null,
+    branch ? git(["merge-base", branch, update.localSha]) : null,
+  ].filter(Boolean);
+  if (candidates.length < 2) return candidates[0] ?? null;
+  const [fromRemote, fromBranch] = candidates;
+  const ancestor =
+    spawnSync("git", ["merge-base", "--is-ancestor", fromRemote, fromBranch], {
+      cwd: ROOT,
+      env: cleanEnv(),
+    }).status === 0;
+  return ancestor ? fromBranch : fromRemote;
 }
 
 function runStep(step) {
@@ -211,7 +266,7 @@ function runStep(step) {
     const child = spawn(step.command, step.args, {
       cwd: ROOT,
       shell: isWindows,
-      env: { ...process.env, FORCE_COLOR: "0", ...step.env },
+      env: { ...cleanEnv(), FORCE_COLOR: "0", ...step.env },
     });
     child.stdout.on("data", (chunk) => chunks.push(chunk));
     child.stderr.on("data", (chunk) => chunks.push(chunk));
@@ -247,39 +302,48 @@ function tail(file, lines = 30) {
   return readFileSync(file, "utf8").trimEnd().split("\n").slice(-lines).join("\n");
 }
 
-/** CI 的 models-dev 检查：离线快照 dry-run，摘要里要有标题，且不改 src/ai/providers。 */
+/**
+ * CI 的 models-dev 检查：离线快照 dry-run，摘要里要有标题，且不改 src/ai/providers。
+ * 比的是 dry-run 前后该目录的 diff，不是「与 HEAD 一致」：那里本来就有的未提交修改不算。
+ */
 async function modelsDevStep() {
   const scratch = mkdtempSync(join(tmpdir(), "ama-prepush-models-dev-"));
+  const providers = () => gitRaw(["diff", "--", "src/ai/providers"]) ?? "";
   try {
-    const summary = join(scratch, "summary.md");
+    const before = providers();
     const result = await runStep({
       id: "models-dev",
       command: "node",
       args: [
-        "-e",
-        [
-          'const { execFileSync } = require("node:child_process");',
-          'const fs = require("node:fs");',
-          "const [out, data, summary] = process.argv.slice(1);",
-          'const text = execFileSync(process.execPath, ["scripts/update-models-dev.mjs", "--dry-run", "--min-providers", "1", "--out", out, "--data-out", data, "--input", "test/fixtures/models-dev/snapshot-api.json", "--list", "test/fixtures/models-dev/snapshot-providers.json"], { encoding: "utf8" });',
-          "fs.writeFileSync(summary, text);",
-          'if (!text.includes("models.dev 快照刷新")) { console.error("摘要里没有「models.dev 快照刷新」"); process.exit(1); }',
-          'execFileSync("git", ["diff", "--exit-code", "--", "src/ai/providers"], { stdio: "inherit" });',
-        ].join("\n"),
+        "scripts/update-models-dev.mjs",
+        "--dry-run",
+        "--min-providers",
+        "1",
+        "--out",
         join(scratch, "out"),
+        "--data-out",
         join(scratch, "data.ts"),
-        summary,
+        "--input",
+        "test/fixtures/models-dev/snapshot-api.json",
+        "--list",
+        "test/fixtures/models-dev/snapshot-providers.json",
       ],
     });
-    return result;
+    const problems = [];
+    if (result.ok && !readFileSync(result.log, "utf8").includes("models.dev 快照刷新"))
+      problems.push("摘要里没有「models.dev 快照刷新」");
+    if (providers() !== before) problems.push("dry-run 改了 src/ai/providers");
+    if (problems.length === 0) return result;
+    writeFileSync(result.log, `${readFileSync(result.log, "utf8")}\n${problems.join("\n")}\n`);
+    console.log("  FAIL models-dev");
+    return { ...result, ok: false };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
 }
 
 async function main(argv, input) {
-  // git 给钩子设的 GIT_DIR、GIT_INDEX_FILE 等会被子进程继承：测试在临时目录里起的 git
-  // 会找错仓库（「must be run in a work tree」）。和 CI 一样干净，全部去掉。
+  // 子进程一律不带 GIT_*（见 cleanEnv）。
   for (const name of Object.keys(process.env))
     if (name.startsWith("GIT_")) delete process.env[name];
   const skip = parseSkip(process.env.ARMADRA_SKIP_PREPUSH);
@@ -289,6 +353,14 @@ async function main(argv, input) {
   if (refs.length === 0) return 0;
 
   const head = git(["rev-parse", "HEAD"]);
+  const elsewhere = refs.find((ref) => ref.localSha !== head);
+  if (elsewhere) {
+    // 检查只能跑在工作区上；推的不是当前检出，跑了也说明不了推上去的内容。
+    console.log(
+      `pre-push：未检查：推送的提交不是当前检出（${elsewhere.localRef} ${elsewhere.localSha.slice(0, 9)}，HEAD ${head?.slice(0, 9) ?? "无"}）`,
+    );
+    return 0;
+  }
   const files = new Set();
   let base = null;
   let unknownBase = false;
@@ -317,20 +389,35 @@ async function main(argv, input) {
   console.log(
     `pre-push：${unknownBase ? "拿不到基点，按全量" : `相对 ${base.slice(0, 9)} 改了 ${changed.length} 个文件`}${plan.docsOnly ? "（只有文档）" : ""}`,
   );
-  if (refs.some((ref) => ref.localSha !== head))
-    console.log("  注意：推送的提交不是当前检出，检查跑在工作区上");
-  const dirty = (git(["status", "--porcelain"]) ?? "")
-    .split("\n")
-    .map((line) => line.slice(3))
-    .filter((file) => files.has(file));
-  if (dirty.length > 0)
-    console.log(`  注意：${dirty.length} 个改动文件还有未提交的修改，检查看的是工作区内容`);
+  const tree = workingTreeReport(
+    parseStatus(gitRaw(["status", "--porcelain", "-z", "--untracked-files=all"]) ?? ""),
+    files,
+  );
+  const list = (paths) =>
+    `${paths.slice(0, 8).join("、")}${paths.length > 8 ? ` 等 ${paths.length} 个` : ""}`;
+  if (tree.inside.length > 0)
+    console.log(`  注意：推送范围内的文件还有未提交的修改：${list(tree.inside)}`);
+  if (!plan.docsOnly && tree.outside.length > 0)
+    console.log(`  注意：范围外有未提交的修改，检查会看到它们：${list(tree.outside)}`);
+  if (!plan.docsOnly && tree.untrackedOther.length > 0)
+    console.log(`  注意：有未跟踪的文件：${list(tree.untrackedOther)}`);
 
   const keep = (step) => {
     if (!skip.steps.has(step.id)) return true;
     console.log(`  skip ${step.id}`);
     return false;
   };
+  // 未跟踪的源码会被类型检查、测试读到，CI 上却没有：拦下，其余照跑以便一次看全。
+  const untracked = [];
+  if (!plan.docsOnly && tree.untrackedCode.length > 0 && keep({ id: "untracked" })) {
+    const log = join(LOG_DIR, "untracked.log");
+    writeFileSync(
+      log,
+      `未跟踪的源码（提交、删除或加进 .gitignore）：\n${tree.untrackedCode.join("\n")}\n`,
+    );
+    console.log("  FAIL untracked");
+    untracked.push({ id: "untracked", ok: false, log });
+  }
   const statics = plan.statics.filter(keep).map(runStep);
   if (plan.actionlint && keep({ id: "actionlint" })) {
     if (spawnSync("actionlint", ["-version"], { stdio: "ignore" }).status === 0)
@@ -340,7 +427,7 @@ async function main(argv, input) {
     else console.log("提示：改了 workflow，本机没有 actionlint；CI 的 Linux / Node 24 会跑");
   }
   if (plan.modelsDev && keep({ id: "models-dev" })) statics.push(modelsDevStep());
-  const results = await Promise.all(statics);
+  const results = [...untracked, ...(await Promise.all(statics))];
   if (results.every((result) => result.ok))
     results.push(...(await sequence(plan.build.filter(keep))));
   if (results.every((result) => result.ok)) {

@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  cleanEnv,
   isDocsOnly,
+  parseStatus,
   parsePushLines,
   parseSkip,
   planChecks,
   refsToCheck,
+  workingTreeReport,
 } from "../../scripts/hooks/pre-push.mjs";
 
 const SHA = "a".repeat(40);
@@ -29,7 +32,36 @@ describe("pre-push：推送的 ref", () => {
   });
 });
 
+describe("pre-push：工作区", () => {
+  it("porcelain -z：首行前导空格与改名都解析对，未跟踪的源码单列", () => {
+    const entries = parseStatus(
+      [" M src/a.ts", "?? scripts/new.mjs", "?? notes.txt", "R  b.ts", "a.ts", ""].join("\0"),
+    );
+    expect(entries.map((entry) => entry.path)).toEqual([
+      "src/a.ts",
+      "scripts/new.mjs",
+      "notes.txt",
+      "b.ts",
+    ]);
+    expect(workingTreeReport(entries, new Set(["b.ts"]))).toEqual({
+      untrackedCode: ["scripts/new.mjs"],
+      untrackedOther: ["notes.txt"],
+      outside: ["src/a.ts"],
+      inside: ["b.ts"],
+    });
+  });
+
+  it("子进程环境去掉全部 GIT_*", () => {
+    expect(cleanEnv({ GIT_DIR: "/x", HOME: "/h" })).toEqual({ HOME: "/h" });
+  });
+});
+
 describe("pre-push：挑检查", () => {
+  it("改 scripts/ 下被测试 import 的脚本也跑单测", () => {
+    const plan = planChecks(["scripts/channel-probe.mjs"], { base: SHA });
+    expect(plan.after.map((step) => step.id)).toContain("test");
+  });
+
   it("只改文档与 CI 的判定一致", () => {
     expect(isDocsOnly(["docs/guides/a.md", "README.md"])).toBe(true);
     expect(isDocsOnly(["THIRD_PARTY_NOTICES.md"])).toBe(false);

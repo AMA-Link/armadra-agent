@@ -27,3 +27,10 @@ export function planChecks(
 export function parsePushLines(text: string): PushUpdate[];
 export function refsToCheck(updates: readonly PushUpdate[]): PushUpdate[];
 export function parseSkip(value: string | undefined): { all: boolean; steps: Set<string> };
+export function cleanEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+export function parseStatus(text: string): { code: string; path: string }[];
+export function workingTreeReport(
+  entries: readonly { code: string; path: string }[],
+  changed: ReadonlySet<string>,
+  sourcePattern?: RegExp,
+): { untrackedCode: string[]; untrackedOther: string[]; outside: string[]; inside: string[] };
