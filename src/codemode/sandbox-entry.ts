@@ -28,7 +28,7 @@ export const MAX_STORE_TOTAL_CHARS = 1_048_576;
 const SCRIPT_FILENAME = "codemode-script.js";
 
 /** 在 vm 上下文里执行的引导脚本：返回 `{ deliver, finish, run }`，全部是上下文 realm 的函数。 */
-const BOOTSTRAP = String.raw`(function (host, config) {
+export const BOOTSTRAP = String.raw`(function (host, config) {
   "use strict";
   const MAX = config.maxConcurrent;
   const stringify = JSON.stringify;
