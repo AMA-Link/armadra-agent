@@ -38,6 +38,7 @@ import {
 } from "./worker-pool.js";
 import {
   LineSplitter,
+  MAX_SCRIPT_IMAGES,
   SANDBOX_MAIN_FLAG,
   SEARCH_TOOLS_CALL,
   decodeChildLine,
@@ -178,6 +179,8 @@ export interface SandboxRunResult {
   toolCalls: number;
   /** 输出超过 MAX_COLLECTED_OUTPUT_CHARS 被丢弃的字符数。 */
   droppedChars: number;
+  /** `image(v)` 产出的图（子进程已按文件头校验；使用前仍须再校验）。 */
+  images: { data: string; mimeType: string }[];
   /** 子进程 pid（POSIX 下也是进程组 id）。 */
   pid?: number;
 }
@@ -188,6 +191,7 @@ export async function runSandbox(request: SandboxRunRequest): Promise<SandboxRun
   const heapMb = Math.floor(request.maxHeapMb ?? DEFAULT_CODEMODE_HEAP_MB);
   const base = {
     outputs: [] as string[],
+    images: [] as { data: string; mimeType: string }[],
     timedOut: false,
     aborted: false,
     toolCalls: 0,
@@ -341,6 +345,15 @@ export async function runSandbox(request: SandboxRunRequest): Promise<SandboxRun
         request.onOutput?.(text);
         return;
       }
+      case "image":
+        if (
+          typeof message.data === "string" &&
+          typeof message.mimeType === "string" &&
+          result.images.length < MAX_SCRIPT_IMAGES
+        ) {
+          result.images.push({ data: message.data, mimeType: message.mimeType });
+        }
+        return;
       case "tool_call": {
         const { id, name, input } = message;
         if (name === SEARCH_TOOLS_CALL) {

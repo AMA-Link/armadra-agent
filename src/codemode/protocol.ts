@@ -9,6 +9,7 @@
  * 子 → 父（子进程 stdout）：
  * - `tool_call`：脚本里的 `tools.<name>(input)`；
  * - `output`：`text()` / `console.log()` / `return` 产出的一段输出；
+ * - `image`：`image(v)` 产出的一张图（子进程先按文件头校验）；
  * - `store`：脚本成功结束且写过 store 时的完整快照，父进程只在 `done.ok` 时提交；
  * - `done`：脚本结束（成功或失败），带用时。
  *
@@ -36,6 +37,8 @@ export const SANDBOX_MAIN_FLAG = "--ama-codemode-sandbox";
  * import 本文件的运行时代码，引导脚本里写的是同一个字面量。
  */
 export const SEARCH_TOOLS_CALL = "@searchTools";
+/** 单个脚本最多附几张图（与 sandbox-entry.ts 的 MAX_SCRIPT_IMAGES 一致）。 */
+export const MAX_SCRIPT_IMAGES = 8;
 /** 同一脚本内并发工具调用上限。 */
 export const MAX_CONCURRENT_TOOL_CALLS = 8;
 
@@ -67,6 +70,8 @@ export type ParentMessage =
 export type ChildMessage =
   | { type: "tool_call"; id: number; name: string; input: unknown }
   | { type: "output"; text: string }
+  /** `image(v)` 校验过的图片（base64，MIME 由文件头得出）；父进程再校验一次，不信任子进程。 */
+  | { type: "image"; data: string; mimeType: string }
   /** 脚本成功结束且写过 store 时发：结束时的完整快照（父进程整体替换）。 */
   | { type: "store"; entries: Record<string, unknown> }
   | { type: "done"; ok: boolean; error?: string; elapsedMs: number };
@@ -126,7 +131,7 @@ export function encodeLine(message: ParentMessage | ChildMessage): string {
     .replace(/\u2029/g, "\\u2029")}\n`;
 }
 
-const CHILD_TYPES = new Set(["tool_call", "output", "store", "done"]);
+const CHILD_TYPES = new Set(["tool_call", "output", "image", "store", "done"]);
 const PARENT_TYPES = new Set(["run", "tool_result", "abort"]);
 
 function decode(line: string, types: ReadonlySet<string>): { type: string } {
