@@ -20,7 +20,8 @@
 - 双语：`README.md` / `README.zh-CN.md`、`CHANGELOG.md` / `CHANGELOG.zh-CN.md` 成对维护，新条目两份都加到未发布段；`docs/en/` 按同样分层放七篇英文译本，改中文版时同步。文案约定见 [docs/guides/i18n.md](docs/guides/i18n.md)。
 - 协议形状改动同步 [docs/reference/rpc.md](docs/reference/rpc.md)、[docs/reference/host-api.md](docs/reference/host-api.md)、[docs/reference/acp.md](docs/reference/acp.md) 或 [docs/reference/session-format.md](docs/reference/session-format.md)。
 - 验证：`pnpm run ci`（类型检查、prettier、依赖与 i18n 检查、文档链接检查 `pnpm check:docs`、发版检查、测试、构建与 bundle 冒烟）；bundle 级端到端 `AMA_E2E=1 pnpm test:e2e`。pnpm 10 起 `pnpm ci` 是内置命令，必须写 `pnpm run ci`。
-- CI 在 macOS / Linux / Windows × Node 22 / 24 上跑；路径、换行与 shell 差异要考虑 Windows。
+- CI 在 macOS / Linux / Windows × Node 22 / 24 上跑；路径、换行与 shell 差异要考虑 Windows。测试里拼 `PATH` 用 `path.delimiter`（`pnpm check:portability` 守住）。
+- 推送前钩子（`.githooks/pre-push` → `scripts/hooks/pre-push.mjs`，`pnpm install` 时启用）只查推送范围内的改动，挑选规则与 `ci.yml` 一致；改 CI 时同步它。
 - 发布由维护者推 `v<版本>` tag 触发：CI 创建 GitHub Release 并经 npm 可信发布（OIDC）推送 `@armadra/agent`；本地不手动 `npm publish`。
 
 ## Review guidelines

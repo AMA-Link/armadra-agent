@@ -222,6 +222,10 @@ pnpm run ci              # 类型检查、格式、依赖 / i18n / 文档链接�
 AMA_E2E=1 pnpm test:e2e  # 用免费的 fake 供应商跑 bundle 级端到端测试
 ```
 
+`pnpm install` 同时把 `core.hooksPath` 指到 `.githooks`：`git push` 前 `scripts/hooks/pre-push.mjs` 只查这次推送带上的改动，
+挑选规则与 CI 相同，失败就拦下推送。临时跳过用 `git push --no-verify`，或 `ARMADRA_SKIP_PREPUSH=1`（全部）/
+`ARMADRA_SKIP_PREPUSH=test,e2e`（指定步骤）。
+
 测试只用脚本化的 `fake` 供应商，不调真实模型。开发约定见 [AGENTS.md](AGENTS.md) 与[贡献指南](.github/CONTRIBUTING.md)。
 发布由推送 `v<版本>` tag 触发：CI 创建 GitHub Release，并经 npm 可信发布推送。
 
