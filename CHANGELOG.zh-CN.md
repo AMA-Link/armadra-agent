@@ -19,6 +19,10 @@
 
 - **工具参数宽松强转**：严格校验失败后，按 schema 强转一次再校验（数字串 → 数字、`"true"`/`"false"` → 布尔、数字/布尔 → 字符串、单值 → 单元素数组、JSON 字符串 → 对象/数组、丢弃可选属性的 `null`）；enum 仍须严格匹配，不填默认值。权限管线、钩子与工具看到强转后的参数，助手消息与会话历史保留模型原始调用；codemode 内部调用同样适用。
 
+### 修复
+
+- **消息线程回落**：线程请求被判为不支持（错误码、点名 `thread` 的 400，或端点拒收 beta 头的值）时，重发的整请求现在同时去掉 `thread` 与线程 beta 头，并让该会话与该端点 + 模型在本进程内不再用线程，其它会话不再多吃一次 400。fork 出的会话现在续接自己的线程（新增流选项 `threadKey`，缺省 `sessionId`），提示缓存键仍与根会话共用。新增手工实测脚本 `scripts/verify-anthropic-threads.mjs`（真 key，不进 CI）。
+
 ### 模型调用效率
 
 - **Anthropic 消息线程（message threads）**：带稳定会话 id 且 `cacheRetention` 不是 `none` 的请求，改为在服务端续接上一条回复（beta `message-threads-2026-08-12`），只发新增消息，不再重发整段对话。压缩、回退与分支切换，以及模型、系统提示、工具、思考级别变化时回落为整请求并新开线程；线程不存在之类的拒收同样整请求重发一次。只有 `api.anthropic.com` 缺省开启，可用 `compat.messageThreads` 调整。新增流选项 `disableContinuation`，使请求不使用也不替换线程状态；缓存保温与压缩摘要都会置位。token 用量与缓存上报不变。详见 `docs/guides/providers.md`。
