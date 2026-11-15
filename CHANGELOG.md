@@ -7,6 +7,10 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+### Changed
+
+- **Lenient tool-argument coercion**: when strict schema validation fails, the runner tries one schema-driven coercion pass (numeric strings to numbers, `"true"`/`"false"` to booleans, numbers/booleans to strings, a single value to a one-element array, a JSON string to an object/array, `null` dropped on optional properties) and re-validates; enums must still match exactly and defaults are never filled. The permission pipeline, hooks and the tool see the coerced arguments; the assistant message and session history keep the model's original call. Applies to codemode inner calls too.
+
 ### Maintenance
 
 - **models.dev snapshot refreshed (2026-11-13)**: catalog overrides for models removed upstream are dropped (Groq `qwen/qwen3.6-27b`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`; Anthropic `claude-sonnet-4-5`; MiniMax M2.x, small model now `MiniMax-M3.1-Flash`; Volcengine `doubao-seed-2-0-code-preview-260215`). `ama models discover` no longer warns "unmatched" for relay ids that resolve through a catalog alias. The weekly refresh workflow now fails when its CI check fails or the PR cannot be opened.

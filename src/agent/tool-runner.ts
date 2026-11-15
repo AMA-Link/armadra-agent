@@ -36,6 +36,7 @@ import {
   loopStopText,
   type LoopVerdict,
 } from "./loop-guard.js";
+import { coerceArguments } from "./schema-coerce.js";
 import { formatSchemaErrors, validateSchema } from "./schema.js";
 import type { NestedCallInfo, SessionEvent, ToolCallGate, ToolCallGateContext } from "./types.js";
 import type { AutoDecision } from "../permissions/types.js";
@@ -93,9 +94,15 @@ const autoDecisions = new WeakMap<ToolCallBlock, AutoDecision>();
 /** 门禁拒绝（gate.block）而没有执行的调用：tool_execution_end 带 `denied`。 */
 const deniedCalls = new WeakSet<ToolCallBlock>();
 
+function isArgs(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 interface Prepared {
   kind: "prepared";
   call: ToolCallBlock;
+  /** 交给钩子与工具上下文的调用：参数被强转过时是带强转参数的副本，否则就是 `call`。 */
+  used: ToolCallBlock;
   tool: ToolDefinition;
   input: unknown;
 }
@@ -153,22 +160,33 @@ async function prepare(
   if (tool === undefined) {
     return { kind: "immediate", call, result: errorResult(notFoundText(call.name, options)) };
   }
-  const invalid = (input: unknown): Immediate | undefined => {
-    const errors = validateSchema(tool.parameters, input);
-    if (errors.length === 0) return undefined;
+  /** 严格校验；失败时按 schema 宽松强转一次再校验，仍失败则回报原始参数的错误。 */
+  const check = (args: unknown): { input: unknown } | Immediate => {
+    const errors = validateSchema(tool.parameters, args);
+    if (errors.length === 0) return { input: args };
+    const coerced = coerceArguments(tool.parameters, args);
+    if (coerced.changed && validateSchema(tool.parameters, coerced.value).length === 0) {
+      return { input: coerced.value };
+    }
     return {
       kind: "immediate",
       call,
       result: errorResult(`Invalid arguments for ${call.name}:\n${formatSchemaErrors(errors)}`),
     };
   };
-  const firstCheck = invalid(call.arguments);
-  if (firstCheck !== undefined) return firstCheck;
-  let input: unknown = call.arguments;
+  const first = check(call.arguments);
+  if ("kind" in first) return first;
+  let input: unknown = first.input;
+  // 强转后的参数只给门禁、钩子与工具；助手消息里的原始调用不改（会话回放与提示前缀逐字节不变）
+  let used: ToolCallBlock = call;
+  if (input !== call.arguments && isArgs(input)) {
+    const { rawArguments: _raw, ...rest } = call;
+    used = { ...rest, arguments: input };
+  }
   try {
     const gateContext: ToolCallGateContext =
       parent === undefined ? { signal, assistant, tool } : { signal, assistant, tool, parent };
-    const gate = await options.beforeToolCall(call, gateContext);
+    const gate = await options.beforeToolCall(used, gateContext);
     if (gate.autoDecision !== undefined) autoDecisions.set(call, gate.autoDecision);
     if (signal.aborted) return { kind: "immediate", call, result: errorResult(ABORTED_TOOL_TEXT) };
     if (gate.block === true) {
@@ -180,9 +198,9 @@ async function prepare(
       };
     }
     if (gate.input !== undefined) {
-      const recheck = invalid(gate.input);
-      if (recheck !== undefined) return recheck;
-      input = gate.input;
+      const recheck = check(gate.input);
+      if ("kind" in recheck) return recheck;
+      input = recheck.input;
     }
   } catch (error) {
     return {
@@ -193,7 +211,7 @@ async function prepare(
       ),
     };
   }
-  return { kind: "prepared", call, tool, input };
+  return { kind: "prepared", call, used, tool, input };
 }
 
 function resultText(content: string | readonly ContentBlock[]): string {
@@ -250,7 +268,7 @@ async function execute(
   emit: LoopEmit,
   parent?: NestedCallInfo,
 ): Promise<ToolResult> {
-  const { call, tool, input } = prepared;
+  const { call, used, tool, input } = prepared;
   if (signal.aborted) return errorResult(ABORTED_TOOL_TEXT);
   const updates: Promise<void>[] = [];
   let accepting = true;
@@ -271,7 +289,7 @@ async function execute(
   });
   let result: ToolResult;
   try {
-    const created = options.createToolContext(call, signal, onUpdate);
+    const created = options.createToolContext(used, signal, onUpdate);
     // [ME-D] 工具按会话结果上限一次截到位（D11）；宿主自己给了就不覆盖
     const ctx =
       created.maxResultChars !== undefined
@@ -301,8 +319,8 @@ async function execute(
     try {
       result =
         parent === undefined
-          ? await options.afterToolCall(call, result)
-          : await options.afterToolCall(call, result, { parent });
+          ? await options.afterToolCall(used, result)
+          : await options.afterToolCall(used, result, { parent });
     } catch (error) {
       result = errorResult(`PostToolUse failed: ${String(error)}`);
     }

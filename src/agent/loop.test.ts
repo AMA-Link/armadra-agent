@@ -210,7 +210,7 @@ describe("工具执行", () => {
       script: [
         {
           toolCalls: [
-            { name: "t", args: { path: 3 } },
+            { name: "t", args: { path: { x: 1 } } },
             { name: "nope", args: {} },
           ],
         },
