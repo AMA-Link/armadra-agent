@@ -365,12 +365,13 @@ export function validateConfig(value: unknown): Diagnostic[] {
     c,
     value,
     "codemode",
-    ["mode", "inlineBudget", "requireStrict", "maxHeapMb"],
+    ["mode", "inlineBudget", "requireStrict", "maxHeapMb", "maxWorkers"],
     (s, p) => {
       c.oneOf(s, "mode", p, CODEMODE_MODES);
       c.number(s, "inlineBudget", p, 0);
       c.boolean(s, "requireStrict", p);
       c.number(s, "maxHeapMb", p, 0);
+      c.number(s, "maxWorkers", p, 1);
     },
   );
   checkSection(c, value, "hooks", ["timeoutMs"], (s, p) => {

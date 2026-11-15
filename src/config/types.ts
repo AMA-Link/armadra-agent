@@ -204,6 +204,11 @@ export interface CodemodeConfig {
   requireStrict?: boolean;
   /** [M-F] 脚本子进程的 V8 堆上限（MB，`--max-old-space-size`），缺省 256，0 不加；只认用户级。 */
   maxHeapMb?: number;
+  /**
+   * 整个 ama 进程里同时存活的脚本子进程数上限（所有会话共享），缺省 2；正整数。环境变量
+   * `AMA_CODEMODE_MAX_WORKERS` 优先于它；只认用户级。
+   */
+  maxWorkers?: number;
 }
 
 export interface HooksSettings {

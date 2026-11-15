@@ -13,12 +13,15 @@
  *   （完整门禁）；名字是 `codemode` 直接拒绝。脚本结束时 abort 仍在跑的调用。
  * - 超时：父进程计时，到点杀子进程树（POSIX 进程组 / Windows taskkill）；外层 abort：先发
  *   `abort`，宽限后杀树。
+ * - 名额：进程内同时存活的子进程数受 `worker-pool.ts` 限制，排队最多 60 s 且计入 `timeout_ms`；名额在子进程
+ *   `close` 时归还，不是结果落定时。
  * - OS 沙箱（docs/guides/sandbox.md）：有可用的 sandbox-exec / bwrap / unshare 时，整条命令行经它启动，拒绝
  *   网络与一切写入（`CODEMODE_OS_POLICY`；子进程本来就没有写权限）。Node 22 / 24 的 strict 依赖这一层
  *   （`requireOsSandbox`），包装不了就报错，不裸跑；Node ≥ 25 是叠加的纵深防御。
  */
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable, Writable } from "node:stream";
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +30,12 @@ import type { OsSandboxPolicy } from "../sandbox/profile.js";
 import { wrapCommand, type WrappedCommand } from "../sandbox/wrap.js";
 import { killProcessTree, trackProcessGroup, untrackProcessGroup } from "../tools/process-tree.js";
 import { detectSandboxCapability, type SandboxCapability } from "./capability.js";
+import {
+  DEFAULT_MAX_WORKERS,
+  MAX_WORKER_WAIT_MS,
+  codemodeWorkerPool,
+  type WorkerPool,
+} from "./worker-pool.js";
 import {
   LineSplitter,
   SANDBOX_MAIN_FLAG,
@@ -129,6 +138,10 @@ export interface SandboxRunRequest {
   requireOsSandbox?: boolean;
   /** 子进程堆上限（MB），缺省 DEFAULT_CODEMODE_HEAP_MB；0 不设上限。 */
   maxHeapMb?: number;
+  /** 进程级沙箱名额池，缺省共享的 `codemodeWorkerPool`；测试注入带假时钟的池。 */
+  workerPool?: WorkerPool;
+  /** 同时存活的沙箱子进程上限（调用方每次读环境变量 / 配置）；缺省 2。 */
+  maxWorkers?: number;
   /** 脚本总超时计时器的注入（测试用手动时钟，不随机器负载漂移）；缺省真实 `setTimeout`。 */
   timeoutTimers?: TimeoutTimers;
 }
@@ -201,13 +214,50 @@ export async function runSandbox(request: SandboxRunRequest): Promise<SandboxRun
       elapsedMs: 0,
     };
   }
-  const isWindows = process.platform === "win32";
-  const child = spawn(command.command, command.args, {
-    env: sandboxEnv(),
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: !isWindows,
-    windowsHide: true,
+  const timeoutMs = request.options.timeoutMs;
+  const pool = request.workerPool ?? codemodeWorkerPool;
+  const limit = request.maxWorkers ?? DEFAULT_MAX_WORKERS;
+  const slot = await pool.acquire({
+    limit,
+    waitMs: Math.min(MAX_WORKER_WAIT_MS, timeoutMs),
+    signal: request.signal,
   });
+  if (slot.status === "aborted") {
+    return { ...base, ok: false, error: "Script aborted", aborted: true, elapsedMs: 0 };
+  }
+  if (slot.status === "timeout") {
+    const ownDeadline = timeoutMs <= MAX_WORKER_WAIT_MS;
+    return {
+      ...base,
+      ok: false,
+      timedOut: ownDeadline,
+      error: ownDeadline
+        ? `Script timed out after ${timeoutMs} ms waiting for a free codemode sandbox slot (${slot.active} of ${limit} in use); it was not run`
+        : `Script was not run: all ${limit} codemode sandbox slots stayed busy for ${MAX_WORKER_WAIT_MS / 1000} s; try again when other scripts finish`,
+      elapsedMs: slot.waitedMs,
+    };
+  }
+  const lease = slot.lease;
+  // 等名额的时间计入脚本的 timeout_ms
+  const runTimeoutMs = Math.max(1, timeoutMs - slot.waitedMs);
+  const isWindows = process.platform === "win32";
+  let child: ChildProcessByStdio<Writable, Readable, Readable>;
+  try {
+    child = spawn(command.command, command.args, {
+      env: sandboxEnv(),
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: !isWindows,
+      windowsHide: true,
+    });
+  } catch (error) {
+    lease.release();
+    return {
+      ...base,
+      ok: false,
+      error: `Failed to start codemode sandbox: ${(error as Error).message}`,
+      elapsedMs: slot.waitedMs,
+    };
+  }
   const pid = child.pid;
   if (pid !== undefined && !isWindows) trackProcessGroup(pid);
 
@@ -245,10 +295,10 @@ export async function runSandbox(request: SandboxRunRequest): Promise<SandboxRun
     settle({
       ok: false,
       timedOut: true,
-      error: `Script timed out after ${request.options.timeoutMs} ms`,
+      error: `Script timed out after ${timeoutMs} ms`,
     });
     kill();
-  }, request.options.timeoutMs);
+  }, runTimeoutMs);
   let graceTimer: ReturnType<typeof setTimeout> | undefined;
   const onAbort = (): void => {
     write({ type: "abort" });
@@ -337,10 +387,13 @@ export async function runSandbox(request: SandboxRunRequest): Promise<SandboxRun
   child.stdout.on("data", (chunk: string) => {
     for (const line of splitter.push(chunk)) onLine(line);
   });
-  child.on("error", (error) =>
-    settle({ ok: false, error: `Failed to start codemode sandbox: ${error.message}` }),
-  );
+  child.on("error", (error) => {
+    settle({ ok: false, error: `Failed to start codemode sandbox: ${error.message}` });
+    // 没起来的进程不会再有 close
+    if (child.pid === undefined) lease.release();
+  });
   child.on("close", (code, signal) => {
+    lease.release();
     for (const line of splitter.flush()) onLine(line);
     if (pid !== undefined && !isWindows) untrackProcessGroup(pid);
     if (outOfMemory) {

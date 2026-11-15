@@ -28,7 +28,12 @@ const IMPLICIT_DEFAULTS: Partial<AmaConfig> = {
   permission: { builtinDeny: true, autoSafeCommands: [] },
   // [#267] 寿命上限；[#266] bashAutoBackgroundAfterMs 的缺省由运行方式决定（dynamicDefaults）
   tools: { default: [], bashBackgroundMaxMs: 7_200_000 },
-  codemode: { inlineBudget: DEFAULT_INLINE_BUDGET, requireStrict: false, maxHeapMb: 256 },
+  codemode: {
+    inlineBudget: DEFAULT_INLINE_BUDGET,
+    requireStrict: false,
+    maxHeapMb: 256,
+    maxWorkers: 2,
+  },
   cache: { ...DEFAULT_CACHE_CONFIG },
   request: {
     idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,

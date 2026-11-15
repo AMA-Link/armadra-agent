@@ -41,6 +41,7 @@ import {
 import { runSandbox, type SandboxRunResult } from "./host-side.js";
 import { parseOptionsLine, type ToolDecl } from "./protocol.js";
 import { widenScriptBashOutput } from "./script-output.js";
+import { resolveMaxWorkers } from "./worker-pool.js";
 import { commitStore, readStore } from "./store.js";
 
 export const CODEMODE_TOOL_NAME = "codemode";
@@ -77,6 +78,8 @@ export interface CodemodeToolOptions {
   nodePath?: string;
   /** 子进程堆上限（MB，`codemode.maxHeapMb`）；缺省 256，0 不设上限。 */
   maxHeapMb?: number;
+  /** `codemode.maxWorkers`；环境变量 `AMA_CODEMODE_MAX_WORKERS` 优先，每次执行时读取。 */
+  maxWorkers?: number;
 }
 
 export interface CodemodeDetails {
@@ -333,6 +336,7 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
         ...(options.entry !== undefined ? { entry: options.entry } : {}),
         ...(options.nodePath !== undefined ? { nodePath: options.nodePath } : {}),
         ...(options.maxHeapMb !== undefined ? { maxHeapMb: options.maxHeapMb } : {}),
+        maxWorkers: resolveMaxWorkers(options.maxWorkers),
         callTool: async (name, args, signal) => {
           if (!callable.has(name)) throw new Error(`Tool ${name} is not available in codemode`);
           const value = toScriptValue(name, await ctx.tools.executeTool(name, args, { signal }));
@@ -450,6 +454,8 @@ export function codemodeToolFactory(
     if (budget !== undefined) options.inlineBudget = budget;
     const heapMb = ctx.config.codemode?.maxHeapMb;
     if (heapMb !== undefined) options.maxHeapMb = heapMb;
+    const workers = ctx.config.codemode?.maxWorkers;
+    if (workers !== undefined) options.maxWorkers = workers;
     const maxChars = ctx.config.tools?.maxToolResultChars;
     if (maxChars !== undefined) options.maxResultChars = maxChars;
     if (overrides.entry !== undefined) options.entry = overrides.entry;
