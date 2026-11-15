@@ -63,6 +63,7 @@
     "docs/reference/*.md",
     "docs/en/**/*.md",
     "docs/assets/*.svg",
+    "assets/quickjs/*",
     "README.zh-CN.md",
     "CHANGELOG.md",
     "CHANGELOG.zh-CN.md",

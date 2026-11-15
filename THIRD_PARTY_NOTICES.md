@@ -32,3 +32,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## QuickJS-ng
+
+- 内容：`assets/quickjs/quickjs.wasm`，QuickJS-ng 0.18.0 编译成的 WebAssembly（WASI reactor），codemode 的 QuickJS 引擎用它隔离运行脚本；随 npm 包分发，并内联进 `dist/bundle/ama.cjs`。
+- 来源：<https://github.com/quickjs-ng/quickjs>；二进制取自 npm 包 `quickjs-wasi` 3.7.0 的 `quickjs.wasm`，未修改（SHA-256 与细节见 `assets/quickjs/README.md`）。
+- 许可：MIT；二进制内含的 C 接口层同为 MIT，静态链接的 wasi-libc 见其项目声明。完整声明见 `assets/quickjs/LICENSE`。
