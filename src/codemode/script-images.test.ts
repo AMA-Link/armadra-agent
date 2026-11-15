@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Script, createContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { createHarness } from "../agent/testing/harness.js";
 import { stubTool } from "../agent/testing/stubs.js";
@@ -8,7 +9,7 @@ import type { ToolDefinition } from "../tools/types.js";
 import { sandboxEntryForTests } from "../../test/helpers/codemode-sandbox.js";
 import { detectSandboxCapability } from "./capability.js";
 import { prepareScriptImages } from "./script-images.js";
-import { MAX_SCRIPT_IMAGES, normalizeImage, sniffImage } from "./sandbox-entry.js";
+import { BOOTSTRAP, MAX_SCRIPT_IMAGES } from "./sandbox-entry.js";
 import { createCodemodeTool, toScriptValue } from "./tool.js";
 
 const PNG =
@@ -23,7 +24,38 @@ const WEBP = Buffer.concat([
   Buffer.from("WEBPVP8 "),
 ]).toString("base64");
 
-describe("image() 入参规范化（子进程侧）", () => {
+/** 在引导脚本（两个引擎共用）里直接调 image()：成功给 `{ data, mimeType }`，失败给错误文本。 */
+function normalizeImage(value: unknown): { data: string; mimeType: string } | string {
+  const sent: { data: string; mimeType: string }[] = [];
+  const context = createContext(Object.create(null) as object);
+  const factory = new Script(BOOTSTRAP).runInContext(context) as (
+    host: (kind: string, payload: string) => undefined,
+    config: object,
+  ) => unknown;
+  factory(
+    (kind, payload) => {
+      if (kind === "image") sent.push(JSON.parse(payload) as { data: string; mimeType: string });
+      return undefined;
+    },
+    {
+      maxConcurrent: 8,
+      maxValueChars: 1000,
+      maxTotalChars: 1000,
+      maxImages: 8,
+      tools: "[]",
+      store: "{}",
+    },
+  );
+  const image = new Script("image").runInContext(context) as (v: unknown) => void;
+  try {
+    image(value);
+  } catch (error) {
+    return (error as Error).message;
+  }
+  return sent[0] as { data: string; mimeType: string };
+}
+
+describe("image() 入参规范化（引导脚本，两个引擎共用）", () => {
   it("四种格式按文件头认 MIME，声明的 MIME 被忽略", () => {
     expect(normalizeImage(`data:image/png;base64,${PNG}`)).toEqual({
       data: PNG,
@@ -40,7 +72,6 @@ describe("image() 入参规范化（子进程侧）", () => {
       data: WEBP,
       mimeType: "image/webp",
     });
-    expect(sniffImage(Buffer.from("hello"))).toBeUndefined();
   });
 
   it("远程 URL、不是 base64、不是图片、形状不对都被拒", () => {

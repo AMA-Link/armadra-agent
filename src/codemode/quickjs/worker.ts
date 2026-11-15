@@ -30,7 +30,12 @@ export interface QuickjsWorkerData {
   tools: ToolDecl[];
   store: Record<string, unknown>;
   /** 引导脚本的配置：并发上限与 store 上限。 */
-  limits: { maxConcurrent: number; maxValueChars: number; maxTotalChars: number };
+  limits: {
+    maxConcurrent: number;
+    maxValueChars: number;
+    maxTotalChars: number;
+    maxImages: number;
+  };
   /** QuickJS 内存上限（字节）；0 不设上限。 */
   memoryLimitBytes: number;
   /** 4 字节的中断标志：非 0 表示该停了。 */
@@ -132,60 +137,6 @@ interface QjsExports {
   qjs_execute_pending_job(): number;
   wasm_malloc(size: number): number;
   wasm_free(ptr: number): void;
-}
-
-/** 单个脚本最多附几张图（与 sandbox-entry.ts 的 MAX_SCRIPT_IMAGES 一致；本文件不能 import 它）。 */
-const MAX_SCRIPT_IMAGES = 8;
-
-/** 按文件头认 PNG / JPEG / GIF / WebP（与 sandbox-entry.ts 的 sniffImage 逐行一致）。 */
-function sniffImage(buf: Buffer): string | undefined {
-  if (buf.length >= 8 && buf.readUInt32BE(0) === 0x89504e47 && buf.readUInt32BE(4) === 0x0d0a1a0a)
-    return "image/png";
-  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
-  if (buf.length >= 6 && /^GIF8[79]a$/.test(buf.toString("ascii", 0, 6))) return "image/gif";
-  if (
-    buf.length >= 12 &&
-    buf.toString("ascii", 0, 4) === "RIFF" &&
-    buf.toString("ascii", 8, 12) === "WEBP"
-  )
-    return "image/webp";
-  return undefined;
-}
-
-/** `image()` 的入参 → `{ data, mimeType }`；不合法返回错误文本（与 sandbox-entry.ts 的 normalizeImage 一致）。 */
-function normalizeImage(value: unknown): { data: string; mimeType: string } | string {
-  let raw: unknown = value;
-  if (typeof raw === "object" && raw !== null) {
-    const o = raw as { type?: unknown; data?: unknown; image_url?: unknown };
-    if (o.type === "image" && typeof o.data === "string") raw = o.data;
-    else if (typeof o.image_url === "string") raw = o.image_url;
-    else if (
-      typeof o.image_url === "object" &&
-      o.image_url !== null &&
-      typeof (o.image_url as { url?: unknown }).url === "string"
-    )
-      raw = (o.image_url as { url: string }).url;
-  }
-  if (typeof raw !== "string") {
-    return "image(value): pass a base64 data: URL, { image_url }, or { type: 'image', data, mimeType }";
-  }
-  let base64 = raw.trim();
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(base64)?.[1]?.toLowerCase();
-  if (scheme !== undefined && scheme !== "data") {
-    return "image(value): remote URLs are not supported; pass a base64 data: URL";
-  }
-  if (scheme === "data") {
-    const match = /^data:[^,]*;base64,([\s\S]*)$/i.exec(base64);
-    if (match === null) return "image(value): the data: URL must be base64-encoded";
-    base64 = (match[1] ?? "").trim();
-  }
-  base64 = base64.replace(/\s+/g, "");
-  if (base64 === "" || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
-    return "image(value): the image data is not valid base64";
-  }
-  const mimeType = sniffImage(Buffer.from(base64, "base64"));
-  if (mimeType === undefined) return "image(value): not a PNG, JPEG, GIF or WebP image";
-  return { data: base64, mimeType };
 }
 
 /** VM 里的脚本以失败结束（语法错误、未捕获的异常、被中断）。 */
@@ -405,7 +356,6 @@ function run(data: QuickjsWorkerData): void {
   const started = Date.now();
   let finished = false;
   let outstanding = 0;
-  let images = 0;
   let failure: string | undefined;
   let vm: Vm | undefined;
   let driver: { deliver: number; finish: number; start: number } | undefined;
@@ -462,13 +412,8 @@ function run(data: QuickjsWorkerData): void {
     machine.hostHandler = (kind, payload) => {
       if (finished) return undefined;
       if (kind === "image") {
-        // 返回字符串 = 校验失败的原因，引导脚本据此抛 TypeError
-        if (images >= MAX_SCRIPT_IMAGES) {
-          return `image(value): at most ${MAX_SCRIPT_IMAGES} images per script`;
-        }
-        const normalized = normalizeImage((JSON.parse(payload) as { value?: unknown }).value);
-        if (typeof normalized === "string") return normalized;
-        images++;
+        // 引导脚本已校验并计数
+        const normalized = JSON.parse(payload) as { data: string; mimeType: string };
         post({ type: "image", data: normalized.data, mimeType: normalized.mimeType });
       } else if (kind === "output") {
         post({ type: "output", text: payload });
@@ -500,6 +445,7 @@ function run(data: QuickjsWorkerData): void {
         maxConcurrent: data.limits.maxConcurrent,
         maxValueChars: data.limits.maxValueChars,
         maxTotalChars: data.limits.maxTotalChars,
+        maxImages: data.limits.maxImages,
         tools: JSON.stringify(data.tools),
         store: JSON.stringify(data.store),
       })})`,

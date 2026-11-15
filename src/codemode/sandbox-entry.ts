@@ -157,15 +157,81 @@ export const BOOTSTRAP = String.raw`(function (host, config) {
     const json = storeMap.get(key);
     return json === undefined ? undefined : parse(json);
   }
+  // image(): one implementation for both engines (the QuickJS worker cannot import source files)
+  const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const IMAGE_FORMS = "image(value): pass a base64 data: URL, { image_url }, or { type: 'image', data, mimeType }";
+  let imageCount = 0;
+  // the first 12 bytes of a base64 string, enough for every signature below
+  function headBytes(b64) {
+    const bytes = [];
+    let acc = 0;
+    let bits = 0;
+    for (let i = 0; i < b64.length && bytes.length < 12; i++) {
+      const v = BASE64_ALPHABET.indexOf(b64[i]);
+      if (v < 0) break;
+      acc = (acc << 6) | v;
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        bytes.push((acc >> bits) & 255);
+        acc &= (1 << bits) - 1;
+      }
+    }
+    return bytes;
+  }
+  function ascii(bytes, from, to) {
+    let out = "";
+    for (let i = from; i < to; i++) out += String.fromCharCode(bytes[i]);
+    return out;
+  }
+  // PNG / JPEG / GIF / WebP by magic bytes only; the declared MIME type is never trusted
+  function sniffImage(b) {
+    if (b.length >= 8 && b[0] === 0x89 && ascii(b, 1, 4) === "PNG" && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return "image/png";
+    if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+    if (b.length >= 6 && /^GIF8[79]a$/.test(ascii(b, 0, 6))) return "image/gif";
+    if (b.length >= 12 && ascii(b, 0, 4) === "RIFF" && ascii(b, 8, 12) === "WEBP") return "image/webp";
+    return undefined;
+  }
+  function normalizeImage(value) {
+    let raw = value;
+    if (typeof raw === "object" && raw !== null) {
+      if (raw.type === "image" && typeof raw.data === "string") raw = raw.data;
+      else if (typeof raw.image_url === "string") raw = raw.image_url;
+      else if (typeof raw.image_url === "object" && raw.image_url !== null && typeof raw.image_url.url === "string") raw = raw.image_url.url;
+    }
+    if (typeof raw !== "string") return IMAGE_FORMS;
+    let base64 = raw.trim();
+    const schemeMatch = /^([a-z][a-z0-9+.-]*):/i.exec(base64);
+    const scheme = schemeMatch === null ? undefined : schemeMatch[1].toLowerCase();
+    if (scheme !== undefined && scheme !== "data") {
+      return "image(value): remote URLs are not supported; pass a base64 data: URL";
+    }
+    if (scheme === "data") {
+      const match = /^data:[^,]*;base64,([\s\S]*)$/i.exec(base64);
+      if (match === null) return "image(value): the data: URL must be base64-encoded";
+      base64 = match[1].trim();
+    }
+    base64 = base64.replace(/\s+/g, "");
+    if (base64 === "" || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
+      return "image(value): the image data is not valid base64";
+    }
+    const mimeType = sniffImage(headBytes(base64));
+    if (mimeType === undefined) return "image(value): not a PNG, JPEG, GIF or WebP image";
+    return { data: base64, mimeType: mimeType };
+  }
   function image(value) {
-    let json;
+    let normalized;
     try {
-      json = stringify({ value: value });
+      normalized = normalizeImage(value);
     } catch (error) {
       throw new TypeError("image(value): value must be JSON-serializable");
     }
-    const problem = host("image", json);
-    if (typeof problem === "string") throw new TypeError(problem);
+    if (typeof normalized === "string") throw new TypeError(normalized);
+    if (imageCount >= config.maxImages) {
+      throw new TypeError("image(value): at most " + config.maxImages + " images per script");
+    }
+    imageCount++;
+    host("image", stringify(normalized));
   }
   // reserved call name, same as SEARCH_TOOLS_CALL in protocol.ts; the parent ranks tools with BM25
   function searchTools(query, options) {
@@ -260,71 +326,14 @@ function done(ok: boolean, error?: string): void {
   process.stdout.write("", () => process.exit(0));
 }
 
-/** 单个脚本最多附几张图。 */
+/** 单个脚本最多附几张图；校验在引导脚本里（两个引擎共用），超限由它抛错。 */
 export const MAX_SCRIPT_IMAGES = 8;
-let imageCount = 0;
-
-/** 按文件头认 PNG / JPEG / GIF / WebP（与 tools/image-file.ts 的 sniffImageMime 一致；本文件不能 import 它）。 */
-export function sniffImage(buf: Buffer): string | undefined {
-  if (buf.length >= 8 && buf.readUInt32BE(0) === 0x89504e47 && buf.readUInt32BE(4) === 0x0d0a1a0a)
-    return "image/png";
-  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
-  if (buf.length >= 6 && /^GIF8[79]a$/.test(buf.toString("ascii", 0, 6))) return "image/gif";
-  if (
-    buf.length >= 12 &&
-    buf.toString("ascii", 0, 4) === "RIFF" &&
-    buf.toString("ascii", 8, 12) === "WEBP"
-  )
-    return "image/webp";
-  return undefined;
-}
-
-const IMAGE_FORMS =
-  "image(value): pass a base64 data: URL, { image_url }, or { type: 'image', data, mimeType }";
-
-/** `image()` 的入参 → `{ data, mimeType }`；不合法返回错误文本。MIME 只信文件头。 */
-export function normalizeImage(value: unknown): { data: string; mimeType: string } | string {
-  let raw: unknown = value;
-  if (typeof raw === "object" && raw !== null) {
-    const o = raw as { type?: unknown; data?: unknown; image_url?: unknown };
-    if (o.type === "image" && typeof o.data === "string") raw = o.data;
-    else if (typeof o.image_url === "string") raw = o.image_url;
-    else if (
-      typeof o.image_url === "object" &&
-      o.image_url !== null &&
-      typeof (o.image_url as { url?: unknown }).url === "string"
-    )
-      raw = (o.image_url as { url: string }).url;
-  }
-  if (typeof raw !== "string") return IMAGE_FORMS;
-  let base64 = raw.trim();
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(base64)?.[1]?.toLowerCase();
-  if (scheme !== undefined && scheme !== "data") {
-    return "image(value): remote URLs are not supported; pass a base64 data: URL";
-  }
-  if (scheme === "data") {
-    const match = /^data:[^,]*;base64,([\s\S]*)$/i.exec(base64);
-    if (match === null) return "image(value): the data: URL must be base64-encoded";
-    base64 = (match[1] ?? "").trim();
-  }
-  base64 = base64.replace(/\s+/g, "");
-  if (base64 === "" || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
-    return "image(value): the image data is not valid base64";
-  }
-  const mimeType = sniffImage(Buffer.from(base64, "base64"));
-  if (mimeType === undefined) return "image(value): not a PNG, JPEG, GIF or WebP image";
-  return { data: base64, mimeType };
-}
 
 function host(kind: string, payload: string): string | undefined {
   if (finished) return undefined;
   if (kind === "image") {
-    if (imageCount >= MAX_SCRIPT_IMAGES) {
-      return `image(value): at most ${MAX_SCRIPT_IMAGES} images per script`;
-    }
-    const normalized = normalizeImage((JSON.parse(payload) as { value?: unknown }).value);
-    if (typeof normalized === "string") return normalized;
-    imageCount++;
+    // 已由引导脚本校验并计数
+    const normalized = JSON.parse(payload) as { data: string; mimeType: string };
     send({ type: "image", data: normalized.data, mimeType: normalized.mimeType });
     return undefined;
   }
@@ -353,6 +362,7 @@ function start(run: Extract<ParentMessage, { type: "run" }>): void {
     maxConcurrent: MAX_CONCURRENT,
     maxValueChars: MAX_STORE_VALUE_CHARS,
     maxTotalChars: MAX_STORE_TOTAL_CHARS,
+    maxImages: MAX_SCRIPT_IMAGES,
     tools: JSON.stringify(run.tools satisfies ToolDecl[]),
     store: JSON.stringify(run.store ?? {}),
   };
