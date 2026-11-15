@@ -6,6 +6,14 @@
 
 ## 未发布
 
+### 新增
+
+- **codemode 脚本**：脚本里 `tools.bash` 的 `output` 放宽到 1 MiB（更长时保留首尾各 512 KiB，中间是省略说明，`truncated` 为真，`fullOutputPath` 指向全文）；模型直接调用 bash 的结果不变。
+- **codemode 并发上限**：整个进程（所有会话）同时存活的沙箱子进程至多 2 个（`codemode.maxWorkers`，环境变量 `AMA_CODEMODE_MAX_WORKERS` 优先）；多出的脚本先来先到排队，最多等 60 s 或到自己的 `timeout_ms`（等待计入），到点失败且不运行。名额在子进程真正退出时归还。
+- **codemode 全局函数**：`searchTools(query, { limit?, namespace? })` 按名字与描述做 BM25 排序；`image(value)` 把 PNG / JPEG / GIF / WebP（base64 data URL、`{ image_url }` 或 `{ type: "image", data, mimeType }`；MIME 由文件头决定，拒绝远程 URL）附在结果后并存到会话 outputs 目录。`tools.read` 读图片时解析为 `image()` 可直接收的图片块。
+- **脚本被杀后的恢复**：已完成的内层调用记为 `ama.codemode-call` 自定义条目（可选条目，会话格式版本不变）；进程在脚本中途被杀后，resume 的恢复提醒列出它们并要求不要盲目重复。
+- **提示预算**：`codemode-only` 预设的预算由 1950 放宽到 2000 token（实测 1937 → 1982），用于两个新全局函数的描述；`default` 增加约 26 token（1607 → 1633）。
+
 ### 变更
 
 - **工具参数宽松强转**：严格校验失败后，按 schema 强转一次再校验（数字串 → 数字、`"true"`/`"false"` → 布尔、数字/布尔 → 字符串、单值 → 单元素数组、JSON 字符串 → 对象/数组、丢弃可选属性的 `null`）；enum 仍须严格匹配，不填默认值。权限管线、钩子与工具看到强转后的参数，助手消息与会话历史保留模型原始调用；codemode 内部调用同样适用。

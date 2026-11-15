@@ -7,6 +7,14 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+### Added
+
+- **codemode scripts**: inner `tools.bash` output is widened to 1 MiB (longer output keeps the first and last 512 KiB around an omission marker, `truncated` is set, `fullOutputPath` points at the full file); direct bash results are unchanged.
+- **codemode worker limit**: at most 2 sandbox child processes are alive at once across all sessions in the process (`codemode.maxWorkers`, overridden by `AMA_CODEMODE_MAX_WORKERS`); extra scripts queue FIFO for up to 60 s or until their own `timeout_ms` (the wait counts toward it), then fail without running. Slots are released when the child process has actually exited.
+- **codemode globals**: `searchTools(query, { limit?, namespace? })` ranks callable tools by BM25 over name and description; `image(value)` attaches a PNG / JPEG / GIF / WebP (base64 data URL, `{ image_url }` or `{ type: "image", data, mimeType }`; MIME from magic bytes, remote URLs rejected) to the result and saves it under the session outputs directory. `tools.read` on an image now resolves to an image block that `image()` accepts.
+- **Recovery for killed scripts**: completed inner calls are recorded as `ama.codemode-call` custom entries (additive, format version unchanged); when the process dies mid-script, the resume reminder lists them and says not to repeat them blindly.
+- **Prompt budget**: the `codemode-only` preset budget is raised from 1950 to 2000 tokens (measured 1937 to 1982) for the two new global descriptions; `default` grows by about 26 tokens (1607 to 1633).
+
 ### Changed
 
 - **Lenient tool-argument coercion**: when strict schema validation fails, the runner tries one schema-driven coercion pass (numeric strings to numbers, `"true"`/`"false"` to booleans, numbers/booleans to strings, a single value to a one-element array, a JSON string to an object/array, `null` dropped on optional properties) and re-validates; enums must still match exactly and defaults are never filled. The permission pipeline, hooks and the tool see the coerced arguments; the assistant message and session history keep the model's original call. Applies to codemode inner calls too.
