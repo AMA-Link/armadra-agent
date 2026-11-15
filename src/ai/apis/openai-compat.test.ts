@@ -161,6 +161,7 @@ describe("detectCompat 真值表", () => {
       maxCacheBreakpoints: 4,
       sendInterleavedThinkingBeta: true,
       sendCacheControl: true,
+      messageThreads: true,
     });
     expect(
       detectAnthropicCompat(model(p, "c", { compat: { adaptiveThinking: true } }), p)

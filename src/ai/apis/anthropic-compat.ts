@@ -9,6 +9,8 @@
  *   未写明接受，不发未知 beta 头最稳）；不在表里的主机（中转）只对 `claude*` 模型开——中转转发 Claude
  *   时仍需要交错思考。
  * - `sendCacheControl`：缺省开；DeepSeek 文档写明 `cache_control` 被忽略，关掉以减小请求体。
+ * - `messageThreads`：只有官方端点开；第三方与中转一律关（不认 `thread` 字段的网关会丢掉它，续接就变成
+ *   缺前文的请求），要开的中转显式写 `compat.messageThreads: true`。
  * - `adaptiveThinking` 只由目录 / 配置给（官方模型逐条写在 catalog/anthropic.json），表里不推断。
  * - 缓存保留层级（1h TTL）等缓存能力在 cache-params.ts 的 `HOST_CACHE_CAPABILITIES`，不在这里。
  * - OpenRouter：流式 usage 只出现在 `message_delta`，`applyAnthropicUsage` 本就按非 null 字段合并，
@@ -28,6 +30,7 @@ export const ANTHROPIC_COMPAT_KEYS = [
   "maxCacheBreakpoints",
   "sendInterleavedThinkingBeta",
   "sendCacheControl",
+  "messageThreads",
 ] as const satisfies readonly (keyof AnthropicMessagesCompat)[];
 
 /** 未知主机的保守缺省（`sendInterleavedThinkingBeta` 另按模型 id 定，见 `hostDefaults`）。 */
@@ -38,6 +41,7 @@ export const DEFAULT_ANTHROPIC_COMPAT: Readonly<ResolvedAnthropicCompat> = {
   maxCacheBreakpoints: 4,
   sendInterleavedThinkingBeta: false,
   sendCacheControl: true,
+  messageThreads: false,
 };
 
 export interface AnthropicHostRule {
@@ -50,7 +54,10 @@ const THIRD_PARTY: Partial<AnthropicMessagesCompat> = { sendInterleavedThinkingB
 
 /** 主机表：先命中先用。 */
 export const ANTHROPIC_HOST_RULES: readonly AnthropicHostRule[] = [
-  { host: "api.anthropic.com", patch: { sendInterleavedThinkingBeta: true } },
+  {
+    host: "api.anthropic.com",
+    patch: { sendInterleavedThinkingBeta: true, messageThreads: true },
+  },
   {
     host: "api.deepseek.com",
     patch: { sendCacheControl: false, sendInterleavedThinkingBeta: false, adaptiveThinking: false },
