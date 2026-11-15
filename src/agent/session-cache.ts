@@ -30,6 +30,7 @@ import {
   warmReplayMaxTokens,
   type WarmerTimers,
 } from "../ai/cache/warmer.js";
+import { forgetThreads } from "../ai/apis/anthropic-threads.js";
 import { thinkingBudget } from "../ai/thinking.js";
 import type { AssistantMessage, CacheRetention, Model, StreamOptions } from "../ai/types.js";
 import { estimateTextTokens } from "../compaction/estimate.js";
@@ -179,6 +180,11 @@ export class SessionCacheController {
           thinking: options.thinkingLevel,
         };
         subtaskMs = this.takeTaskMs(at);
+        // fork 出的会话与根会话共用缓存键：共用服务端线程会互相占掉续接点，只让根会话续接
+        if (this.cacheKey !== this.core.manager.id) sent.disableContinuation = true;
+      } else if (purpose === "summary") {
+        // 摘要续写 = 上一回合前缀 + 指令：续接会占掉那条回复的唯一续接点，并把摘要回复当成线程末端
+        sent.disableContinuation = true;
       }
       let replaced = false;
       const onPayload = options.onPayload;
@@ -391,6 +397,9 @@ export class SessionCacheController {
   dispose(): void {
     this.disposed = true;
     this.warmer.cancel();
+    // 会话结束，释放它的服务端续接点记录（fork 会话共用根缓存键，不动）
+    if (this.cacheKey !== undefined && this.cacheKey === this.core.manager.id)
+      forgetThreads(this.cacheKey);
   }
 
   // -------------------------------------------------------------------------
@@ -536,6 +545,8 @@ export class SessionCacheController {
       ...record.options,
       maxTokens: warmReplayMaxTokens(model.api),
       purpose: "warm",
+      // 保温重放整段前缀：不用也不替换服务端续接点，否则会占掉下一回合的线程
+      disableContinuation: true,
       signal,
     };
     return inner(model, record.contextRef, options).result();

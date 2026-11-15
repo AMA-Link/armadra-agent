@@ -266,6 +266,12 @@ export interface AnthropicMessagesCompat {
   sendInterleavedThinkingBeta?: boolean;
   /** [W5-C0] 打 `cache_control`；缺省 true，忽略它的端点（DeepSeek 等）可关以减小请求体。 */
   sendCacheControl?: boolean;
+  /**
+   * 请求按 message threads 续接（beta `message-threads-2026-08-12`）：有稳定 sessionId 且提示缓存开着时，
+   * 服务端沿用上一条回复，请求只发新增消息。缺省：官方端点 true，Anthropic 兼容的第三方 / 中转 false
+   * （丢弃未知字段的网关会把续接静默变成缺前文的请求）。
+   */
+  messageThreads?: boolean;
 }
 
 /** B8 补全。 */
@@ -468,6 +474,11 @@ export interface StreamOptions {
   thinkingLevel?: ModelThinkingLevel;
   cacheRetention?: CacheRetention;
   sessionId?: string;
+  /**
+   * 本次请求不使用、也不替换服务端的续接状态（Anthropic message threads）。重放或重复上一条请求的
+   * 调用（缓存保温、压缩摘要）必须置位，否则会占掉真实回合的续接点。
+   */
+  disableContinuation?: boolean;
   /** [W3-C0] 请求用途（第三波 §1.2）；缺省 `turn`。协议层只透传给观测方，不进请求体。 */
   purpose?: RequestPurpose;
   /**

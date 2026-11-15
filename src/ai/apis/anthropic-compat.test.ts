@@ -106,6 +106,30 @@ describe("anthropic-compat 主机表真值表", () => {
     );
   });
 
+  it.each([
+    ["https://api.anthropic.com", "claude-sonnet-5", true],
+    [undefined, "claude-sonnet-5", true],
+    ["https://api.deepseek.com/anthropic", "d", false],
+    ["https://open.bigmodel.cn/api/anthropic", "glm-5.3", false],
+    ["https://openrouter.ai/api/v1", "anthropic/claude-sonnet-5", false],
+    ["https://www.packyapi.com", "claude-sonnet-5", false],
+  ])("messageThreads 缺省：%s · %s", (baseUrl, id, on) => {
+    expect(hostDefaults(baseUrl, id).messageThreads).toBe(on);
+  });
+
+  it("compat.messageThreads 显式值胜过主机推断", () => {
+    expect(
+      detectAnthropicCompat(
+        model("https://api.anthropic.com", "c", { compat: { messageThreads: false } }),
+      ).messageThreads,
+    ).toBe(false);
+    expect(
+      detectAnthropicCompat(
+        model("https://relay.example", "c", { compat: { messageThreads: true } }),
+      ).messageThreads,
+    ).toBe(true);
+  });
+
   it("表里没有重复的主机子串", () => {
     const hosts = ANTHROPIC_HOST_RULES.map((r) => r.host);
     expect(new Set(hosts).size).toBe(hosts.length);

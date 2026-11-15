@@ -38,6 +38,7 @@ import type {
   TranscriptContext,
   UserMessage,
 } from "../types.js";
+import { MESSAGE_THREADS_BETA } from "./anthropic-threads.js";
 import {
   effectiveRetention,
   resolveCacheRetention,
@@ -46,6 +47,7 @@ import {
 
 export const ANTHROPIC_VERSION = "2023-06-01";
 export const INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14";
+export { MESSAGE_THREADS_BETA } from "./anthropic-threads.js";
 
 export { DEFAULT_ANTHROPIC_COMPAT, detectAnthropicCompat } from "./anthropic-compat.js";
 
@@ -56,6 +58,8 @@ export interface AnthropicRequest {
   betas: string[];
   thinkingLevel: ModelThinkingLevel;
   providerThinkingLevel: string | undefined;
+  /** 请求属于线程会话（带线程 beta 头）；是否真的续接另看 `disableContinuation` 与会话状态。 */
+  threads: boolean;
 }
 
 export function cacheControlFor(
@@ -322,5 +326,9 @@ export function buildAnthropicRequest(
   }
   if (model.samplingParams) Object.assign(body, model.samplingParams);
   enforceCacheTtlOrder(body);
-  return { body, betas, thinkingLevel: level, providerThinkingLevel: providerLevel };
+  // 线程 beta 头只看会话与缓存开关，不看 disableContinuation：保温 / 摘要重放要与真实回合请求头一致
+  const threads =
+    compat.messageThreads === true && options.sessionId !== undefined && retention !== "none";
+  if (threads) betas.push(MESSAGE_THREADS_BETA);
+  return { body, betas, thinkingLevel: level, providerThinkingLevel: providerLevel, threads };
 }

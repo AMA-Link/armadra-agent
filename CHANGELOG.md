@@ -11,6 +11,10 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 - **Lenient tool-argument coercion**: when strict schema validation fails, the runner tries one schema-driven coercion pass (numeric strings to numbers, `"true"`/`"false"` to booleans, numbers/booleans to strings, a single value to a one-element array, a JSON string to an object/array, `null` dropped on optional properties) and re-validates; enums must still match exactly and defaults are never filled. The permission pipeline, hooks and the tool see the coerced arguments; the assistant message and session history keep the model's original call. Applies to codemode inner calls too.
 
+### Model efficiency
+
+- **Anthropic message threads**: requests with a stable session id and `cacheRetention` not `none` now continue the previous reply on the server (beta `message-threads-2026-08-12`) and send only the new messages instead of the whole conversation. Compaction, rewinds and branch switches, and changes to the model, system prompt, tools or thinking level fall back to a full request that starts a new thread; so do thread-not-found style rejections (resent once). On by default only on `api.anthropic.com`; set `compat.messageThreads` to change it. New stream option `disableContinuation` keeps a request from using or replacing thread state; cache warming and compaction summaries set it. Token usage and cache reporting are unchanged. See `docs/guides/providers.md`.
+
 ### Maintenance
 
 - **models.dev snapshot refreshed (2026-11-13)**: catalog overrides for models removed upstream are dropped (Groq `qwen/qwen3.6-27b`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`; Anthropic `claude-sonnet-4-5`; MiniMax M2.x, small model now `MiniMax-M3.1-Flash`; Volcengine `doubao-seed-2-0-code-preview-260215`). `ama models discover` no longer warns "unmatched" for relay ids that resolve through a catalog alias. The weekly refresh workflow now fails when its CI check fails or the PR cannot be opened.

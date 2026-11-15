@@ -36,8 +36,16 @@ import {
   ANTHROPIC_VERSION,
   anthropicMessagesUrl,
   buildAnthropicRequest,
+  convertMessages,
   detectAnthropicCompat,
 } from "./anthropic-request.js";
+import {
+  prepareThread,
+  recordThreadReply,
+  sendThreadRequest,
+  type ThreadContext,
+  type ThreadRequest,
+} from "./anthropic-threads.js";
 import {
   BlockTracker,
   STREAM_ENDED_MESSAGE,
@@ -216,7 +224,32 @@ async function run(
       idleTimeoutMs: idleTimeoutOf(options),
       onResponse: options.onResponse,
     };
-    const response = await postWithMaxTokensFallback(model, url, post, "max_tokens");
+    const send = (next: unknown) =>
+      postWithMaxTokensFallback(model, url, { ...post, body: next }, "max_tokens");
+    // 线程续接：只对真实回合；重放 / 摘要 / 探测 / 分类请求不碰线程状态。onPayload 换成非对象体时不续接。
+    const threadCtx: ThreadContext = {
+      provider: model.provider,
+      baseUrl,
+      betas: request.betas,
+    };
+    const fullBody = obj(body);
+    const prepared =
+      request.threads &&
+      fullBody !== undefined &&
+      options.sessionId !== undefined &&
+      options.disableContinuation !== true &&
+      (options.purpose === undefined || options.purpose === "turn")
+        ? prepareThread(threadCtx, options.sessionId, fullBody)
+        : undefined;
+    let response: Response;
+    let thread: ThreadRequest | undefined;
+    if (prepared !== undefined && fullBody !== undefined) {
+      const sent = await sendThreadRequest(prepared, fullBody, send, options.signal);
+      response = sent.response;
+      thread = sent.thread;
+    } else {
+      response = await send(body);
+    }
     stream.push({ type: "start", partial: tracker.output });
     const state: StreamState = { blocks: new Map(), stop: undefined, sawMessageStop: false };
     for await (const sse of readSseEvents(
@@ -242,6 +275,16 @@ async function run(
     const stop = state.stop ?? { reason: tracker.hasToolCalls ? "toolUse" : "stop" };
     if (stop.reason === "error") throw new ProviderStopError(stop.message);
     finishDone(stream, tracker, model, stop.reason);
+    // 干净回复才记续接点（须在块收尾之后转换）；出错 / 中止的回合不记，取用时已删旧点，
+    // 下一次整请求新开线程
+    if (thread !== undefined && fullBody !== undefined) {
+      try {
+        const reply = convertMessages([tracker.output]);
+        recordThreadReply(threadCtx, thread, fullBody, tracker.output.responseId, reply);
+      } catch {
+        // 记不下续接点只是下一次发整请求
+      }
+    }
   } catch (error) {
     finishError(stream, tracker, model, error, options.signal);
   }

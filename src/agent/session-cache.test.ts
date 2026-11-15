@@ -148,6 +148,15 @@ describe("SessionCacheController：未命中与统计", () => {
     await c.session.compact();
     await c.session.prompt("after");
     expect(of(c, "cache_miss")).toHaveLength(1);
+    // 摘要请求不使用 / 不替换线程；压缩之后的回合照常
+    const summaries = c.scripted.calls.filter((call) => call.options.purpose === "summary");
+    expect(summaries.length).toBeGreaterThan(0);
+    expect(summaries.every((call) => call.options.disableContinuation === true)).toBe(true);
+    expect(
+      c.scripted.calls
+        .filter((call) => call.options.purpose !== "summary")
+        .every((call) => call.options.disableContinuation === undefined),
+    ).toBe(true);
   });
 
   it("context_pressure：跨越 70% / 90% 各一次", async () => {
@@ -222,6 +231,9 @@ describe("保温接线（fake 计时器）", () => {
     await vi.advanceTimersByTimeAsync(270_000);
     const warm = h.scripted.calls.find((c) => c.options.purpose === "warm")!;
     expect(warm.options).toMatchObject({ maxTokens: 1, purpose: "warm" });
+    // 保温重放不占用服务端续接点；真实回合不带该选项
+    expect(warm.options.disableContinuation).toBe(true);
+    expect(h.scripted.calls[0]!.options.disableContinuation).toBeUndefined();
     expect(warm.context).toBe(h.scripted.calls[0]!.context);
     expect(of(h, "cache_warm").map((e) => e.phase)).toEqual(["scheduled", "sent", "scheduled"]);
     expect(h.manager.entries().filter((e) => e.type === "usage")).toHaveLength(1);
