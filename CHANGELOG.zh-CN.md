@@ -10,6 +10,10 @@
 
 - **工具参数宽松强转**：严格校验失败后，按 schema 强转一次再校验（数字串 → 数字、`"true"`/`"false"` → 布尔、数字/布尔 → 字符串、单值 → 单元素数组、JSON 字符串 → 对象/数组、丢弃可选属性的 `null`）；enum 仍须严格匹配，不填默认值。权限管线、钩子与工具看到强转后的参数，助手消息与会话历史保留模型原始调用；codemode 内部调用同样适用。
 
+### 模型调用效率
+
+- **Anthropic 消息线程（message threads）**：带稳定会话 id 且 `cacheRetention` 不是 `none` 的请求，改为在服务端续接上一条回复（beta `message-threads-2026-08-12`），只发新增消息，不再重发整段对话。压缩、回退与分支切换，以及模型、系统提示、工具、思考级别变化时回落为整请求并新开线程；线程不存在之类的拒收同样整请求重发一次。只有 `api.anthropic.com` 缺省开启，可用 `compat.messageThreads` 调整。新增流选项 `disableContinuation`，使请求不使用也不替换线程状态；缓存保温与压缩摘要都会置位。token 用量与缓存上报不变。详见 `docs/guides/providers.md`。
+
 ### 维护
 
 - **刷新 models.dev 快照（2026-11-13）**：去掉上游已下线模型的目录覆盖（Groq `qwen/qwen3.6-27b`、`llama-3.3-70b-versatile`、`llama-3.1-8b-instant`；Anthropic `claude-sonnet-4-5`；MiniMax M2.x，小模型改为 `MiniMax-M3.1-Flash`；火山引擎 `doubao-seed-2-0-code-preview-260215`）。`ama models discover` 对能经目录别名解析的中转 id 不再报「未匹配」。每周刷新作业在自检失败或开不出 PR 时判失败。

@@ -607,6 +607,7 @@ compat 只记录**已验证**的差异；新增条目请附文档链接或真实
 | `adaptiveThinking`            | `{type:"adaptive"}` + `output_config.effort`         | 关；官方新模型在目录里逐条开                                                                                   |
 | `supportsCacheControlOnTools` | 最后一个工具定义上打断点                             | 开                                                                                                             |
 | `maxCacheBreakpoints`         | 断点个数上限                                         | 4                                                                                                              |
+| `messageThreads`              | 请求按 message threads 续接，只发新增消息（见下节）  | `api.anthropic.com` 开；其它主机（含 Anthropic 兼容的第三方与中转）关                                          |
 
 OpenRouter 的 Messages 接口只在 `message_delta` 里给缓存 usage，解析本就按非空字段合并，不需要开关。
 
@@ -733,6 +734,21 @@ xAI、Mistral、OpenRouter、Google 没有承诺的 TTL，留空：不保温、�
 - **三态**：按 `(provider, baseUrl 主机名, model)` 在进程内维护。`unknown`：还没有足够长的可比请求；`reported`：出现过 cacheRead 或 cacheWrite > 0；`silent`：连续 3 个可比请求（前缀 ≥ minTokens、指纹未变、间隔 < TTL）读写都是 0，或 `compat.cacheReporting: "silent"`。只有 `reported` 时显示命中率、检测未命中并保温；`unknown` / `silent` 的请求不进命中率分母，界面显示 `—` / `未报告` 而不是 0%。
 
 `task` 子会话有自己的记录链与统计，`/session` 的「子任务」行汇总；fork 出的会话沿用根会话 id 作 `prompt_cache_key`（只是路由提示）。
+
+### 消息线程（message threads）
+
+官方端点的缺省行为（beta 头 `message-threads-2026-08-12`）：请求带稳定的会话 id 且 `cacheRetention` 不是 `none` 时，服务端保存对话线程，请求只发上一条回复之后的新增消息，不再每轮重发整段历史。`system` 与 `tools` 在续接请求里省略，由线程沿用。token 用量与缓存读写仍按整段对话上报，指纹与未命中检测只看转录，续接不会被误报成未命中。
+
+| 项         | 规则                                                                                                                                                                                                                                                                                                            |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 首条请求   | 整请求，加 `thread: {type:"create"}` 与 beta 头；回复的 message id 记为该会话的续接点                                                                                                                                                                                                                           |
+| 续接       | 去掉 `system` / `tools`，`messages` 只留新增部分，`thread: {type:"continue", previous_message_id}`；一条回复只能续接一次                                                                                                                                                                                        |
+| 回落整请求 | 续接点以内的前文与本次请求不逐项一致（压缩、`/tree` 回退或分支切换、改模型 / system / tools / 思考级别 / `tool_choice` / beta）；消息数没有超过续接点；上一回合出错或中止；回复来自别的端点。回落时新开线程                                                                                                     |
+| 服务端拒收 | `thread_not_found`、`thread_already_continued`、`thread_continue_in_flight`、`thread_fingerprint_mismatch` → 整请求新开线程重发一次；`thread_unsupported_request`，或端点对 `thread` 字段 400 且无错误码 → 去掉 `thread` 重发，该会话之后不再用线程。其它错误与线程无关，照常报错                               |
+| 不参与     | `StreamOptions.disableContinuation: true` 的请求既不续接也不替换续接点：保温重放与压缩 / 分支摘要请求都置位（它们重复上一条请求的前缀，续接会占掉那条回复唯一的续接点）；fork 出的会话与根会话共用缓存键，也不续接；`onPayload` 换成非对象请求体的请求同理。beta 头仍照发，保证请求头与真实回合一致、缓存键不变 |
+| 开关       | `compat.messageThreads: false` 关闭；Anthropic 兼容的第三方与中转缺省关（丢弃未知字段的网关会把续接变成缺前文的请求），确认网关转发 `thread` 字段后可显式写 `true`                                                                                                                                              |
+
+续接点只在进程内保存（容量 10 000 个会话，会话结束释放）；重启、线程在服务端过期（空闲数分钟）后的第一条请求会被拒收并自动整请求重发，多花一次往返。
 
 ### 保温
 
