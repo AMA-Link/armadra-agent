@@ -10,7 +10,7 @@
  *   `done`），反向是 `tool_result`（值已是 JSON 字符串）与 `abort`；
  * - 中断：QuickJS 的中断处理器读 `SharedArrayBuffer` 里的一个标志位；Promise 任务一件一件执行，每 64
  *   件再读一次标志，所以 `while (true) await null` 这类不经过解释器轮询点的循环也能停下；
- * - 内存：`qjs_set_memory_limit`；栈溢出以宿主 RangeError 的形式冒出来，此时 VM 不再可用，直接以失败结束；
+ * - 内存：`qjs_set_memory_limit`；JS 递归由 `qjs_set_max_stack_size` 转成脚本里可捕获的 RangeError；不经 JS 调用的原生递归仍会以宿主陷阱的形式冒出来，此时 VM 不再可用，直接以失败结束；
  * - 脚本等待一个永远不会落定的 Promise（没有未完成的工具调用）时立即失败，不拖到超时。
  *
  * 本文件**只能 import node: 内置模块与类型**：源码树里它被 Node 直接剥离类型运行（不经构建），打进
@@ -30,7 +30,12 @@ export interface QuickjsWorkerData {
   tools: ToolDecl[];
   store: Record<string, unknown>;
   /** 引导脚本的配置：并发上限与 store 上限。 */
-  limits: { maxConcurrent: number; maxValueChars: number; maxTotalChars: number };
+  limits: {
+    maxConcurrent: number;
+    maxValueChars: number;
+    maxTotalChars: number;
+    maxImages: number;
+  };
   /** QuickJS 内存上限（字节）；0 不设上限。 */
   memoryLimitBytes: number;
   /** 4 字节的中断标志：非 0 表示该停了。 */
@@ -48,6 +53,12 @@ export type WorkerInMessage =
 const SCRIPT_FILENAME = "codemode-script.js";
 const BOOTSTRAP_FILENAME = "codemode-bootstrap.js";
 const JOBS_PER_POLL = 64;
+/**
+ * QuickJS 的 JS 调用栈上限（字节）。wasm 的 C 栈约 400 KB（超出即陷阱、整个实例作废），留出余量后取 320 KB：
+ * 脚本里的无界递归在这里抛出可捕获的 `RangeError: Maximum call stack size exceeded`，与 Node 引擎一致；
+ * 只有不经 JS 调用的原生递归（超深 JSON、超深嵌套字面量）仍可能直接陷阱，见 describeHostError。
+ */
+const MAX_STACK_BYTES = 320 * 1024;
 
 /** 先于引导脚本执行：冻结所有内建对象（Error 原型除外：子类里 `this.name = ...` 要能赋值）。 */
 const FREEZE_SOURCE = String.raw`(function () {
@@ -107,6 +118,7 @@ interface QjsExports {
   _initialize(): void;
   qjs_init(): number;
   qjs_set_memory_limit(bytes: number): void;
+  qjs_set_max_stack_size(bytes: number): void;
   qjs_set_interrupt_handler(enable: number): void;
   qjs_get_undefined(): number;
   qjs_get_true(): number;
@@ -132,60 +144,6 @@ interface QjsExports {
   qjs_execute_pending_job(): number;
   wasm_malloc(size: number): number;
   wasm_free(ptr: number): void;
-}
-
-/** 单个脚本最多附几张图（与 sandbox-entry.ts 的 MAX_SCRIPT_IMAGES 一致；本文件不能 import 它）。 */
-const MAX_SCRIPT_IMAGES = 8;
-
-/** 按文件头认 PNG / JPEG / GIF / WebP（与 sandbox-entry.ts 的 sniffImage 逐行一致）。 */
-function sniffImage(buf: Buffer): string | undefined {
-  if (buf.length >= 8 && buf.readUInt32BE(0) === 0x89504e47 && buf.readUInt32BE(4) === 0x0d0a1a0a)
-    return "image/png";
-  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
-  if (buf.length >= 6 && /^GIF8[79]a$/.test(buf.toString("ascii", 0, 6))) return "image/gif";
-  if (
-    buf.length >= 12 &&
-    buf.toString("ascii", 0, 4) === "RIFF" &&
-    buf.toString("ascii", 8, 12) === "WEBP"
-  )
-    return "image/webp";
-  return undefined;
-}
-
-/** `image()` 的入参 → `{ data, mimeType }`；不合法返回错误文本（与 sandbox-entry.ts 的 normalizeImage 一致）。 */
-function normalizeImage(value: unknown): { data: string; mimeType: string } | string {
-  let raw: unknown = value;
-  if (typeof raw === "object" && raw !== null) {
-    const o = raw as { type?: unknown; data?: unknown; image_url?: unknown };
-    if (o.type === "image" && typeof o.data === "string") raw = o.data;
-    else if (typeof o.image_url === "string") raw = o.image_url;
-    else if (
-      typeof o.image_url === "object" &&
-      o.image_url !== null &&
-      typeof (o.image_url as { url?: unknown }).url === "string"
-    )
-      raw = (o.image_url as { url: string }).url;
-  }
-  if (typeof raw !== "string") {
-    return "image(value): pass a base64 data: URL, { image_url }, or { type: 'image', data, mimeType }";
-  }
-  let base64 = raw.trim();
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(base64)?.[1]?.toLowerCase();
-  if (scheme !== undefined && scheme !== "data") {
-    return "image(value): remote URLs are not supported; pass a base64 data: URL";
-  }
-  if (scheme === "data") {
-    const match = /^data:[^,]*;base64,([\s\S]*)$/i.exec(base64);
-    if (match === null) return "image(value): the data: URL must be base64-encoded";
-    base64 = (match[1] ?? "").trim();
-  }
-  base64 = base64.replace(/\s+/g, "");
-  if (base64 === "" || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
-    return "image(value): the image data is not valid base64";
-  }
-  const mimeType = sniffImage(Buffer.from(base64, "base64"));
-  if (mimeType === undefined) return "image(value): not a PNG, JPEG, GIF or WebP image";
-  return { data: base64, mimeType };
 }
 
 /** VM 里的脚本以失败结束（语法错误、未捕获的异常、被中断）。 */
@@ -251,6 +209,7 @@ class Vm {
     x._initialize();
     if (x.qjs_init() !== 0) throw new Error("Failed to initialize QuickJS");
     if (memoryLimitBytes > 0) x.qjs_set_memory_limit(memoryLimitBytes);
+    x.qjs_set_max_stack_size(MAX_STACK_BYTES);
     x.qjs_set_interrupt_handler(1);
     this.undef = x.qjs_get_undefined();
     this.yes = x.qjs_get_true();
@@ -405,7 +364,6 @@ function run(data: QuickjsWorkerData): void {
   const started = Date.now();
   let finished = false;
   let outstanding = 0;
-  let images = 0;
   let failure: string | undefined;
   let vm: Vm | undefined;
   let driver: { deliver: number; finish: number; start: number } | undefined;
@@ -462,13 +420,8 @@ function run(data: QuickjsWorkerData): void {
     machine.hostHandler = (kind, payload) => {
       if (finished) return undefined;
       if (kind === "image") {
-        // 返回字符串 = 校验失败的原因，引导脚本据此抛 TypeError
-        if (images >= MAX_SCRIPT_IMAGES) {
-          return `image(value): at most ${MAX_SCRIPT_IMAGES} images per script`;
-        }
-        const normalized = normalizeImage((JSON.parse(payload) as { value?: unknown }).value);
-        if (typeof normalized === "string") return normalized;
-        images++;
+        // 引导脚本已校验并计数
+        const normalized = JSON.parse(payload) as { data: string; mimeType: string };
         post({ type: "image", data: normalized.data, mimeType: normalized.mimeType });
       } else if (kind === "output") {
         post({ type: "output", text: payload });
@@ -500,6 +453,7 @@ function run(data: QuickjsWorkerData): void {
         maxConcurrent: data.limits.maxConcurrent,
         maxValueChars: data.limits.maxValueChars,
         maxTotalChars: data.limits.maxTotalChars,
+        maxImages: data.limits.maxImages,
         tools: JSON.stringify(data.tools),
         store: JSON.stringify(data.store),
       })})`,
@@ -554,8 +508,9 @@ function describeHostError(error: unknown): string {
     return "RangeError: Maximum call stack size exceeded";
   }
   if (error instanceof WebAssembly.RuntimeError) {
-    // QuickJS 在 WASI 上没有栈上限检查：无界递归把 wasm 栈写穿，表现为越界陷阱
-    return `Script crashed the QuickJS engine (likely unbounded recursion): ${text}`;
+    // 不经 JS 调用的原生递归越过了 JS 栈上限检查，把 wasm 栈写穿：实例作废、无法在脚本里捕获，
+    // 报与 Node 引擎同一句开头的错误（此前已产生的输出由主线程照常保留）
+    return `RangeError: Maximum call stack size exceeded (QuickJS engine trap: ${text})`;
   }
   return `codemode QuickJS engine failed: ${text}`;
 }

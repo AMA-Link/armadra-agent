@@ -100,6 +100,7 @@ export async function runQuickjs(request: SandboxRunRequest): Promise<SandboxRun
       maxConcurrent: MAX_CONCURRENT,
       maxValueChars: MAX_STORE_VALUE_CHARS,
       maxTotalChars: MAX_STORE_TOTAL_CHARS,
+      maxImages: MAX_SCRIPT_IMAGES,
     },
     memoryLimitBytes: heapMb > 0 ? heapMb * 1024 * 1024 : 0,
     flag,

@@ -191,7 +191,7 @@
 | `agent_settled`                                      | `warning?`（运行彻底结束，含重试与 followUp）                                                                                                                                                                                                    |
 | `message_start` / `message_end`                      | `message`（`AgentMessage`）                                                                                                                                                                                                                      |
 | `message_update`                                     | `assistantMessageEvent`、`usage?`（见下）                                                                                                                                                                                                        |
-| `tool_execution_start`                               | `toolCallId`、`toolName`、`args`、`parentToolCallId?`                                                                                                                                                                                            |
+| `tool_execution_start`                               | `toolCallId`、`toolName`、`args`、`coercedArguments?`、`parentToolCallId?`                                                                                                                                                                       |
 | `tool_execution_update`                              | `toolCallId`、`toolName`、`partial`（运行中的输出文本）、`parentToolCallId?`                                                                                                                                                                     |
 | `tool_execution_end`                                 | `toolCallId`、`toolName`、`result`、`isError`、`parentToolCallId?`、`autoDecision?`（auto 模式：`{ layer: rule \| static \| classifier, decision, reason, cached? }`）、`denied?`（`true`：被权限 / Hook / 审批拒绝而没有执行，原因见 `result`） |
 | `queue_update`                                       | `steering: string[]`、`followUp: string[]`                                                                                                                                                                                                       |
@@ -211,6 +211,8 @@
 | `context_pressure`                                   | `percent`、`threshold: 70 \| 90`、`remainingTokens?`、`estimatedTurnsLeft?`                                                                                                                                                                      |
 
 另有非会话事件 `{"type":"notification","level":"info"|"warn"|"error","message":…}`：宿主 `ui.notify` 与应答之后的运行失败。
+
+`coercedArguments` 是可选的附加字段：模型给的参数没过严格校验、经宽松强转后通过时，它是实际交给权限门禁、钩子与工具的参数（`args` 仍是模型原样，会话历史也保留原样）；参数本来就合法时不带。老客户端忽略即可，`RPC_PROTOCOL_VERSION` 不变。
 
 `parentToolCallId` 只出现在 codemode 脚本里经 `tools.*` 发起的内层调用上，值是外层 `codemode` 调用的 id；客户端据此折叠显示。内层调用不进转录。
 

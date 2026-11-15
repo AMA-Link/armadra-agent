@@ -90,6 +90,7 @@ export const en = {
       [title, size, format].filter((p) => p !== undefined && p !== "").join(" · "),
     fetchRedirect: (url: string) => `redirected to ${url} (not followed)`,
     awaiting: (glyph: string) => `${glyph} awaiting approval`,
+    coerced: "(arguments adjusted)",
     subagentRunning: (elapsed: string) => `subagent · running ${elapsed}`,
     running: (elapsed: string) => `running · ${elapsed}`,
     moreLines: (ellipsis: string, n: number) =>
@@ -166,6 +167,7 @@ export const zh = {
       [title, size, format].filter((p) => p !== undefined && p !== "").join(" · "),
     fetchRedirect: (url) => `重定向到 ${url}（未跟随）`,
     awaiting: (glyph) => `${glyph} 等待确认`,
+    coerced: "（参数已调整）",
     subagentRunning: (elapsed) => `子 Agent · 运行中 ${elapsed}`,
     running: (elapsed) => `运行中 · ${elapsed}`,
     moreLines: (ellipsis, n) => `${ellipsis} 另 ${n} 行（Ctrl+O 展开）`,

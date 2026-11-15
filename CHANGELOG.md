@@ -18,6 +18,9 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 ### Changed
 
+- **Executed arguments visible**: when lenient coercion changed a tool call's arguments, `tool_execution_start` now carries the optional `coercedArguments` (what the gate, hooks and tool received; `args` is still the model's original). RPC events include it (no protocol version change, ACP wire shapes unchanged), and the interactive tool row shows the executed arguments with a dim "(arguments adjusted)" marker.
+- **QuickJS recursion**: unbounded recursion in a QuickJS script now throws a catchable `RangeError: Maximum call stack size exceeded` (JS stack limit 320 KB, about 1300 simple frames), like the Node engine. Native recursion that bypasses the JS stack check (extremely deep JSON) still traps the instance; it ends the script with an error that starts with the same `RangeError` sentence and keeps earlier output.
+- **codemode `image()`**: validation (MIME by magic bytes, base64, 8-image limit) now lives once in the shared bootstrap script instead of two copies; behavior and messages are unchanged.
 - **Lenient tool-argument coercion**: when strict schema validation fails, the runner tries one schema-driven coercion pass (numeric strings to numbers, `"true"`/`"false"` to booleans, numbers/booleans to strings, a single value to a one-element array, a JSON string to an object/array, `null` dropped on optional properties) and re-validates; enums must still match exactly and defaults are never filled. The permission pipeline, hooks and the tool see the coerced arguments; the assistant message and session history keep the model's original call. Applies to codemode inner calls too.
 
 ### Fixed

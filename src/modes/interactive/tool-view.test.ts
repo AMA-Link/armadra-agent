@@ -50,6 +50,19 @@ describe("工具视图", () => {
     expect(lines(moved)[1]).toBe("  ⎿ 重定向到 https://b.example.org/（未跟随）");
   });
 
+  it("强转过的调用：标题显示实际执行的参数并带淡色标记", () => {
+    const tracker = new ToolTracker({ theme });
+    const { view } = tracker.start({
+      toolCallId: "1",
+      toolName: "read",
+      args: { path: "a.ts", limit: "20" },
+      coercedArguments: { path: "a.ts", limit: 20 },
+    });
+    expect(lines(view)[0]).toBe("⏺ read a.ts:1+20 （参数已调整）");
+    const plain = new ToolView("2", "read", { path: "a.ts" }, { theme });
+    expect(lines(plain)[0]).toBe("⏺ read a.ts");
+  });
+
   it("折叠：结果前 3 行 + 剩余行数；展开显示全部；错误红色", () => {
     const view = new ToolView("1", "read", { path: "README.md" }, { theme });
     view.finish({ content: numbered(10) }, false);

@@ -124,7 +124,7 @@ QuickJS 引擎：
 - 隔离：VM 里没有 `require`、`import`、`process`、`fetch`、定时器、文件与网络；WASI 只给时钟与随机数，stdout / stderr 丢弃；与外界只有一个宿主函数，脚本只能经 `tools.*` 触达外界，所以 `codemode` 是 `read` 类，每次内层调用仍逐个过权限管线。内建对象在脚本运行前冻结（Error 原型除外，子类里 `this.name = …` 要能赋值）；`eval` / `new Function` 留在 VM 内，拿不到宿主。
 - 期限：脚本总超时与外层 abort 先写共享的中断标志（空转的 `while (true) {}`、`while (true) await null` 都会被打断），随后 `worker.terminate()`。
 - 内存：`codemode.maxHeapMb`（缺省 256 MB，0 不设上限）限制 QuickJS 堆，超出时与 node 引擎同一条脚本错误。
-- 栈：QuickJS 在 WASI 上没有栈上限检查，无界递归会让引擎陷阱，脚本以 `Script crashed the QuickJS engine` 失败，宿主不受影响。
+- 栈：引擎的 JS 调用栈上限设为 320 KB（`qjs_set_max_stack_size`，wasm 的 C 栈约 400 KB），无界递归抛出可捕获的 `RangeError: Maximum call stack size exceeded`，与 node 引擎同一句话，`try { f() } catch {}` 之后脚本继续运行；约 1300 层简单调用，比 node 引擎浅得多。例外：不经 JS 调用的原生递归（超深嵌套的 JSON、嵌套字面量）会直接让实例陷阱，无法在脚本里捕获，结果是以 `RangeError: Maximum call stack size exceeded (QuickJS engine trap: …)` 开头的脚本错误，此前已产生的输出保留，宿主不受影响。
 - 与 node 引擎共用同一套宿主行为：QuickJS worker 与子进程一起计入进程级名额（`codemode.maxWorkers`，排队规则与超时文案相同，名额在 worker 真正退出时归还）；`searchTools()`、`image()`（校验、最多 8 张、存进 outputs 目录）、脚本里 `tools.bash` 放宽的输出与 `ama.codemode-call` 恢复记录在两种引擎下一致。
 - 脚本等待一个永远不会落定的 Promise（没有未完成的工具调用）时立即失败，不拖到超时。
 - 与 node 引擎的差异：解释执行，纯计算慢约 6 倍（工具调用主导的脚本几乎没差别）；每次执行启动更快（约 15 ms，对比约 50 ms）；`Date` 用宿主时区；没有 V8 特有的 API（`Error.captureStackTrace` 等）；错误文案按 QuickJS 的写法（如动态 `import()` 报 `could not load module`）。

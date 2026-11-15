@@ -145,6 +145,37 @@ function notFoundText(name: string, options: ToolRunnerOptions): string {
   return toolUnavailableText(name);
 }
 
+/** 严格校验失败、宽松强转后通过时的参数；其余（本来就合法、强转后仍不合法）为 undefined。 */
+function coercedArgumentsOf(
+  tool: ToolDefinition,
+  args: unknown,
+): Record<string, unknown> | undefined {
+  if (validateSchema(tool.parameters, args).length === 0) return undefined;
+  const coerced = coerceArguments(tool.parameters, args);
+  if (!coerced.changed || validateSchema(tool.parameters, coerced.value).length > 0) {
+    return undefined;
+  }
+  return isArgs(coerced.value) ? coerced.value : undefined;
+}
+
+/** `tool_execution_start`：带 `coercedArguments`（实际执行的参数）当且仅当强转改了模型的原始参数。 */
+function startEvent(
+  call: ToolCallBlock,
+  tool: ToolDefinition | undefined,
+  parentToolCallId?: string,
+): Extract<SessionEvent, { type: "tool_execution_start" }> {
+  const event: Extract<SessionEvent, { type: "tool_execution_start" }> = {
+    type: "tool_execution_start",
+    toolCallId: call.id,
+    toolName: call.name,
+    args: call.arguments,
+  };
+  const coerced = tool === undefined ? undefined : coercedArgumentsOf(tool, call.arguments);
+  if (coerced !== undefined) event.coercedArguments = coerced;
+  if (parentToolCallId !== undefined) event.parentToolCallId = parentToolCallId;
+  return event;
+}
+
 async function prepare(
   call: ToolCallBlock,
   assistant: AssistantMessage,
@@ -164,10 +195,8 @@ async function prepare(
   const check = (args: unknown): { input: unknown } | Immediate => {
     const errors = validateSchema(tool.parameters, args);
     if (errors.length === 0) return { input: args };
-    const coerced = coerceArguments(tool.parameters, args);
-    if (coerced.changed && validateSchema(tool.parameters, coerced.value).length === 0) {
-      return { input: coerced.value };
-    }
+    const coerced = coercedArgumentsOf(tool, args);
+    if (coerced !== undefined) return { input: coerced };
     return {
       kind: "immediate",
       call,
@@ -368,12 +397,7 @@ export async function runToolBatch(
   const verdicts = new Map<ToolCallBlock, LoopVerdict>();
   let stop: string | undefined;
   for (const call of calls) {
-    await emit({
-      type: "tool_execution_start",
-      toolCallId: call.id,
-      toolName: call.name,
-      args: call.arguments,
-    });
+    await emit(startEvent(call, options.getTool(call.name)));
     const verdict = guard.observe(call, options.getTool(call.name));
     verdicts.set(call, verdict);
     if (verdict === "stop") {
@@ -522,12 +546,7 @@ export async function runSingleToolCall(
         ? { ...event, parentToolCallId }
         : event,
     );
-  await emit({
-    type: "tool_execution_start",
-    toolCallId: call.id,
-    toolName: call.name,
-    args: call.arguments,
-  });
+  await emit(startEvent(call, options.getNestedTool?.(call.name) ?? options.getTool(call.name)));
   const prepared = await prepare(call, assistant, options, signal, nested.parent);
   const result =
     prepared.kind === "immediate"

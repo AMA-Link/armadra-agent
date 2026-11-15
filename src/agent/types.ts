@@ -234,6 +234,10 @@ export type SessionEvent =
       toolCallId: string;
       toolName: string;
       args: unknown;
+      /**
+       * 宽松强转改了模型原始参数时，实际交给门禁与工具的参数（`args` 仍是模型原样）；没强转不带。
+       */
+      coercedArguments?: Record<string, unknown>;
       parentToolCallId?: string;
     }
   | {
