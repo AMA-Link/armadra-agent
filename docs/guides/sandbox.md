@@ -95,6 +95,8 @@ OS 沙箱  src/sandbox/  ── detect.ts   探测 + 进程内缓存 + 开关
 | 22 / 24 | sandbox-exec / bwrap / unshare | OS 沙箱            | 是     | read            | on              |
 | 22 / 24 | 不可用 / off / Windows         | 无（`net!`）       | 否     | execute         | off（提示一次） |
 
+上表是 `codemode.engine: "node"` 的情形。缺省的 `auto` 在最后一行改用 QuickJS 引擎（[codemode.md](codemode.md)「引擎」）：脚本在 WebAssembly 里跑，没有网络与文件，也不起子进程，所以 strict 为是、权限类 read、`default` 预设 on，不再需要 OS 沙箱；`quickjs` 显式指定时所有行都如此。OS 沙箱只用于 `node` 引擎的子进程。
+
 - Node ≥ 25 也叠加 OS 沙箱（纵深防御）。Node ≥ 25 时 strict 只靠 Node 权限模型，OS 沙箱不可用不改变任何
   结论；Node 22 / 24 时 strict 依赖 OS 沙箱，所以子进程**必须**经包装启动，包装失败就报错，不悄悄裸跑。
 - 能力只在启动时探测一次，之后同一进程内不变：工具描述（`Sandbox: …` 行、`network not isolated`）与权限类

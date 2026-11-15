@@ -2,7 +2,7 @@
 
 设计依据见 [design.md](../design/design.md) §5.5、§5.6、§9.1。
 
-`codemode` 工具让模型写一段 JavaScript，在脚本里经 `tools.*` 编排多次工具调用，只有脚本输出回到模型。长流程、工具密集的任务里，它把多次往返合成一次，减少往返次数与缓存读取；短任务里模型照常直接调用工具，codemode 只多占约 400 token 前缀，所以 `default` 预设在网络隔离的运行时上缺省开着它。
+`codemode` 工具让模型写一段 JavaScript，在脚本里经 `tools.*` 编排多次工具调用，只有脚本输出回到模型。长流程、工具密集的任务里，它把多次往返合成一次，减少往返次数与缓存读取；短任务里模型照常直接调用工具，codemode 只多占约 400 token 前缀，所以 `default` 预设缺省开着它（脚本总是被隔离，见下文「引擎」）。
 
 ## 打开
 
@@ -14,13 +14,13 @@
 
 `codemode.mode` 不写时**跟随预设**：
 
-| 预设                      | 网络隔离（Node ≥ 25，或 Node 22 / 24 + 操作系统沙箱） | Node 22 / 24 且没有操作系统沙箱                                        |
-| ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- |
-| `default`                 | `on`                                                  | `off`，启动时提示一次（每个配置目录一次，记在数据目录 `notices.json`） |
-| `codemode-only`           | `only`                                                | `only`（`execute` 类，见下）                                           |
-| `minimal` / `coordinator` | `off`                                                 | `off`                                                                  |
+| 预设                      | 脚本被隔离（缺省的 `codemode.engine: "auto"` 下总是如此） | `codemode.engine: "node"` 且 Node 22 / 24 没有操作系统沙箱             |
+| ------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `default`                 | `on`                                                      | `off`，启动时提示一次（每个配置目录一次，记在数据目录 `notices.json`） |
+| `codemode-only`           | `only`                                                    | `only`（`execute` 类，见下）                                           |
+| `minimal` / `coordinator` | `off`                                                     | `off`                                                                  |
 
-操作系统沙箱指 macOS 的 `sandbox-exec`、Linux 的 bubblewrap（退而 `unshare -r -n`），见下文沙箱与 [sandbox.md](sandbox.md)；Windows 没有，Node 22 / 24 上行为同右列。
+操作系统沙箱指 macOS 的 `sandbox-exec`、Linux 的 bubblewrap（退而 `unshare -r -n`），见下文沙箱与 [sandbox.md](sandbox.md)；Windows 没有。没有它、Node 也低于 25 时，`auto` 引擎改用 WebAssembly 里的 QuickJS（见下文「引擎」），脚本同样被隔离，所以这些平台也缺省开着 codemode。
 
 缺省配置里不写 `codemode.mode`（`ama init` 生成的 `config.json` 也不写），所以这张映射以后调整时老用户同样生效。`ama config show` / `ama doctor` 显示生效模式与原因（跟随哪个预设、网络由 Node 还是操作系统沙箱隔离）；`ama doctor` 另列操作系统沙箱能力。
 
@@ -28,13 +28,13 @@
 
 `coordinator` 预设即使显式 `on`，脚本里能调用的工具也只限它的活动集（read 与宿主工具）：`tools.bash`、`tools.write` 在脚本里同样不存在，协调者「不写文件、不跑 bash」的约定不能经 codemode 绕过。
 
-`codemode` 本身的权限类随沙箱能力：网络隔离（Node ≥ 25，或有操作系统沙箱，见下文沙箱）时是 `read` 类，`default` 权限模式下免审批——脚本只能经 `tools.*` 做事，每次内层调用仍逐个经过权限管线；网络未隔离（Node 22 / 24 且没有操作系统沙箱）时是 `execute` 类，`default` 模式下每次都要审批，`-p` 等无人值守场景直接拒绝，此时常用做法是在配置里放行它：
+`codemode` 本身的权限类随沙箱能力：脚本被隔离（Node ≥ 25、有操作系统沙箱，或用 QuickJS 引擎，见下文沙箱与引擎）时是 `read` 类，`default` 权限模式下免审批——脚本只能经 `tools.*` 做事，每次内层调用仍逐个经过权限管线；网络未隔离（显式 `codemode.engine: "node"`，且 Node 22 / 24 没有操作系统沙箱）时是 `execute` 类，`default` 模式下每次都要审批，`-p` 等无人值守场景直接拒绝，此时常用做法是在配置里放行它：
 
 ```json
 { "version": 1, "tools": { "preset": "codemode-only" }, "permission": { "allow": ["codemode"] } }
 ```
 
-其它配置：`codemode.inlineBudget`（`only` 模式在描述里内联声明的预算，估算 token，缺省 3000，超出只列名字；`on` 模式不内联）、`codemode.requireStrict`（见下文沙箱）、`codemode.maxHeapMb`（脚本子进程的堆上限，见下文沙箱）、`codemode.maxWorkers`（同时存活的脚本子进程数，见下文「并发」）。项目级配置只能把 `codemode.mode` 设为 `off`。
+其它配置：`codemode.inlineBudget`（`only` 模式在描述里内联声明的预算，估算 token，缺省 3000，超出只列名字；`on` 模式不内联）、`codemode.requireStrict`（见下文沙箱）、`codemode.maxHeapMb`（脚本引擎的内存上限，见下文沙箱）、`codemode.maxWorkers`（同时存活的脚本子进程数，见下文「并发」）、`codemode.engine`（`auto` / `node` / `quickjs`，见下文「引擎」；只认用户级）。项目级配置只能把 `codemode.mode` 设为 `off`。
 
 `on` 模式的前缀开销：去重前 `codemode` 描述把已直接暴露的六个工具的声明又内联一遍，其它工具各追加一行提示，系统提示 + 工具表比 `off` 多约 1356 token；现在只多约 390 token（字符 / 4 估算，测试锁定 ≤ 500）。升级后续接的旧会话因为描述字节变化会有一次缓存未命中。
 
@@ -106,15 +106,37 @@
 - 脚本里的每次 `tools.*` 再各自经过完整流程，Hook 按**真实工具名**匹配（`bash`，不是 `codemode`）；Hook 输入多两个字段：`viaCodemode: true` 与 `parentToolCallId`（外层 `codemode` 调用的 id）。
 - 事件：`tool_execution_update` 透传脚本输出（最近 4000 字符）；内层调用发 `tool_execution_start / end`，带 `parentToolCallId`，不进转录、不进模型上下文。`ama --mode acp` 把每次内层调用单列为一条 `tool_call`（标题前缀 `codemode › `，`_meta.ama.parentToolCallId` 指向外层），其权限请求关联到这条内层调用（见 [acp.md](../reference/acp.md)）。
 
+## 引擎
+
+脚本有两种运行方式，工具描述、全局、结果格式与权限管线完全相同：
+
+| `codemode.engine` | 运行方式                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------- |
+| `node`            | 每次执行起一个 Node 子进程（下文「沙箱」）                                                              |
+| `quickjs`         | 每次执行起一个 worker 线程，脚本跑在 WebAssembly 里的 QuickJS（QuickJS-ng）中                           |
+| `auto`（缺省）    | 网络已隔离（Node ≥ 25，或有操作系统沙箱）用 `node`，否则（Node 22 / 24 无沙箱，含 Windows）用 `quickjs` |
+
+`ama config show` 与 `ama doctor` 显示生效的引擎与原因（`codemode.engine` 行与 `codemode engine:` 行）。
+
+QuickJS 引擎：
+
+- 零依赖：引擎是随包分发的一个 wasm 文件（`assets/quickjs/`，`ama.cjs` 里内联），用 `WebAssembly` 与 `node:worker_threads` 自己驱动；来源、版本与哈希见该目录的 README。
+- 隔离：VM 里没有 `require`、`import`、`process`、`fetch`、定时器、文件与网络；WASI 只给时钟与随机数，stdout / stderr 丢弃；与外界只有一个宿主函数，脚本只能经 `tools.*` 触达外界，所以 `codemode` 是 `read` 类，每次内层调用仍逐个过权限管线。内建对象在脚本运行前冻结（Error 原型除外，子类里 `this.name = …` 要能赋值）；`eval` / `new Function` 留在 VM 内，拿不到宿主。
+- 期限：脚本总超时与外层 abort 先写共享的中断标志（空转的 `while (true) {}`、`while (true) await null` 都会被打断），随后 `worker.terminate()`。
+- 内存：`codemode.maxHeapMb`（缺省 256 MB，0 不设上限）限制 QuickJS 堆，超出时与 node 引擎同一条脚本错误。
+- 栈：QuickJS 在 WASI 上没有栈上限检查，无界递归会让引擎陷阱，脚本以 `Script crashed the QuickJS engine` 失败，宿主不受影响。
+- 脚本等待一个永远不会落定的 Promise（没有未完成的工具调用）时立即失败，不拖到超时。
+- 与 node 引擎的差异：解释执行，纯计算慢约 6 倍（工具调用主导的脚本几乎没差别）；每次执行启动更快（约 15 ms，对比约 50 ms）；`Date` 用宿主时区；没有 V8 特有的 API（`Error.captureStackTrace` 等）；错误文案按 QuickJS 的写法（如动态 `import()` 报 `could not load module`）。
+
 ## 沙箱
 
-每次执行起一个子进程：
+每次执行起一个子进程（`node` 引擎）：
 
 ```text
 <node> --max-old-space-size=256 --permission --allow-fs-read=<ama-sandbox.cjs> --disallow-code-generation-from-strings <ama-sandbox.cjs> --ama-codemode-sandbox
 ```
 
-- 堆上限：`--max-old-space-size` 取 `codemode.maxHeapMb`（缺省 256 MB，0 不加；只认用户级）。脚本超出时子进程 OOM 退出，工具结果是脚本错误 `Script exceeded the codemode memory limit (256 MB); process the data in smaller pieces`，宿主进程内存不受影响；需要一次处理大数据时调大或分片。
+- 堆上限：`--max-old-space-size` 取 `codemode.maxHeapMb`（缺省 256 MB，0 不加；只认用户级；`quickjs` 引擎同一个键限制 QuickJS 堆）。脚本超出时子进程 OOM 退出，工具结果是脚本错误 `Script exceeded the codemode memory limit (256 MB); process the data in smaller pieces`，宿主进程内存不受影响；需要一次处理大数据时调大或分片。
 
 - 空环境启动，拿不到密钥、会话文件与环境变量（Windows 上 libuv 会从父进程补入 PATH、SYSTEMROOT、USERPROFILE 等系统变量，不含密钥）；不授予文件写、子进程、worker、addon、inspector 权限；Node 22.0–22.12 用 `--experimental-permission`；嵌入 Electron 时设 `ELECTRON_RUN_AS_NODE=1`。
 - 子进程里用 `node:vm` 建只含 ECMAScript 内建对象的上下文（`codeGeneration: { strings: false, wasm: false }`，沙箱对象空原型）；全局函数都在上下文内定义，只经一个宿主函数交换 JSON 字符串；子进程主 realm 也禁止字符串生成代码，经构造器链逃逸拿不到 `Function("return process")`。
