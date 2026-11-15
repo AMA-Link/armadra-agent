@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // esbuild：src/bundle.ts → dist/bundle/ama.cjs（设计 §2、§14、D2）；
 // 第二入口 src/codemode/sandbox-entry.ts → dist/bundle/ama-sandbox.cjs（codemode 子进程，设计 §5.5）。
+// QuickJS 引擎（#290）：worker 入口单独编译成单文件源码、assets/quickjs/quickjs.wasm 转 base64，两者都内嵌进
+// ama.cjs（`__AMA_QUICKJS_WORKER_SOURCE__` / `__AMA_QUICKJS_WASM_B64__`），发布物不需要旁路文件。
 // platform node、format cjs、target node22、全部内联（零运行时依赖，任何非 node: 的外部引用都算失败）。
 // `import.meta.url` 替换为 __filename 的 file URL；`__AMA_VERSION__` / `__AMA_BUNDLED__` 在此定义。
 // [W6-C0] `charset: "utf8"`：中文与符号按 UTF-8 原样输出（缺省 ascii 会转成 \uXXXX，每字 6 字节）；
@@ -15,6 +17,24 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outfile = join(root, "dist", "bundle", "ama.cjs");
 const sandboxOutfile = join(root, "dist", "bundle", "ama-sandbox.cjs");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+
+// QuickJS worker：自包含单文件（只引用 node: 内置模块），以字符串形式交给 `new Worker(code, { eval: true })`。
+const quickjsWorker = await build({
+  absWorkingDir: root,
+  entryPoints: [join(root, "src", "codemode", "quickjs", "worker.ts")],
+  write: false,
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  target: "node22",
+  minify: false,
+  legalComments: "none",
+  charset: "utf8",
+  metafile: true,
+  logLevel: "warning",
+});
+const quickjsWorkerSource = quickjsWorker.outputFiles[0].text;
+const quickjsWasm = readFileSync(join(root, "assets", "quickjs", "quickjs.wasm"));
 
 const result = await build({
   absWorkingDir: root,
@@ -42,6 +62,8 @@ const result = await build({
     __AMA_BUNDLED__: "true",
     // host-side.ts 据此在 ama.cjs 同目录找子进程入口
     __AMA_SANDBOX_ENTRY__: JSON.stringify("ama-sandbox.cjs"),
+    __AMA_QUICKJS_WORKER_SOURCE__: JSON.stringify(quickjsWorkerSource),
+    __AMA_QUICKJS_WASM_B64__: JSON.stringify(quickjsWasm.toString("base64")),
   },
 });
 
@@ -64,7 +86,7 @@ const sandboxResult = await build({
 
 // 守住「全部内联」：输入只能来自 src/，外部引用只能是 node: 内置模块。
 const problems = [];
-for (const { metafile } of [result, sandboxResult]) {
+for (const { metafile } of [result, sandboxResult, quickjsWorker]) {
   for (const input of Object.keys(metafile.inputs)) {
     if (!input.startsWith("src/")) problems.push(`非 src 输入被打进 bundle：${input}`);
   }
@@ -80,6 +102,11 @@ for (const { metafile } of [result, sandboxResult]) {
 for (const input of Object.keys(sandboxResult.metafile.inputs)) {
   if (input !== "src/codemode/sandbox-entry.ts") {
     problems.push(`ama-sandbox.cjs 不应包含 ${input}（子进程入口必须自包含）`);
+  }
+}
+for (const input of Object.keys(quickjsWorker.metafile.inputs)) {
+  if (input !== "src/codemode/quickjs/worker.ts") {
+    problems.push(`QuickJS worker 不应包含 ${input}（worker 入口必须自包含）`);
   }
 }
 if (problems.length > 0) {

@@ -13,6 +13,7 @@
 - **codemode 全局函数**：`searchTools(query, { limit?, namespace? })` 按名字与描述做 BM25 排序；`image(value)` 把 PNG / JPEG / GIF / WebP（base64 data URL、`{ image_url }` 或 `{ type: "image", data, mimeType }`；MIME 由文件头决定，拒绝远程 URL）附在结果后并存到会话 outputs 目录。`tools.read` 读图片时解析为 `image()` 可直接收的图片块。
 - **脚本被杀后的恢复**：已完成的内层调用记为 `ama.codemode-call` 自定义条目（可选条目，会话格式版本不变）；进程在脚本中途被杀后，resume 的恢复提醒列出它们并要求不要盲目重复。
 - **提示预算**：`codemode-only` 预设的预算由 1950 放宽到 2000 token（实测 1937 → 1982），用于两个新全局函数的描述；`default` 增加约 26 token（1607 → 1633）。
+- **codemode 的 QuickJS 引擎（#290）**：codemode 脚本可以跑在编译成 WebAssembly 的 QuickJS 里（每次执行一个 worker 线程），不再只有 Node 子进程一条路。新增配置 `codemode.engine`：`auto`（缺省；网络已被 Node ≥ 25 或操作系统沙箱隔离时用 Node 子进程，否则用 QuickJS）、`node`、`quickjs`。QuickJS 下脚本除 `tools.*` 外触达不了任何东西，所以 `codemode` 是 `read` 类，`default` 预设在所有平台（含 Windows 与没有操作系统沙箱的 Node 22 / 24）都缺省开启。脚本全局与结果格式不变；超时与 abort 会打断空转的脚本，`codemode.maxHeapMb` 限制 QuickJS 堆，内建对象在脚本运行前冻结，等待永远不会落定的 Promise 立即失败。仍然零运行时依赖：引擎是随包分发的 wasm 文件（`assets/quickjs/`，内联进 `ama.cjs`）。`ama config show` 与 `ama doctor` 显示生效的引擎与原因。
 
 ### 变更
 

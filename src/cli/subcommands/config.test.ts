@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTmpHome, type TmpHome } from "../../../test/helpers/tmp-home.js";
 import { ProviderRegistry } from "../../ai/providers/registry.js";
-import { detectSandboxCapability } from "../../codemode/capability.js";
+import { applyCodemodeEngine, detectSandboxCapability } from "../../codemode/capability.js";
 import { describeCodemode } from "./config.js";
 import { main } from "../main.js";
 
@@ -90,7 +90,7 @@ describe("ama config show", () => {
       entries: { path: string; source: string }[];
       tools: string[];
     };
-    const strict = detectSandboxCapability().strict;
+    const strict = applyCodemodeEngine(detectSandboxCapability()).strict;
     expect(json.codemode).toMatchObject({ mode: strict ? "on" : "off", source: "preset" });
     expect(json.tools.includes("codemode")).toBe(strict);
     expect(json.entries.find((e) => e.path === "cache.warming")?.source).toBe("user");
@@ -104,11 +104,24 @@ describe("ama config show", () => {
       reason: "跟随预设 default（Node 26 网络已隔离）",
     });
     expect(describeCodemode({ version: 1 }, "24.3.0")).toMatchObject({
+      mode: "on",
+      engine: "quickjs",
+      reason: "跟随预设 default（Node 24，脚本在 QuickJS（WebAssembly）里运行）",
+      engineReason:
+        "auto：Node 24 无法隔离网络且没有可用的操作系统沙箱，用 WebAssembly 里的 QuickJS",
+    });
+    expect(describeCodemode({ version: 1, codemode: { engine: "node" } }, "24.3.0")).toMatchObject({
       mode: "off",
+      engine: "node",
       reason: "跟随预设 default（Node 24 < 25 网络未隔离）",
+      engineReason: "codemode.engine 显式设为 node",
+    });
+    expect(describeCodemode({ version: 1 }, "26.1.0")).toMatchObject({
+      engine: "node",
+      engineReason: "auto：Node 26 网络已隔离，用 Node 子进程",
     });
     const strictOnly = describeCodemode(
-      { version: 1, codemode: { mode: "on", requireStrict: true } },
+      { version: 1, codemode: { mode: "on", requireStrict: true, engine: "node" } },
       "22.19.0",
     );
     expect(strictOnly.source).toBe("config");

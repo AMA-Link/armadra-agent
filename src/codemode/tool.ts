@@ -39,6 +39,7 @@ import {
   type DeclarableTool,
 } from "./declarations.js";
 import { runSandbox, type SandboxRunResult } from "./host-side.js";
+import { runQuickjs } from "./quickjs/host.js";
 import { parseOptionsLine, type ToolDecl } from "./protocol.js";
 import { recordInnerCall } from "./inner-calls.js";
 import { prepareScriptImages } from "./script-images.js";
@@ -173,7 +174,7 @@ const SCRIPT_ONLY_GLOBALS =
  */
 export function scriptErrorHint(error: string, toolNames: readonly string[]): string {
   if (
-    /Cannot use import statement|dynamic import callback/.test(error) ||
+    /Cannot use import statement|dynamic import callback|could not load module/.test(error) ||
     SCRIPT_ONLY_GLOBALS.test(error)
   ) {
     return `${error}\nOnly tools.<name>(args) is available in codemode scripts (no require, import, process, fetch or timers).`;
@@ -346,7 +347,9 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
       // 只有清单里的工具可调（coordinator 预设的清单只含活动集）；脚本拼出别的名字也不放行。
       const callable = new Set(tools.map((t) => t.name));
       let tail = "";
-      const run = await runSandbox({
+      // 引擎二选一：QuickJS（WebAssembly worker）或 Node 子进程；请求与结果同一形状
+      const execute = capability.engine === "quickjs" ? runQuickjs : runSandbox;
+      const run = await execute({
         script: input.script,
         options: scriptOptions,
         tools,

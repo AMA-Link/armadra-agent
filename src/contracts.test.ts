@@ -353,6 +353,7 @@ describe("配置契约", () => {
       requireStrict?: boolean;
       maxHeapMb?: number;
       maxWorkers?: number;
+      engine?: "auto" | "node" | "quickjs";
     }>();
     expectTypeOf<NonNullable<AmaConfig["tools"]>["preset"]>().toEqualTypeOf<
       "default" | "minimal" | "codemode-only" | "coordinator" | "codemode" | undefined

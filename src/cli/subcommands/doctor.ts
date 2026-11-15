@@ -306,6 +306,7 @@ export async function runDoctor(
     report.item(m.permissionMode(merged.config.permission?.mode ?? "default"));
     const codemode = describeCodemode(merged.config);
     report.item(m.codemode(codemode.mode, codemode.reason));
+    report.item(m.codemodeEngine(codemode.engine, codemode.engineReason));
     if (codemode.unavailable !== undefined) report.item(`  ${codemode.unavailable}`);
     const os = osSandboxStatus(merged.config.sandbox?.enabled ?? "auto");
     report.item(m.osSandbox(os.kind, os.detail, os.kind !== "none" && !os.restrictsWrites));

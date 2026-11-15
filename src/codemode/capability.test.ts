@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   NETWORK_NOT_ISOLATED,
+  applyCodemodeEngine,
   codemodeAvailability,
   detectSandboxCapability,
   parseNodeMajor,
   permissionFlagFor,
+  strictNeedsOsSandbox,
 } from "./capability.js";
 
 describe("detectSandboxCapability", () => {
@@ -55,5 +57,38 @@ describe("codemodeAvailability", () => {
     expect(on.available).toBe(true);
     expect(on.warning).toMatch(/网络未隔离/);
     expect(codemodeAvailability(false, loose).available).toBe(true);
+  });
+});
+
+describe("applyCodemodeEngine", () => {
+  const loose = detectSandboxCapability("24.0.0");
+  const strict = detectSandboxCapability("26.0.0");
+
+  it("auto：网络已隔离用 node，否则 quickjs（strict，不需要 OS 沙箱）", () => {
+    expect(applyCodemodeEngine(strict)).toMatchObject({
+      engine: "node",
+      engineSource: "auto",
+      strict: true,
+    });
+    const qjs = applyCodemodeEngine(loose);
+    expect(qjs).toMatchObject({ engine: "quickjs", engineSource: "auto", strict: true });
+    expect(strictNeedsOsSandbox(qjs)).toBe(false);
+  });
+
+  it("显式 node / quickjs 覆盖 auto", () => {
+    expect(applyCodemodeEngine(loose, "node")).toMatchObject({
+      engine: "node",
+      engineSource: "config",
+      strict: false,
+    });
+    expect(applyCodemodeEngine(strict, "quickjs")).toMatchObject({
+      engine: "quickjs",
+      engineSource: "config",
+      strict: true,
+    });
+  });
+
+  it("quickjs 下 requireStrict 不禁用 codemode", () => {
+    expect(codemodeAvailability(true, applyCodemodeEngine(loose)).available).toBe(true);
   });
 });
