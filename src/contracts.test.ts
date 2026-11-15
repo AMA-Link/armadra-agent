@@ -352,6 +352,7 @@ describe("配置契约", () => {
       inlineBudget?: number;
       requireStrict?: boolean;
       maxHeapMb?: number;
+      maxWorkers?: number;
     }>();
     expectTypeOf<NonNullable<AmaConfig["tools"]>["preset"]>().toEqualTypeOf<
       "default" | "minimal" | "codemode-only" | "coordinator" | "codemode" | undefined

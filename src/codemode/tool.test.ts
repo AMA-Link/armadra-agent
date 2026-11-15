@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createHarness } from "../agent/testing/harness.js";
@@ -449,5 +449,109 @@ describe("结果与返回值", () => {
     expect(existsSync(join(dir, "cm1.txt"))).toBe(true);
     expect(readFileSync(join(dir, "cm1.txt"), "utf8")).toBe("z".repeat(5000));
     rmSync(dir, { recursive: true, force: true });
+  });
+  it("脚本里的 tools.bash 拿到放宽到 1 MiB 的 output；超出保留首尾各 512 KiB", async () => {
+    const dir = `${sandboxEntryForTests()}-bash`;
+    mkdirSync(dir, { recursive: true });
+    const small = join(dir, "small.log");
+    const large = join(dir, "large.log");
+    writeFileSync(small, "s".repeat(200_000));
+    writeFileSync(large, `H${"m".repeat(1_500_000)}T`);
+    const bash = stubTool({
+      name: "bash",
+      permission: "execute",
+      properties: { command: { type: "string" } },
+      run: (input) => {
+        const path = input["command"] === "small" ? small : large;
+        return {
+          content: "tail only",
+          structured: {
+            output: "tail only",
+            exit_code: 0,
+            truncated: true,
+            full_output_path: path,
+            wall_time_seconds: 0.1,
+          },
+        };
+      },
+    }) as ToolDefinition;
+    const { tools } = fixture({ tools: [bash] });
+    const h = createHarness({
+      script: [
+        call(`const a = await tools.bash({ command: "small" });
+        const b = await tools.bash({ command: "large" });
+        return [a.output.length, a.truncated, b.output.length > 1048576, b.output[0], b.output.slice(-1), b.truncated, b.fullOutputPath.endsWith("large.log")].join(",");`),
+        { text: "ok" },
+      ],
+      tools,
+      activeTools: ["codemode"],
+    });
+    await h.session.prompt("go");
+    expect(String(toolResults(h)[0]?.content)).toMatch(/200000,false,true,H,T,true,true$/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+  it("脚本里的 searchTools：按名字与描述的 BM25 排序，limit / namespace 生效，坏参数是脚本里的 Error", async () => {
+    const { tools } = fixture({
+      tools: [
+        stubTool({ name: "read" }) as ToolDefinition,
+        stubTool({ name: "grep" }) as ToolDefinition,
+        stubTool({ name: "canvas_add_note" }) as ToolDefinition,
+        stubTool({ name: "canvas_list" }) as ToolDefinition,
+      ],
+    });
+    const h = createHarness({
+      script: [
+        call(`const all = await searchTools("canvas");
+        const one = await searchTools("canvas", { limit: 1 });
+        const ns = await searchTools("test tool", { namespace: "canvas" });
+        const bad = await searchTools(42).catch((e) => e.message);
+        return JSON.stringify({ all: all.map((x) => x.name).sort(), one: one.length, ns: ns.map((x) => x.name).sort(), desc: all[0].description, bad });`),
+        { text: "ok" },
+      ],
+      tools,
+      activeTools: ["codemode"],
+    });
+    await h.session.prompt("go");
+    const out = String(toolResults(h)[0]?.content).split("\n\n")[1] ?? "";
+    expect(JSON.parse(out)).toEqual({
+      all: ["canvas_add_note", "canvas_list"],
+      one: 1,
+      ns: ["canvas_add_note", "canvas_list"],
+      desc: expect.stringContaining("test tool"),
+      bad: "searchTools(query): query must be a string",
+    });
+    // 搜索不算工具调用
+    expect(
+      h.events.filter((e) => e.type === "tool_execution_start" && e.parentToolCallId),
+    ).toHaveLength(0);
+  });
+  it("已完成的内层调用落成 ama.codemode-call 条目（工具名、目标、是否成功，不含参数正文与结果）", async () => {
+    const write = stubTool({
+      name: "write",
+      permission: "execute",
+      properties: { path: { type: "string" }, content: { type: "string" } },
+      run: (input) =>
+        input["path"] === "bad" ? { content: "nope", isError: true } : { content: "written" },
+    }) as ToolDefinition;
+    const { tools } = fixture({ tools: [write] });
+    const h = createHarness({
+      script: [
+        call(`await tools.write({ path: "src/a.ts", content: "secret body" });
+        await tools.write({ path: "bad", content: "x" }).catch(() => {});
+        return "done";`),
+        { text: "ok" },
+      ],
+      tools,
+      activeTools: ["codemode"],
+    });
+    await h.session.prompt("go");
+    const calls = h.session.entries.flatMap((e) =>
+      e.type === "custom" && e.customType === "ama.codemode-call" ? [e.data] : [],
+    );
+    expect(calls).toEqual([
+      { parent: "cm1", name: "write", ok: true, target: "src/a.ts" },
+      { parent: "cm1", name: "write", ok: false, target: "bad" },
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("secret body");
   });
 });

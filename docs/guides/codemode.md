@@ -34,7 +34,7 @@
 { "version": 1, "tools": { "preset": "codemode-only" }, "permission": { "allow": ["codemode"] } }
 ```
 
-其它配置：`codemode.inlineBudget`（`only` 模式在描述里内联声明的预算，估算 token，缺省 3000，超出只列名字；`on` 模式不内联）、`codemode.requireStrict`（见下文沙箱）、`codemode.maxHeapMb`（脚本子进程的堆上限，见下文沙箱）。项目级配置只能把 `codemode.mode` 设为 `off`。
+其它配置：`codemode.inlineBudget`（`only` 模式在描述里内联声明的预算，估算 token，缺省 3000，超出只列名字；`on` 模式不内联）、`codemode.requireStrict`（见下文沙箱）、`codemode.maxHeapMb`（脚本子进程的堆上限，见下文沙箱）、`codemode.maxWorkers`（同时存活的脚本子进程数，见下文「并发」）。项目级配置只能把 `codemode.mode` 设为 `off`。
 
 `on` 模式的前缀开销：去重前 `codemode` 描述把已直接暴露的六个工具的声明又内联一遍，其它工具各追加一行提示，系统提示 + 工具表比 `off` 多约 1356 token；现在只多约 390 token（字符 / 4 估算，测试锁定 ≤ 500）。升级后续接的旧会话因为描述字节变化会有一次缓存未命中。
 
@@ -57,6 +57,8 @@
 | `store(key, v)` / `load(key)`  | 跨次保留小块 JSON；`store(key, undefined)` 删除                                   |
 | `ALL_TOOLS`                    | 可调用工具名（执行时的清单，含描述冻结之后才注册的宿主工具）                      |
 | `describeTool(name)`           | 单个工具的 TypeScript 声明                                                        |
+| `searchTools(query, opts?)`    | 在可调用工具里按 BM25（名字 + 描述）排序，见下                                    |
+| `image(value)`                 | 把一张图附在脚本结果后面，见下                                                    |
 
 没有 `require`、`import`、`process`、`fetch`、定时器；`eval` 与 `new Function` 被拒绝。工具只能写成 `tools.read({ path })`，不能直接 `read(...)`。
 
@@ -70,10 +72,15 @@
 
 ### 返回值
 
-- `bash` 解析为 `{ output, truncated, fullOutputPath?, exitCode, wallTimeMs }`，非零退出码同样解析；`output` 是模型可见的版本（2000 行 / 50 KB 尾截断），`fullOutputPath` 存在时可再 `tools.read` 全文。
+- `bash` 解析为 `{ output, truncated, fullOutputPath?, exitCode, wallTimeMs }`，非零退出码同样解析。脚本里的 `output` 放宽到 1 MiB：全文不超过 1 MiB 时就是全文（`truncated` 为假）；更长时保留首尾各 512 KiB，中间是 `[... N bytes omitted; full output: <路径> ...]`，`truncated` 为真，`fullOutputPath` 指向全文文件（可再 `tools.read` 或自己切片）。模型直接调用 bash 的结果不变（2000 行 / 50 KB 尾截断）。脚本最终输出仍按 `max_output_tokens` 截断。
 - 其它内置工具解析为文本；宿主 / SDK 工具返回 `structured` 时解析为它，否则为文本。
 - 工具失败、被 Hook / 权限 / 用户拒绝、参数非法 → 以 `Error` reject，消息是工具的错误文本；用 `Promise.allSettled` 保留其余结果。
 - 同一脚本内最多 8 个调用同时进行，多出的排队；脚本里不能调用 `codemode`。
+
+### searchTools 与 image
+
+- `await searchTools(query, { limit?, namespace? })`：在本次执行可调用的工具里按 BM25（名字 + 描述）排序，解析为 `{ name, description }[]`（描述取首段、≤ 240 字符）；`limit` 缺省 8、上限 50；`namespace` 是工具名前缀（`_` `.` `:` `-` 之前的部分，如 `canvas` 匹配 `canvas_add`）。没有命中为空数组；参数不合法时 reject。它不是工具调用，不过权限也不发事件。工具多、描述里只列了名字时先搜再 `describeTool(name)`。
+- `image(value)`：`value` 可以是 base64 的 `data:` URL、`{ image_url }`（字符串或 `{ url }`）、或 `{ type: "image", data, mimeType }`（`tools.read` 读一张图时解析为后者，可直接传入）。只收 PNG / JPEG / GIF / WebP，MIME 由文件头决定（声明的 MIME 被忽略），远程 URL 一律拒绝；不合法时同步抛 `TypeError`。每个脚本最多 8 张，单张受当前端点的上限约束（超限的跳过并在结果里说明）。图片作为图片块附在脚本结果之后，同时存成 `<会话目录>/outputs/<toolCallId>-image-<n>.<扩展名>`（与超长文本同目录），结果文本里写明路径；模型不收图片时协议层会丢掉图片块，路径仍在。
 
 ### 结果
 
@@ -82,6 +89,16 @@
 ### store
 
 脚本成功结束且写过 store 时，追加一条 `custom{customType:"ama.codemode-store"}` 条目，内容是完整快照；读取取活动分支上最近一条，所以 `/resume` 后值仍在，切分支、fork 后只看本分支写过的值。单值 JSON ≤ 262 144 字符，合计 ≤ 1 048 576 字符；超限时 `store()` 抛 `RangeError`。失败的脚本不提交。
+
+### 并发
+
+整个 ama 进程（所有会话与子 Agent）同时存活的脚本子进程不超过 2 个；多出的脚本按先来先到排队，最多等 60 s，也不超过脚本自己的 `timeout_ms`（等待计入 `timeout_ms`），到点失败且**没有运行**（错误文本说明名额一直被占）。等待期间被取消立即结束。名额在子进程真正退出时才归还，不是结果落定时。
+
+上限：配置 `codemode.maxWorkers`（正整数，缺省 2，只认用户级）< 环境变量 `AMA_CODEMODE_MAX_WORKERS`（正整数，每次执行时读取，不合法的值被忽略）。
+
+### 脚本被杀之后
+
+脚本每完成一个内层调用就追加一条 `custom{customType:"ama.codemode-call"}`（`{ parent, name, target?, ok }`，不进上下文；`target` 与恢复提醒共用规则：bash 只取命令第一个词，write / edit 取路径，不含参数正文与结果）。进程在脚本跑到一半时被杀，下次 `resume` 的恢复提醒会列出外层 `codemode` 调用没有结果时它已经完成的内层调用（`write src/a.ts: ok`），并要求先核实现场、不要盲目重复。被脚本结束取消的调用不记。
 
 ## Hook 与事件
 

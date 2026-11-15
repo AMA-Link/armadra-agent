@@ -40,6 +40,11 @@ import {
 } from "./declarations.js";
 import { runSandbox, type SandboxRunResult } from "./host-side.js";
 import { parseOptionsLine, type ToolDecl } from "./protocol.js";
+import { recordInnerCall } from "./inner-calls.js";
+import { prepareScriptImages } from "./script-images.js";
+import { searchTools } from "./search-tools.js";
+import { widenScriptBashOutput } from "./script-output.js";
+import { resolveMaxWorkers } from "./worker-pool.js";
 import { commitStore, readStore } from "./store.js";
 
 export const CODEMODE_TOOL_NAME = "codemode";
@@ -76,6 +81,8 @@ export interface CodemodeToolOptions {
   nodePath?: string;
   /** 子进程堆上限（MB，`codemode.maxHeapMb`）；缺省 256，0 不设上限。 */
   maxHeapMb?: number;
+  /** `codemode.maxWorkers`；环境变量 `AMA_CODEMODE_MAX_WORKERS` 优先，每次执行时读取。 */
+  maxWorkers?: number;
 }
 
 export interface CodemodeDetails {
@@ -86,6 +93,8 @@ export interface CodemodeDetails {
   aborted: boolean;
   strict: boolean;
   fullOutputPath?: string;
+  /** `image()` 的图落盘的路径。 */
+  imagePaths?: string[];
   error?: string;
 }
 
@@ -101,6 +110,15 @@ export interface ScriptBashResult {
 function textOf(content: ToolResult["content"]): string {
   if (typeof content === "string") return content;
   return content.map((block) => (block.type === "text" ? block.text : "")).join("");
+}
+
+function isScriptBashResult(value: unknown): value is ScriptBashResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as ScriptBashResult).output === "string" &&
+    typeof (value as ScriptBashResult).exitCode === "number"
+  );
 }
 
 function isBashStructured(value: unknown): value is BashStructured {
@@ -126,6 +144,13 @@ export function toScriptValue(name: string, result: ToolResult): unknown {
     return value;
   }
   if (result.isError === true) throw new Error(textOf(result.content) || `Tool ${name} failed`);
+  // 图片结果（read 一张图）给脚本一个 image() 直接收的图片块
+  if (result.structured === undefined && Array.isArray(result.content)) {
+    const image = result.content.find((block) => block.type === "image");
+    if (image !== undefined && image.type === "image") {
+      return { type: "image", data: image.data, mimeType: image.mimeType };
+    }
+  }
   return result.structured !== undefined ? result.structured : textOf(result.content);
 }
 
@@ -179,7 +204,7 @@ function buildOnDescription(tools: readonly CallableTool[], capability: SandboxC
     "Input: raw JavaScript (not JSON, no code fence), the body of an async function (top-level await and return work). Only tools.<name>(args) exists: no require, import, process, fetch or timers.",
     "Example:",
     ...CODEMODE_EXAMPLE,
-    "tools.<name>(args) returns a Promise that rejects when the call fails or is denied (Promise.allSettled keeps the rest); text(v) / console.log(...) append output; return v is text(v); store(key, v) / load(key) keep small JSON values across scripts; describeTool(name) returns a signature. At most 8 calls run at once, each through the normal permissions.",
+    "tools.<name>(args) returns a Promise that rejects when the call fails or is denied (Promise.allSettled keeps the rest); text(v) / console.log(...) append output; return v is text(v); store(key, v) / load(key) keep small JSON values across scripts; describeTool(name) returns a signature; searchTools(query, {limit?, namespace?}) ranks tools; image(v) attaches a data: URL or tools.read image. At most 8 calls run at once, each through the normal permissions.",
   ];
   if (!capability.strict) lines.push(`Sandbox: ${capability.reason}.`);
   if (direct.length > 0) {
@@ -206,7 +231,7 @@ export function buildCodemodeDescription(
     'The input is raw JavaScript (not JSON, no code fence), run as the body of an async function: top-level await and return work. Optional first line: // @options: {"max_output_tokens": 10000, "timeout_ms": 300000}',
     "Example:",
     ...CODEMODE_EXAMPLE,
-    "Globals: tools.<name>(args) returns a Promise and rejects with an Error when the call fails or is denied (use Promise.allSettled to keep the rest); text(v) and console.log(...) append output (non-strings as JSON); return v is text(v); store(key, v) / load(key) keep small JSON values across scripts (saved only when the script succeeds); ALL_TOOLS lists callable tools; describeTool(name) returns a declaration. At most 8 tool calls run at once; codemode cannot call itself. Every call goes through the normal hooks, permissions and approvals.",
+    "Globals: tools.<name>(args) returns a Promise and rejects with an Error when the call fails or is denied (use Promise.allSettled to keep the rest); text(v) and console.log(...) append output (non-strings as JSON); return v is text(v); store(key, v) / load(key) keep small JSON values across scripts (saved only when the script succeeds); ALL_TOOLS lists callable tools; describeTool(name) returns a declaration; searchTools(query, {limit?, namespace?}) ranks callable tools by name and description; image(v) attaches a PNG/JPEG/GIF/WebP data: URL or a tools.read image result to your result. At most 8 tool calls run at once; codemode cannot call itself. Every call goes through the normal hooks, permissions and approvals.",
   ];
   if (!capability.strict) {
     lines.push(`Sandbox: ${capability.reason}.`);
@@ -246,16 +271,25 @@ export function formatCodemodeResult(
   return result;
 }
 
-function saveFullOutput(ctx: ToolContext, text: string): string | undefined {
+/** 超长文本与 `image()` 的图共用的落盘位置：`<会话目录>/outputs`（内存会话为系统临时目录）。 */
+function saveOutputFile(
+  ctx: ToolContext,
+  suffix: string,
+  data: string | Buffer,
+): string | undefined {
   try {
     const dir = ctx.outputDir ?? join(tmpdir(), "ama-codemode");
     mkdirSync(dir, { recursive: true });
-    const file = join(dir, `${ctx.toolCallId.replace(/[^A-Za-z0-9_-]/g, "_")}.txt`);
-    writeFileSync(file, text, "utf8");
+    const file = join(dir, `${ctx.toolCallId.replace(/[^A-Za-z0-9_-]/g, "_")}${suffix}`);
+    writeFileSync(file, data);
     return file;
   } catch {
     return undefined;
   }
+}
+
+function saveFullOutput(ctx: ToolContext, text: string): string | undefined {
+  return saveOutputFile(ctx, ".txt", text);
 }
 
 const TAIL_CHARS = 4000;
@@ -323,9 +357,25 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
         ...(options.entry !== undefined ? { entry: options.entry } : {}),
         ...(options.nodePath !== undefined ? { nodePath: options.nodePath } : {}),
         ...(options.maxHeapMb !== undefined ? { maxHeapMb: options.maxHeapMb } : {}),
+        maxWorkers: resolveMaxWorkers(options.maxWorkers),
+        searchTools: (query, searchOptions) =>
+          searchTools(
+            options
+              .listTools()
+              .map(({ tool: t }) => ({ name: t.name, description: t.description })),
+            query,
+            searchOptions,
+          ),
         callTool: async (name, args, signal) => {
           if (!callable.has(name)) throw new Error(`Tool ${name} is not available in codemode`);
-          return toScriptValue(name, await ctx.tools.executeTool(name, args, { signal }));
+          const result = await ctx.tools.executeTool(name, args, { signal });
+          if (!signal.aborted) {
+            recordInnerCall(ctx.session, ctx.toolCallId, name, args, result.isError !== true);
+          }
+          const value = toScriptValue(name, result);
+          return name === "bash" && isScriptBashResult(value)
+            ? widenScriptBashOutput(value)
+            : value;
         },
         onOutput: (text) => {
           tail = `${tail}${tail === "" ? "" : "\n"}${text}`.slice(-TAIL_CHARS);
@@ -350,6 +400,9 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
         Math.min(scriptOptions.maxOutputTokens * 4, maxResultChars - 500),
       );
       const formatted = formatCodemodeResult(run, limitChars, (text) => saveFullOutput(ctx, text));
+      const images = await prepareScriptImages(run.images, (bytes, extension, n) =>
+        saveOutputFile(ctx, `-image-${n}.${extension}`, bytes),
+      );
       const details: CodemodeDetails = {
         ok: run.ok,
         elapsedMs: run.elapsedMs,
@@ -360,7 +413,16 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
       };
       if (formatted.fullOutputPath !== undefined) details.fullOutputPath = formatted.fullOutputPath;
       if (run.error !== undefined) details.error = run.error;
-      return { content: formatted.text, isError: !run.ok, details };
+      if (images.paths.length > 0) details.imagePaths = images.paths;
+      if (images.notes.length === 0) return { content: formatted.text, isError: !run.ok, details };
+      return {
+        content: [
+          { type: "text", text: `${formatted.text}\n\n${images.notes.join("\n")}` },
+          ...images.blocks,
+        ],
+        isError: !run.ok,
+        details,
+      };
     },
     renderCall(input, width) {
       const lines = input.script.split("\n");
@@ -437,6 +499,8 @@ export function codemodeToolFactory(
     if (budget !== undefined) options.inlineBudget = budget;
     const heapMb = ctx.config.codemode?.maxHeapMb;
     if (heapMb !== undefined) options.maxHeapMb = heapMb;
+    const workers = ctx.config.codemode?.maxWorkers;
+    if (workers !== undefined) options.maxWorkers = workers;
     const maxChars = ctx.config.tools?.maxToolResultChars;
     if (maxChars !== undefined) options.maxResultChars = maxChars;
     if (overrides.entry !== undefined) options.entry = overrides.entry;

@@ -114,6 +114,16 @@ describe("第五波键的层级", () => {
     expect(text).toContain("codemode.maxHeapMb");
   });
 
+  it("codemode.maxWorkers：正数，只认用户级", () => {
+    expect(validateConfig({ version: 1, codemode: { maxWorkers: 3 } })).toEqual([]);
+    expect(validateConfig({ version: 1, codemode: { maxWorkers: 0 } }).map((d) => d.path)).toEqual([
+      "codemode.maxWorkers",
+    ]);
+    const result = restrictProjectConfig(project({ codemode: { maxWorkers: 8 } }), "default");
+    expect(result.accepted).toEqual({});
+    expect(result.warnings.join("\n")).toContain("codemode.maxWorkers");
+  });
+
   it("[#149] subagents.forkMaxContextRatio：0.05–0.95，只认用户级", () => {
     expect(validateConfig({ version: 1, subagents: { forkMaxContextRatio: 0.2 } })).toEqual([]);
     for (const bad of [0, 0.96, "0.5"])

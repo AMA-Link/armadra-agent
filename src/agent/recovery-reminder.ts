@@ -21,9 +21,17 @@ export function recoveryReminderText(unclean: UncleanEnd): string {
       : `Tool calls in that turn: ${unclean.tools.join("; ")}${
           unclean.more > 0 ? `; …and ${unclean.more} more` : ""
         }.`;
+  const innerCalls = unclean.innerCalls ?? [];
+  const inner =
+    innerCalls.length === 0
+      ? ""
+      : "A codemode script was running when the process stopped. Inner calls it had already completed " +
+        `(their effects happened unless marked failed): ${innerCalls.join("; ")}${
+          (unclean.innerMore ?? 0) > 0 ? `; …and ${unclean.innerMore} more` : ""
+        }. It may have run more calls that were not recorded. Do not blindly repeat these. `;
   return (
     "The previous turn of this session ended abruptly (the process stopped before the turn finished; " +
-    `this was not a user interrupt). ${listed} ` +
+    `this was not a user interrupt). ${listed} ${inner}` +
     "Calls marked (no result) may or may not have taken effect. Before repeating any action with " +
     "external effects (pushes, PRs, comments, migrations, deployments, messages), inspect the workspace, " +
     "the git history and the external state to see what already happened, then continue from there. " +

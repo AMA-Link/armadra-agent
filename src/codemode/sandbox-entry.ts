@@ -157,6 +157,20 @@ const BOOTSTRAP = String.raw`(function (host, config) {
     const json = storeMap.get(key);
     return json === undefined ? undefined : parse(json);
   }
+  function image(value) {
+    let json;
+    try {
+      json = stringify({ value: value });
+    } catch (error) {
+      throw new TypeError("image(value): value must be JSON-serializable");
+    }
+    const problem = host("image", json);
+    if (typeof problem === "string") throw new TypeError(problem);
+  }
+  // reserved call name, same as SEARCH_TOOLS_CALL in protocol.ts; the parent ranks tools with BM25
+  function searchTools(query, options) {
+    return callTool("@searchTools", { query: query, options: options });
+  }
   function describeTool(name) {
     return declByName.get(callName.get(name) ?? name);
   }
@@ -172,6 +186,8 @@ const BOOTSTRAP = String.raw`(function (host, config) {
     load: load,
     ALL_TOOLS: names,
     describeTool: describeTool,
+    searchTools: searchTools,
+    image: image,
   };
   for (const [key, value] of Object.entries(globals)) {
     Object.defineProperty(globalThis, key, { value: value, writable: false, enumerable: false, configurable: false });
@@ -244,11 +260,77 @@ function done(ok: boolean, error?: string): void {
   process.stdout.write("", () => process.exit(0));
 }
 
-function host(kind: string, payload: string): void {
-  if (finished) return;
+/** 单个脚本最多附几张图。 */
+export const MAX_SCRIPT_IMAGES = 8;
+let imageCount = 0;
+
+/** 按文件头认 PNG / JPEG / GIF / WebP（与 tools/image-file.ts 的 sniffImageMime 一致；本文件不能 import 它）。 */
+export function sniffImage(buf: Buffer): string | undefined {
+  if (buf.length >= 8 && buf.readUInt32BE(0) === 0x89504e47 && buf.readUInt32BE(4) === 0x0d0a1a0a)
+    return "image/png";
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 6 && /^GIF8[79]a$/.test(buf.toString("ascii", 0, 6))) return "image/gif";
+  if (
+    buf.length >= 12 &&
+    buf.toString("ascii", 0, 4) === "RIFF" &&
+    buf.toString("ascii", 8, 12) === "WEBP"
+  )
+    return "image/webp";
+  return undefined;
+}
+
+const IMAGE_FORMS =
+  "image(value): pass a base64 data: URL, { image_url }, or { type: 'image', data, mimeType }";
+
+/** `image()` 的入参 → `{ data, mimeType }`；不合法返回错误文本。MIME 只信文件头。 */
+export function normalizeImage(value: unknown): { data: string; mimeType: string } | string {
+  let raw: unknown = value;
+  if (typeof raw === "object" && raw !== null) {
+    const o = raw as { type?: unknown; data?: unknown; image_url?: unknown };
+    if (o.type === "image" && typeof o.data === "string") raw = o.data;
+    else if (typeof o.image_url === "string") raw = o.image_url;
+    else if (
+      typeof o.image_url === "object" &&
+      o.image_url !== null &&
+      typeof (o.image_url as { url?: unknown }).url === "string"
+    )
+      raw = (o.image_url as { url: string }).url;
+  }
+  if (typeof raw !== "string") return IMAGE_FORMS;
+  let base64 = raw.trim();
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(base64)?.[1]?.toLowerCase();
+  if (scheme !== undefined && scheme !== "data") {
+    return "image(value): remote URLs are not supported; pass a base64 data: URL";
+  }
+  if (scheme === "data") {
+    const match = /^data:[^,]*;base64,([\s\S]*)$/i.exec(base64);
+    if (match === null) return "image(value): the data: URL must be base64-encoded";
+    base64 = (match[1] ?? "").trim();
+  }
+  base64 = base64.replace(/\s+/g, "");
+  if (base64 === "" || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
+    return "image(value): the image data is not valid base64";
+  }
+  const mimeType = sniffImage(Buffer.from(base64, "base64"));
+  if (mimeType === undefined) return "image(value): not a PNG, JPEG, GIF or WebP image";
+  return { data: base64, mimeType };
+}
+
+function host(kind: string, payload: string): string | undefined {
+  if (finished) return undefined;
+  if (kind === "image") {
+    if (imageCount >= MAX_SCRIPT_IMAGES) {
+      return `image(value): at most ${MAX_SCRIPT_IMAGES} images per script`;
+    }
+    const normalized = normalizeImage((JSON.parse(payload) as { value?: unknown }).value);
+    if (typeof normalized === "string") return normalized;
+    imageCount++;
+    send({ type: "image", data: normalized.data, mimeType: normalized.mimeType });
+    return undefined;
+  }
   if (kind === "output") {
     send({ type: "output", text: payload });
-    return;
+    return undefined;
   }
   if (kind === "tool_call") {
     const newline = payload.indexOf("\n");
@@ -256,6 +338,7 @@ function host(kind: string, payload: string): void {
     const call = JSON.parse(payload.slice(newline + 1)) as { name: string; input: unknown };
     send({ type: "tool_call", id, name: call.name, input: call.input });
   }
+  return undefined;
 }
 
 function start(run: Extract<ParentMessage, { type: "run" }>): void {

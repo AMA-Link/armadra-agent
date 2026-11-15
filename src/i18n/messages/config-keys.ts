@@ -126,6 +126,8 @@ const keysEn = {
     "true: disable codemode when the runtime Node does not isolate the network (Node 22 / 24)",
   "codemode.maxHeapMb":
     "V8 heap limit (MB) for the script child process; a script that exceeds it ends with an error; 0 sets no limit",
+  "codemode.maxWorkers":
+    "Most script child processes alive at once across all sessions in this process (default 2); the AMA_CODEMODE_MAX_WORKERS environment variable takes precedence",
   hooks: "Hook settings (the hooks themselves live in hooks.json)",
   "hooks.timeoutMs": "Default timeout for a single hook command (ms)",
   ui: "Terminal interface",
@@ -315,6 +317,8 @@ const keysZh = {
   "codemode.inlineBudget": "only 模式在描述里内联工具声明的预算（估算 token），超出只列名字",
   "codemode.requireStrict": "true：运行时 Node 不隔离网络（Node 22 / 24）时直接禁用 codemode",
   "codemode.maxHeapMb": "脚本子进程的 V8 堆上限（MB），超出时脚本以错误结束；0 不设上限",
+  "codemode.maxWorkers":
+    "本进程内所有会话同时存活的脚本子进程数上限（缺省 2）；环境变量 AMA_CODEMODE_MAX_WORKERS 优先",
   hooks: "Hook 设置（Hook 本身写在 hooks.json）",
   "hooks.timeoutMs": "单个 Hook 命令的缺省超时（毫秒）",
   ui: "终端界面",

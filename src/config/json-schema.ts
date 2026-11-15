@@ -318,6 +318,7 @@ function buildBaseSchema(): Schema {
         inlineBudget: num(0),
         requireStrict: bool(),
         maxHeapMb: num(0),
+        maxWorkers: num(1),
       }),
       hooks: object({ timeoutMs: num(1, HOOK_TIMEOUT_MAX_MS) }),
       ui: object({
