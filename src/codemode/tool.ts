@@ -40,6 +40,7 @@ import {
 } from "./declarations.js";
 import { runSandbox, type SandboxRunResult } from "./host-side.js";
 import { parseOptionsLine, type ToolDecl } from "./protocol.js";
+import { widenScriptBashOutput } from "./script-output.js";
 import { commitStore, readStore } from "./store.js";
 
 export const CODEMODE_TOOL_NAME = "codemode";
@@ -101,6 +102,15 @@ export interface ScriptBashResult {
 function textOf(content: ToolResult["content"]): string {
   if (typeof content === "string") return content;
   return content.map((block) => (block.type === "text" ? block.text : "")).join("");
+}
+
+function isScriptBashResult(value: unknown): value is ScriptBashResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as ScriptBashResult).output === "string" &&
+    typeof (value as ScriptBashResult).exitCode === "number"
+  );
 }
 
 function isBashStructured(value: unknown): value is BashStructured {
@@ -325,7 +335,10 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
         ...(options.maxHeapMb !== undefined ? { maxHeapMb: options.maxHeapMb } : {}),
         callTool: async (name, args, signal) => {
           if (!callable.has(name)) throw new Error(`Tool ${name} is not available in codemode`);
-          return toScriptValue(name, await ctx.tools.executeTool(name, args, { signal }));
+          const value = toScriptValue(name, await ctx.tools.executeTool(name, args, { signal }));
+          return name === "bash" && isScriptBashResult(value)
+            ? widenScriptBashOutput(value)
+            : value;
         },
         onOutput: (text) => {
           tail = `${tail}${tail === "" ? "" : "\n"}${text}`.slice(-TAIL_CHARS);

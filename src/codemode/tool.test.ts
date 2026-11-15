@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createHarness } from "../agent/testing/harness.js";
@@ -448,6 +448,46 @@ describe("结果与返回值", () => {
     expect(content).toContain(`full output: ${join(dir, "cm1.txt")}`);
     expect(existsSync(join(dir, "cm1.txt"))).toBe(true);
     expect(readFileSync(join(dir, "cm1.txt"), "utf8")).toBe("z".repeat(5000));
+    rmSync(dir, { recursive: true, force: true });
+  });
+  it("脚本里的 tools.bash 拿到放宽到 1 MiB 的 output；超出保留首尾各 512 KiB", async () => {
+    const dir = `${sandboxEntryForTests()}-bash`;
+    mkdirSync(dir, { recursive: true });
+    const small = join(dir, "small.log");
+    const large = join(dir, "large.log");
+    writeFileSync(small, "s".repeat(200_000));
+    writeFileSync(large, `H${"m".repeat(1_500_000)}T`);
+    const bash = stubTool({
+      name: "bash",
+      permission: "execute",
+      properties: { command: { type: "string" } },
+      run: (input) => {
+        const path = input["command"] === "small" ? small : large;
+        return {
+          content: "tail only",
+          structured: {
+            output: "tail only",
+            exit_code: 0,
+            truncated: true,
+            full_output_path: path,
+            wall_time_seconds: 0.1,
+          },
+        };
+      },
+    }) as ToolDefinition;
+    const { tools } = fixture({ tools: [bash] });
+    const h = createHarness({
+      script: [
+        call(`const a = await tools.bash({ command: "small" });
+        const b = await tools.bash({ command: "large" });
+        return [a.output.length, a.truncated, b.output.length > 1048576, b.output[0], b.output.slice(-1), b.truncated, b.fullOutputPath.endsWith("large.log")].join(",");`),
+        { text: "ok" },
+      ],
+      tools,
+      activeTools: ["codemode"],
+    });
+    await h.session.prompt("go");
+    expect(String(toolResults(h)[0]?.content)).toMatch(/200000,false,true,H,T,true,true$/);
     rmSync(dir, { recursive: true, force: true });
   });
 });
