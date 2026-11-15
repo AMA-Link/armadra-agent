@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTmpHome, type TmpHome } from "../../../test/helpers/tmp-home.js";
 import { ProviderRegistry } from "../../ai/providers/registry.js";
-import { detectSandboxCapability } from "../../codemode/capability.js";
+import { applyCodemodeEngine, detectSandboxCapability } from "../../codemode/capability.js";
 import { describeCodemode } from "./config.js";
 import { main } from "../main.js";
 
@@ -90,7 +90,7 @@ describe("ama config show", () => {
       entries: { path: string; source: string }[];
       tools: string[];
     };
-    const strict = detectSandboxCapability().strict;
+    const strict = applyCodemodeEngine(detectSandboxCapability()).strict;
     expect(json.codemode).toMatchObject({ mode: strict ? "on" : "off", source: "preset" });
     expect(json.tools.includes("codemode")).toBe(strict);
     expect(json.entries.find((e) => e.path === "cache.warming")?.source).toBe("user");

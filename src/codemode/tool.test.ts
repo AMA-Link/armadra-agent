@@ -675,7 +675,10 @@ describe("codemode 工具：QuickJS 引擎", () => {
       const h = quickjsHarness(`image("data:image/png;base64,${PNG}"); return "x";`, [], dir);
       await h.session.prompt("go");
       const content = toolResults(h)[0]?.content;
-      expect(JSON.stringify(content)).toContain(`saved to ${join(dir, "cm1-image-1.png")}`);
+      const texts = Array.isArray(content)
+        ? content.map((block) => (block.type === "text" ? block.text : "")).join("\n")
+        : String(content);
+      expect(texts).toContain(`saved to ${join(dir, "cm1-image-1.png")}`);
       expect(existsSync(join(dir, "cm1-image-1.png"))).toBe(true);
       rmSync(dir, { recursive: true, force: true });
     });
