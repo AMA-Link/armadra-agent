@@ -82,6 +82,8 @@ export class ToolView implements Component {
   private cache: { width: number; version: number; lines: string[] } | null = null;
   private version = 0;
   private startedAt: number;
+  /** 显示用的参数：强转过取强转后的。 */
+  private readonly args: unknown;
   /** 审批对话框打开时还没开始执行（摘要行显示「等待确认」，关闭后重新计时）。 */
   private awaiting = false;
   private elapsedMs = 0;
@@ -93,9 +95,12 @@ export class ToolView implements Component {
   constructor(
     readonly toolCallId: string,
     readonly toolName: string,
-    private readonly args: unknown,
+    modelArgs: unknown,
     private readonly options: ToolViewOptions,
+    /** 宽松强转改过模型参数时，实际执行的参数：显示以它为准，标题行带一个淡色标记。 */
+    private readonly coerced?: Record<string, unknown>,
   ) {
+    this.args = coerced ?? modelArgs;
     this.startedAt = this.now();
   }
 
@@ -198,7 +203,10 @@ export class ToolView implements Component {
     const summary =
       this.customCall(width) ?? toolSummary(this.toolName, this.args, this.options.cwd);
     const title = `${dot} ${theme.bold(theme.fg("tool", this.toolName))}`;
-    return truncateToWidth(summary === "" ? title : `${title} ${summary}`, width);
+    const mark =
+      this.coerced === undefined ? "" : ` ${theme.fg("dim", msg().interactive.view.tool.coerced)}`;
+    const line = summary === "" ? title : `${title} ${summary}`;
+    return truncateToWidth(`${line}${mark}`, width);
   }
 
   /** `  ⎿ 摘要`：运行中带 spinner 与秒数，完成后是结果摘要。 */
@@ -459,12 +467,19 @@ export class ToolTracker {
     toolCallId: string;
     toolName: string;
     args: unknown;
+    coercedArguments?: Record<string, unknown>;
     parentToolCallId?: string;
   }): { view: ToolView; topLevel: boolean } {
     const existing = this.views.get(event.toolCallId);
     // 同一调用的重复 start 复用；已结束的同名 id（有的供应商跨回合复用 id）另起一个视图
     if (existing !== undefined && existing.isRunning) return { view: existing, topLevel: false };
-    const view = new ToolView(event.toolCallId, event.toolName, event.args, this.options);
+    const view = new ToolView(
+      event.toolCallId,
+      event.toolName,
+      event.args,
+      this.options,
+      event.coercedArguments,
+    );
     view.setExpanded(this.expanded);
     this.views.set(event.toolCallId, view);
     const parent =
