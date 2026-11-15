@@ -40,6 +40,7 @@ import {
 } from "./declarations.js";
 import { runSandbox, type SandboxRunResult } from "./host-side.js";
 import { parseOptionsLine, type ToolDecl } from "./protocol.js";
+import { recordInnerCall } from "./inner-calls.js";
 import { prepareScriptImages } from "./script-images.js";
 import { searchTools } from "./search-tools.js";
 import { widenScriptBashOutput } from "./script-output.js";
@@ -367,7 +368,11 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
           ),
         callTool: async (name, args, signal) => {
           if (!callable.has(name)) throw new Error(`Tool ${name} is not available in codemode`);
-          const value = toScriptValue(name, await ctx.tools.executeTool(name, args, { signal }));
+          const result = await ctx.tools.executeTool(name, args, { signal });
+          if (!signal.aborted) {
+            recordInnerCall(ctx.session, ctx.toolCallId, name, args, result.isError !== true);
+          }
+          const value = toScriptValue(name, result);
           return name === "bash" && isScriptBashResult(value)
             ? widenScriptBashOutput(value)
             : value;

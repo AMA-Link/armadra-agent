@@ -525,4 +525,33 @@ describe("结果与返回值", () => {
       h.events.filter((e) => e.type === "tool_execution_start" && e.parentToolCallId),
     ).toHaveLength(0);
   });
+  it("已完成的内层调用落成 ama.codemode-call 条目（工具名、目标、是否成功，不含参数正文与结果）", async () => {
+    const write = stubTool({
+      name: "write",
+      permission: "execute",
+      properties: { path: { type: "string" }, content: { type: "string" } },
+      run: (input) =>
+        input["path"] === "bad" ? { content: "nope", isError: true } : { content: "written" },
+    }) as ToolDefinition;
+    const { tools } = fixture({ tools: [write] });
+    const h = createHarness({
+      script: [
+        call(`await tools.write({ path: "src/a.ts", content: "secret body" });
+        await tools.write({ path: "bad", content: "x" }).catch(() => {});
+        return "done";`),
+        { text: "ok" },
+      ],
+      tools,
+      activeTools: ["codemode"],
+    });
+    await h.session.prompt("go");
+    const calls = h.session.entries.flatMap((e) =>
+      e.type === "custom" && e.customType === "ama.codemode-call" ? [e.data] : [],
+    );
+    expect(calls).toEqual([
+      { parent: "cm1", name: "write", ok: true, target: "src/a.ts" },
+      { parent: "cm1", name: "write", ok: false, target: "bad" },
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("secret body");
+  });
 });

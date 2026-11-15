@@ -13,9 +13,11 @@ import type { SessionEntry } from "../session/types.js";
 import {
   UNCLEAN_ABORTED_TYPE,
   UNCLEAN_REMINDER_TYPE,
+  UNCLEAN_CODEMODE_CALL_TYPE,
   UNCLEAN_TRACE_TYPE,
   type UncleanEnd,
 } from "../session/unclean-end.js";
+import { INNER_CALL_CUSTOM_TYPE } from "../codemode/inner-calls.js";
 import { setLocale } from "../i18n/index.js";
 import { TRACE_CUSTOM_TYPE } from "../trace/types.js";
 import { REMINDER_CUSTOM_TYPE, createRemindersExtension } from "./reminders.js";
@@ -112,6 +114,7 @@ describe("恢复提醒", () => {
     expect(UNCLEAN_ABORTED_TYPE).toBe(ABORTED_CUSTOM_TYPE);
     expect(UNCLEAN_REMINDER_TYPE).toBe(REMINDER_CUSTOM_TYPE);
     expect(UNCLEAN_TRACE_TYPE).toBe(TRACE_CUSTOM_TYPE);
+    expect(UNCLEAN_CODEMODE_CALL_TYPE).toBe(INNER_CALL_CUSTOM_TYPE);
   });
 
   it("悬空调用 → resume 后第一次提示前注入一次（details.recovery），列出上一轮的工具与目标；之后不再注入", async () => {
@@ -285,5 +288,39 @@ describe("恢复提醒", () => {
     expect(zh).not.toMatch(/[　-〿㐀-䶿一-鿿]/);
     const none = recoveryReminderText({ ...unclean, tools: [], more: 0 });
     expect(none).toContain("No tool calls were recorded in that turn.");
+  });
+  it("脚本被杀：提醒列出已完成的内层调用并要求不要盲目重复", () => {
+    const text = recoveryReminderText({
+      reason: "dangling_tool_calls",
+      tools: ["codemode (no result)"],
+      more: 0,
+      innerCalls: ["write src/a.ts: ok", "bash git: failed"],
+      innerMore: 2,
+      reminded: false,
+    });
+    expect(text).toContain("A codemode script was running when the process stopped.");
+    expect(text).toContain("write src/a.ts: ok; bash git: failed; …and 2 more.");
+    expect(text).toContain("Do not blindly repeat these.");
+    expect(
+      recoveryReminderText({ reason: "dangling_tool_calls", tools: [], more: 0, reminded: false }),
+    ).not.toContain("codemode script");
+  });
+  it("codemode 脚本跑到一半进程被杀：resume 后的提醒列出已完成的内层调用", async () => {
+    const file = await cleanSession();
+    appendDangling(file, [{ id: "cm9", name: "codemode", args: { script: "..." } }]);
+    const manager = SessionManager.open(file);
+    manager.append({
+      type: "custom",
+      customType: INNER_CALL_CUSTOM_TYPE,
+      data: { parent: "cm9", name: "bash", target: "git", ok: true },
+    });
+    manager.close();
+    const h = harness([{ text: "checked" }], { file });
+    await h.session.prompt("continue");
+    const text = String((recoveryEntries(h.fileEntries())[0] as { content: unknown }).content);
+    expect(text).toContain("codemode (no result)");
+    expect(text).toContain("bash git: ok");
+    expect(text).toContain("Do not blindly repeat these.");
+    await h.session.dispose();
   });
 });

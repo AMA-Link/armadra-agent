@@ -29,6 +29,9 @@ export const UNCLEAN_REMINDER_TYPE = "ama.reminder";
 /** 与 `trace/types.ts` 的 `TRACE_CUSTOM_TYPE` 相同。 */
 export const UNCLEAN_TRACE_TYPE = "ama.trace";
 
+/** 与 `codemode/inner-calls.ts` 的 `INNER_CALL_CUSTOM_TYPE` 相同。 */
+export const UNCLEAN_CODEMODE_CALL_TYPE = "ama.codemode-call";
+
 /** 工具清单的上限：条数与单项长度。 */
 export const UNCLEAN_TOOLS_MAX = 12;
 export const UNCLEAN_TARGET_MAX = 80;
@@ -42,6 +45,12 @@ export interface UncleanEnd {
   tools: string[];
   /** 封顶后没列出的条数。 */
   more: number;
+  /**
+   * 外层 codemode 调用没有结果（脚本被杀）时，它已经完成的内层调用（`name target: ok | failed`，按发生顺序，
+   * 已封顶）；其余情况为空。
+   */
+  innerCalls?: string[];
+  innerMore?: number;
   /** T 里已有恢复提醒（第二次 resume 不再注入）。 */
   reminded: boolean;
 }
@@ -136,12 +145,8 @@ export function toolTarget(name: string, args: Record<string, unknown>): string 
   return undefined;
 }
 
-/** 上一轮 = 最后一条非 steer 的 user 消息之后；列出其中全部 assistant 的工具调用。 */
-function lastTurnTools(
-  branch: readonly SessionEntry[],
-  results: ReadonlySet<string>,
-): { tools: string[]; more: number } {
-  let start = 0;
+/** 上一轮的起点：最后一条非 steer 的 user 消息之后。 */
+function turnStart(branch: readonly SessionEntry[]): number {
   for (let i = branch.length - 1; i >= 0; i--) {
     const entry = branch[i];
     if (
@@ -149,10 +154,38 @@ function lastTurnTools(
       entry.message.role === "user" &&
       entry.message.origin !== "steer"
     ) {
-      start = i + 1;
-      break;
+      return i + 1;
     }
   }
+  return 0;
+}
+
+/** 上一轮里、外层 codemode 调用没有结果的那些脚本已经完成的内层调用。 */
+function lastTurnInnerCalls(
+  branch: readonly SessionEntry[],
+  results: ReadonlySet<string>,
+): { innerCalls: string[]; innerMore: number } {
+  const lines: string[] = [];
+  for (const entry of branch.slice(turnStart(branch))) {
+    if (entry.type !== "custom" || entry.customType !== UNCLEAN_CODEMODE_CALL_TYPE) continue;
+    const data = entry.data as
+      { parent?: unknown; name?: unknown; target?: unknown; ok?: unknown } | null | undefined;
+    if (typeof data !== "object" || data === null) continue;
+    if (typeof data.parent !== "string" || results.has(data.parent)) continue;
+    if (typeof data.name !== "string") continue;
+    const head = typeof data.target === "string" ? `${data.name} ${clip(data.target)}` : data.name;
+    lines.push(`${clip(head)}: ${data.ok === false ? "failed" : "ok"}`);
+  }
+  const shown = lines.slice(0, UNCLEAN_TOOLS_MAX);
+  return { innerCalls: shown, innerMore: lines.length - shown.length };
+}
+
+/** 上一轮 = 最后一条非 steer 的 user 消息之后；列出其中全部 assistant 的工具调用。 */
+function lastTurnTools(
+  branch: readonly SessionEntry[],
+  results: ReadonlySet<string>,
+): { tools: string[]; more: number } {
+  const start = turnStart(branch);
   const seen = new Set<string>();
   const tools: string[] = [];
   for (const entry of branch.slice(start)) {
@@ -180,6 +213,14 @@ export function detectUncleanEnd(branch: readonly SessionEntry[]): UncleanEnd | 
   const after = branch.slice(at + 1);
   const reason = reasonOf(branch, at, entry.message, after);
   if (reason === undefined) return undefined;
-  const { tools, more } = lastTurnTools(branch, resultIds(branch));
-  return { reason, tools, more, reminded: after.some(isRecoveryReminder) };
+  const results = resultIds(branch);
+  const { tools, more } = lastTurnTools(branch, results);
+  const { innerCalls, innerMore } = lastTurnInnerCalls(branch, results);
+  return {
+    reason,
+    tools,
+    more,
+    ...(innerCalls.length > 0 ? { innerCalls, innerMore } : {}),
+    reminded: after.some(isRecoveryReminder),
+  };
 }

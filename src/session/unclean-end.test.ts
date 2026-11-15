@@ -308,4 +308,43 @@ describe("toolTarget", () => {
     expect(toolTarget("edit", { path: "a.ts#frag" })).toBe("a.ts");
     expect(toolTarget("write", { path: "?only" })).toBeUndefined();
   });
+  it("codemode 脚本被杀：外层调用没有结果时列出它已完成的内层调用；有结果的不列", () => {
+    const inner = (
+      parent: string,
+      name: string,
+      ok: boolean,
+      target?: string,
+    ): SessionEntryInput => ({
+      type: "custom",
+      customType: "ama.codemode-call",
+      data: { parent, name, ok, ...(target === undefined ? {} : { target }) },
+    });
+    const killed = detectUncleanEnd(
+      branchOf([
+        user("go"),
+        assistant([{ id: "old", name: "codemode" }]),
+        inner("old", "read", true),
+        result("old", "codemode"),
+        assistant([{ id: "cm", name: "codemode" }]),
+        inner("cm", "write", true, "src/a.ts"),
+        inner("cm", "bash", false, "git"),
+      ]),
+    );
+    expect(killed?.innerCalls).toEqual(["write src/a.ts: ok", "bash git: failed"]);
+    expect(killed?.innerMore).toBe(0);
+    expect(killed?.tools).toContain("codemode (no result)");
+    // 没有内层记录时不带这两个字段
+    const plain = detectUncleanEnd(branchOf([user("go"), assistant([{ id: "x", name: "bash" }])]));
+    expect(plain).not.toHaveProperty("innerCalls");
+    // 封顶
+    const many = detectUncleanEnd(
+      branchOf([
+        user("go"),
+        assistant([{ id: "cm", name: "codemode" }]),
+        ...Array.from({ length: UNCLEAN_TOOLS_MAX + 3 }, () => inner("cm", "write", true, "f")),
+      ]),
+    );
+    expect(many?.innerCalls).toHaveLength(UNCLEAN_TOOLS_MAX);
+    expect(many?.innerMore).toBe(3);
+  });
 });
