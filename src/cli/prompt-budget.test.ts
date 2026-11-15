@@ -32,7 +32,7 @@ const STRICT = detectSandboxCapability("25.0.0", new Set(["--permission"]));
  * 上限（token，字符 / 4）。codemode-only 原为 1775（实测 1752）；web_fetch 进内置工具后 `only` 模式要内联
  * 它的声明（+83，实测 1835），放宽到 1900；[#269] 子 Agent 的 `report` 工具是 task 的伴随工具，父子会话的
  * 工具表都有它（子会话工具表与父逐字节一致才能复用缓存前缀），`only` 模式内联它的声明（+76，实测 1911），
- * 放宽到 1950（docs/design/design.md §9.1）；脚本全局 `searchTools` / `image` 各在 `only` 描述里加一句（+22 / +30，实测 1959 起），放宽到 2000。
+ * 放宽到 1950（docs/design/design.md §9.1）；脚本全局 `searchTools` / `image` 在 `only` 描述里各加一句（合计 +45，实测 1982），放宽到 2000。
  */
 const PROMPT_BUDGETS = { default: 2000, minimal: 800, "codemode-only": 2000 } as const;
 /**

@@ -167,7 +167,7 @@ const BOOTSTRAP = String.raw`(function (host, config) {
     const problem = host("image", json);
     if (typeof problem === "string") throw new TypeError(problem);
   }
-  // 保留调用名与 protocol.ts 的 SEARCH_TOOLS_CALL 相同；由父进程按工具描述做 BM25
+  // reserved call name, same as SEARCH_TOOLS_CALL in protocol.ts; the parent ranks tools with BM25
   function searchTools(query, options) {
     return callTool("@searchTools", { query: query, options: options });
   }
