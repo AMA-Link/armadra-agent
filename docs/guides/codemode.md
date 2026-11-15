@@ -125,6 +125,7 @@ QuickJS 引擎：
 - 期限：脚本总超时与外层 abort 先写共享的中断标志（空转的 `while (true) {}`、`while (true) await null` 都会被打断），随后 `worker.terminate()`。
 - 内存：`codemode.maxHeapMb`（缺省 256 MB，0 不设上限）限制 QuickJS 堆，超出时与 node 引擎同一条脚本错误。
 - 栈：QuickJS 在 WASI 上没有栈上限检查，无界递归会让引擎陷阱，脚本以 `Script crashed the QuickJS engine` 失败，宿主不受影响。
+- 与 node 引擎共用同一套宿主行为：QuickJS worker 与子进程一起计入进程级名额（`codemode.maxWorkers`，排队规则与超时文案相同，名额在 worker 真正退出时归还）；`searchTools()`、`image()`（校验、最多 8 张、存进 outputs 目录）、脚本里 `tools.bash` 放宽的输出与 `ama.codemode-call` 恢复记录在两种引擎下一致。
 - 脚本等待一个永远不会落定的 Promise（没有未完成的工具调用）时立即失败，不拖到超时。
 - 与 node 引擎的差异：解释执行，纯计算慢约 6 倍（工具调用主导的脚本几乎没差别）；每次执行启动更快（约 15 ms，对比约 50 ms）；`Date` 用宿主时区；没有 V8 特有的 API（`Error.captureStackTrace` 等）；错误文案按 QuickJS 的写法（如动态 `import()` 报 `could not load module`）。
 

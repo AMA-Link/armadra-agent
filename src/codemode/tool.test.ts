@@ -603,4 +603,81 @@ describe("codemode 工具：QuickJS 引擎", () => {
     expect(text).toContain("ReferenceError: require is not defined (line 2)");
     expect(text).toContain("Only tools.<name>(args) is available");
   });
+
+  describe("与 Node 引擎同一套共享行为", () => {
+    const PNG =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+    function quickjsHarness(scriptText: string, others: ToolDefinition[], outputDir?: string) {
+      const tool = createCodemodeTool({
+        listTools: () => others.map((t) => ({ tool: t, textResult: true })),
+        capability: applyCodemodeEngine(loose),
+      }) as ToolDefinition;
+      return createHarness({
+        script: [call(scriptText), { text: "ok" }],
+        tools: [tool, ...others],
+        activeTools: ["codemode"],
+        ...(outputDir !== undefined ? { outputDir } : {}),
+      });
+    }
+
+    it("tools.bash 的 output 放宽到 1 MiB，超出保留首尾", async () => {
+      const dir = `${sandboxEntryForTests()}-qjs-bash`;
+      mkdirSync(dir, { recursive: true });
+      const large = join(dir, "large.log");
+      writeFileSync(large, `H${"m".repeat(1_500_000)}T`);
+      const bash = stubTool({
+        name: "bash",
+        permission: "execute",
+        run: () => ({
+          content: "tail only",
+          structured: {
+            output: "tail only",
+            exit_code: 0,
+            truncated: true,
+            full_output_path: large,
+            wall_time_seconds: 0.1,
+          },
+        }),
+      }) as ToolDefinition;
+      const h = quickjsHarness(
+        `const b = await tools.bash({});
+        return [b.output.length > 1048576, b.output[0], b.output.slice(-1), b.truncated].join(",");`,
+        [bash],
+      );
+      await h.session.prompt("go");
+      expect(String(toolResults(h)[0]?.content)).toMatch(/true,H,T,true$/);
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("内层调用落成 ama.codemode-call；searchTools 不算调用", async () => {
+      const write = stubTool({
+        name: "write",
+        permission: "execute",
+        run: () => ({ content: "written" }),
+      }) as ToolDefinition;
+      const h = quickjsHarness(
+        `await tools.write({ path: "src/a.ts", content: "secret body" });
+        const hits = await searchTools("write");
+        return hits.map((x) => x.name).join(",");`,
+        [write],
+      );
+      await h.session.prompt("go");
+      expect(String(toolResults(h)[0]?.content)).toMatch(/\n\nwrite$/);
+      const calls = h.session.entries.flatMap((e) =>
+        e.type === "custom" && e.customType === "ama.codemode-call" ? [e.data] : [],
+      );
+      expect(calls).toEqual([{ parent: "cm1", name: "write", ok: true, target: "src/a.ts" }]);
+    });
+
+    it("image() 的图附在结果后并存进 outputs 目录", async () => {
+      const dir = `${sandboxEntryForTests()}-qjs-img`;
+      const h = quickjsHarness(`image("data:image/png;base64,${PNG}"); return "x";`, [], dir);
+      await h.session.prompt("go");
+      const content = toolResults(h)[0]?.content;
+      expect(JSON.stringify(content)).toContain(`saved to ${join(dir, "cm1-image-1.png")}`);
+      expect(existsSync(join(dir, "cm1-image-1.png"))).toBe(true);
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
 });
