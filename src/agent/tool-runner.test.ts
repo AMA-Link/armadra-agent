@@ -185,6 +185,33 @@ describe("参数宽松强转", () => {
     expect(call.rawArguments).toBe('{"n":"3","tags":"a"}');
   });
 
+  it("tool_execution_start 带 coercedArguments（只在强转改了参数时）", async () => {
+    const run = async (args: Record<string, unknown>) => {
+      const events: SessionEvent[] = [];
+      await runToolBatch(
+        assistantFor(callOf(args)),
+        {
+          getTool: () => strictTool({}),
+          beforeToolCall: async () => ({}),
+          createToolContext: () => makeToolContext("/tmp"),
+        },
+        new AbortController().signal,
+        async (event) => {
+          events.push(event);
+        },
+      );
+      return events.find((e) => e.type === "tool_execution_start");
+    };
+    expect(await run({ n: "3", tags: "a" })).toMatchObject({
+      args: { n: "3", tags: "a" },
+      coercedArguments: { n: 3, tags: ["a"] },
+    });
+    const plain = await run({ n: 3 });
+    expect(plain).toMatchObject({ args: { n: 3 } });
+    expect(plain).not.toHaveProperty("coercedArguments");
+    expect(await run({ n: "x" })).not.toHaveProperty("coercedArguments");
+  });
+
   it("强转后仍不合规：回报原始参数的错误，工具不执行", async () => {
     const seen: { input?: unknown } = {};
     const batch = await runToolBatch(
