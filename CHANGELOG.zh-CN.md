@@ -6,6 +6,10 @@
 
 ## 未发布
 
+### 变更
+
+- **工具参数宽松强转**：严格校验失败后，按 schema 强转一次再校验（数字串 → 数字、`"true"`/`"false"` → 布尔、数字/布尔 → 字符串、单值 → 单元素数组、JSON 字符串 → 对象/数组、丢弃可选属性的 `null`）；enum 仍须严格匹配，不填默认值。权限管线、钩子与工具看到强转后的参数，助手消息与会话历史保留模型原始调用；codemode 内部调用同样适用。
+
 ### 维护
 
 - **刷新 models.dev 快照（2026-11-13）**：去掉上游已下线模型的目录覆盖（Groq `qwen/qwen3.6-27b`、`llama-3.3-70b-versatile`、`llama-3.1-8b-instant`；Anthropic `claude-sonnet-4-5`；MiniMax M2.x，小模型改为 `MiniMax-M3.1-Flash`；火山引擎 `doubao-seed-2-0-code-preview-260215`）。`ama models discover` 对能经目录别名解析的中转 id 不再报「未匹配」。每周刷新作业在自检失败或开不出 PR 时判失败。

@@ -589,6 +589,8 @@ export interface ToolResult {
 }
 ```
 
+参数校验：先按 JSON Schema 子集严格校验；失败时按 schema 宽松强转一次（`agent/schema-coerce.ts`：数字串 → 数字、"true"/"false" → 布尔、数字/布尔 → 字符串、单值 → 数组、JSON 字符串 → 对象/数组、丢弃可选属性的 null；enum 必须严格匹配，不填 default）再校验，通过才用强转后的参数。强转发生在 `beforeToolCall` 之前，权限管线、钩子与工具看到的都是强转后的参数；助手消息里模型原样输出的调用（含 `rawArguments`）不改写，会话回放与提示前缀字节不变。仍不合规则回报原始参数的校验错误。codemode 内部调用与宿主 `executeTool` 共用同一条路径。
+
 ### §5.2 内置工具完整规格
 
 | 工具        | 参数                                                                                                   | 权限 / 模式          | 行为规格                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |

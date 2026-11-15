@@ -7,7 +7,7 @@
  * - `validateSchema(schema, value)` 返回错误列表；空数组 = 通过。路径形如 `$.edits[0].oldText`，
  *   非标识符键用 `$["a b"]`。
  * - `checkSchemaSubset(schema)` 检查 schema 本身只用了子集关键字（工具注册时调用）。
- * - 不做类型强转（"1" 不会当作 1），不填 default。
+ * - 本模块只做严格校验，不强转、不填 default；校验失败后的宽松强转在 `schema-coerce.ts`（tool-runner 调用）。
  */
 
 import type { JsonPrimitive, JsonSchema, JsonSchemaType } from "../ai/types.js";
