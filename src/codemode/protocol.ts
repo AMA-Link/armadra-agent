@@ -31,6 +31,11 @@ export const DEFAULT_SCRIPT_TIMEOUT_MS = 300_000;
 export const MAX_SCRIPT_TIMEOUT_MS = 3_600_000;
 /** 父进程启动子进程时附加的参数（sandbox-entry.ts 见到它才启动）。 */
 export const SANDBOX_MAIN_FLAG = "--ama-codemode-sandbox";
+/**
+ * 脚本里 `searchTools()` 走 `tool_call` 通道的保留名（不是工具名：工具名不含 `@`）。沙箱入口不能
+ * import 本文件的运行时代码，引导脚本里写的是同一个字面量。
+ */
+export const SEARCH_TOOLS_CALL = "@searchTools";
 /** 同一脚本内并发工具调用上限。 */
 export const MAX_CONCURRENT_TOOL_CALLS = 8;
 

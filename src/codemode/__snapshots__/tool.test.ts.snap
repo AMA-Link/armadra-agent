@@ -11,5 +11,5 @@ const [a, b] = await Promise.all([
 ]);
 const hits = (a + "\\n" + b).split("\\n").filter((line) => line.includes("TODO"));
 return hits.join("\\n");
-Globals: tools.<name>(args) returns a Promise and rejects with an Error when the call fails or is denied (use Promise.allSettled to keep the rest); text(v) and console.log(...) append output (non-strings as JSON); return v is text(v); store(key, v) / load(key) keep small JSON values across scripts (saved only when the script succeeds); ALL_TOOLS lists callable tools; describeTool(name) returns a declaration. At most 8 tool calls run at once; codemode cannot call itself. Every call goes through the normal hooks, permissions and approvals."
+Globals: tools.<name>(args) returns a Promise and rejects with an Error when the call fails or is denied (use Promise.allSettled to keep the rest); text(v) and console.log(...) append output (non-strings as JSON); return v is text(v); store(key, v) / load(key) keep small JSON values across scripts (saved only when the script succeeds); ALL_TOOLS lists callable tools; describeTool(name) returns a declaration; searchTools(query, {limit?, namespace?}) ranks callable tools by name and description. At most 8 tool calls run at once; codemode cannot call itself. Every call goes through the normal hooks, permissions and approvals."
 `;

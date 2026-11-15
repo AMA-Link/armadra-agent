@@ -39,6 +39,7 @@ import {
 import {
   LineSplitter,
   SANDBOX_MAIN_FLAG,
+  SEARCH_TOOLS_CALL,
   decodeChildLine,
   encodeLine,
   type ParentMessage,
@@ -126,6 +127,8 @@ export interface SandboxRunRequest {
   /** 执行一次内层工具调用：解析为脚本拿到的值，失败抛 Error（消息给脚本）。 */
   callTool(name: string, input: unknown, signal: AbortSignal): Promise<unknown>;
   onOutput?(text: string): void;
+  /** 脚本里的 `searchTools(query, options)`；缺省时搜不到任何工具。抛错变成脚本里的 Error。 */
+  searchTools?(query: unknown, options: unknown): unknown;
   signal: AbortSignal;
   /** 缺省 resolveSandboxEntry()。 */
   entry?: string;
@@ -340,6 +343,21 @@ export async function runSandbox(request: SandboxRunRequest): Promise<SandboxRun
       }
       case "tool_call": {
         const { id, name, input } = message;
+        if (name === SEARCH_TOOLS_CALL) {
+          const args = (input ?? {}) as { query?: unknown; options?: unknown };
+          try {
+            const value = request.searchTools?.(args.query, args.options) ?? [];
+            write({ type: "tool_result", id, ok: true, value });
+          } catch (error) {
+            write({
+              type: "tool_result",
+              id,
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+          return;
+        }
         result.toolCalls++;
         if (name === "codemode") {
           write({

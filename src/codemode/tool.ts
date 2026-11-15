@@ -40,6 +40,7 @@ import {
 } from "./declarations.js";
 import { runSandbox, type SandboxRunResult } from "./host-side.js";
 import { parseOptionsLine, type ToolDecl } from "./protocol.js";
+import { searchTools } from "./search-tools.js";
 import { widenScriptBashOutput } from "./script-output.js";
 import { resolveMaxWorkers } from "./worker-pool.js";
 import { commitStore, readStore } from "./store.js";
@@ -192,7 +193,7 @@ function buildOnDescription(tools: readonly CallableTool[], capability: SandboxC
     "Input: raw JavaScript (not JSON, no code fence), the body of an async function (top-level await and return work). Only tools.<name>(args) exists: no require, import, process, fetch or timers.",
     "Example:",
     ...CODEMODE_EXAMPLE,
-    "tools.<name>(args) returns a Promise that rejects when the call fails or is denied (Promise.allSettled keeps the rest); text(v) / console.log(...) append output; return v is text(v); store(key, v) / load(key) keep small JSON values across scripts; describeTool(name) returns a signature. At most 8 calls run at once, each through the normal permissions.",
+    "tools.<name>(args) returns a Promise that rejects when the call fails or is denied (Promise.allSettled keeps the rest); text(v) / console.log(...) append output; return v is text(v); store(key, v) / load(key) keep small JSON values across scripts; describeTool(name) returns a signature; searchTools(query, {limit?, namespace?}) ranks tools. At most 8 calls run at once, each through the normal permissions.",
   ];
   if (!capability.strict) lines.push(`Sandbox: ${capability.reason}.`);
   if (direct.length > 0) {
@@ -219,7 +220,7 @@ export function buildCodemodeDescription(
     'The input is raw JavaScript (not JSON, no code fence), run as the body of an async function: top-level await and return work. Optional first line: // @options: {"max_output_tokens": 10000, "timeout_ms": 300000}',
     "Example:",
     ...CODEMODE_EXAMPLE,
-    "Globals: tools.<name>(args) returns a Promise and rejects with an Error when the call fails or is denied (use Promise.allSettled to keep the rest); text(v) and console.log(...) append output (non-strings as JSON); return v is text(v); store(key, v) / load(key) keep small JSON values across scripts (saved only when the script succeeds); ALL_TOOLS lists callable tools; describeTool(name) returns a declaration. At most 8 tool calls run at once; codemode cannot call itself. Every call goes through the normal hooks, permissions and approvals.",
+    "Globals: tools.<name>(args) returns a Promise and rejects with an Error when the call fails or is denied (use Promise.allSettled to keep the rest); text(v) and console.log(...) append output (non-strings as JSON); return v is text(v); store(key, v) / load(key) keep small JSON values across scripts (saved only when the script succeeds); ALL_TOOLS lists callable tools; describeTool(name) returns a declaration; searchTools(query, {limit?, namespace?}) ranks callable tools by name and description. At most 8 tool calls run at once; codemode cannot call itself. Every call goes through the normal hooks, permissions and approvals.",
   ];
   if (!capability.strict) {
     lines.push(`Sandbox: ${capability.reason}.`);
@@ -337,6 +338,14 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
         ...(options.nodePath !== undefined ? { nodePath: options.nodePath } : {}),
         ...(options.maxHeapMb !== undefined ? { maxHeapMb: options.maxHeapMb } : {}),
         maxWorkers: resolveMaxWorkers(options.maxWorkers),
+        searchTools: (query, searchOptions) =>
+          searchTools(
+            options
+              .listTools()
+              .map(({ tool: t }) => ({ name: t.name, description: t.description })),
+            query,
+            searchOptions,
+          ),
         callTool: async (name, args, signal) => {
           if (!callable.has(name)) throw new Error(`Tool ${name} is not available in codemode`);
           const value = toScriptValue(name, await ctx.tools.executeTool(name, args, { signal }));

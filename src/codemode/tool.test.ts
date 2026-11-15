@@ -490,4 +490,39 @@ describe("结果与返回值", () => {
     expect(String(toolResults(h)[0]?.content)).toMatch(/200000,false,true,H,T,true,true$/);
     rmSync(dir, { recursive: true, force: true });
   });
+  it("脚本里的 searchTools：按名字与描述的 BM25 排序，limit / namespace 生效，坏参数是脚本里的 Error", async () => {
+    const { tools } = fixture({
+      tools: [
+        stubTool({ name: "read" }) as ToolDefinition,
+        stubTool({ name: "grep" }) as ToolDefinition,
+        stubTool({ name: "canvas_add_note" }) as ToolDefinition,
+        stubTool({ name: "canvas_list" }) as ToolDefinition,
+      ],
+    });
+    const h = createHarness({
+      script: [
+        call(`const all = await searchTools("canvas");
+        const one = await searchTools("canvas", { limit: 1 });
+        const ns = await searchTools("test tool", { namespace: "canvas" });
+        const bad = await searchTools(42).catch((e) => e.message);
+        return JSON.stringify({ all: all.map((x) => x.name).sort(), one: one.length, ns: ns.map((x) => x.name).sort(), desc: all[0].description, bad });`),
+        { text: "ok" },
+      ],
+      tools,
+      activeTools: ["codemode"],
+    });
+    await h.session.prompt("go");
+    const out = String(toolResults(h)[0]?.content).split("\n\n")[1] ?? "";
+    expect(JSON.parse(out)).toEqual({
+      all: ["canvas_add_note", "canvas_list"],
+      one: 1,
+      ns: ["canvas_add_note", "canvas_list"],
+      desc: expect.stringContaining("test tool"),
+      bad: "searchTools(query): query must be a string",
+    });
+    // 搜索不算工具调用
+    expect(
+      h.events.filter((e) => e.type === "tool_execution_start" && e.parentToolCallId),
+    ).toHaveLength(0);
+  });
 });

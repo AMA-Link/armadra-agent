@@ -157,6 +157,10 @@ const BOOTSTRAP = String.raw`(function (host, config) {
     const json = storeMap.get(key);
     return json === undefined ? undefined : parse(json);
   }
+  // 保留调用名与 protocol.ts 的 SEARCH_TOOLS_CALL 相同；由父进程按工具描述做 BM25
+  function searchTools(query, options) {
+    return callTool("@searchTools", { query: query, options: options });
+  }
   function describeTool(name) {
     return declByName.get(callName.get(name) ?? name);
   }
@@ -172,6 +176,7 @@ const BOOTSTRAP = String.raw`(function (host, config) {
     load: load,
     ALL_TOOLS: names,
     describeTool: describeTool,
+    searchTools: searchTools,
   };
   for (const [key, value] of Object.entries(globals)) {
     Object.defineProperty(globalThis, key, { value: value, writable: false, enumerable: false, configurable: false });
