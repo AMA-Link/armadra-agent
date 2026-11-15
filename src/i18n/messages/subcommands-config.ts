@@ -38,6 +38,11 @@ export const en = {
     sandboxOs: (node: number, kind: string) =>
       `Node ${node}, network isolated by the OS sandbox ${kind}`,
     sandboxNone: (node: number) => `Node ${node} < 25, network not isolated`,
+    sandboxQuickjs: (node: number) => `Node ${node}, scripts run in QuickJS (WebAssembly)`,
+    engineExplicit: (engine: string) => `codemode.engine is set to ${engine}`,
+    engineAutoNode: (sandbox: string) => `auto: ${sandbox}, so the Node child process`,
+    engineAutoQuickjs: (node: number) =>
+      `auto: Node ${node} cannot isolate the network and no OS sandbox is available, so QuickJS in WebAssembly`,
     codemodeExplicit: (sandbox: string) => `codemode.mode set explicitly (${sandbox})`,
     codemodeFollowsPreset: (preset: string, sandbox: string) =>
       `follows preset ${preset} (${sandbox})`,
@@ -114,6 +119,11 @@ export const zh = {
     sandboxIsolated: (node) => `Node ${node} 网络已隔离`,
     sandboxOs: (node, kind) => `Node ${node} 网络由操作系统沙箱 ${kind} 隔离`,
     sandboxNone: (node) => `Node ${node} < 25 网络未隔离`,
+    sandboxQuickjs: (node) => `Node ${node}，脚本在 QuickJS（WebAssembly）里运行`,
+    engineExplicit: (engine) => `codemode.engine 显式设为 ${engine}`,
+    engineAutoNode: (sandbox) => `auto：${sandbox}，用 Node 子进程`,
+    engineAutoQuickjs: (node) =>
+      `auto：Node ${node} 无法隔离网络且没有可用的操作系统沙箱，用 WebAssembly 里的 QuickJS`,
     codemodeExplicit: (sandbox) => `codemode.mode 显式设置（${sandbox}）`,
     codemodeFollowsPreset: (preset, sandbox) => `跟随预设 ${preset}（${sandbox}）`,
     presetAlias: (layer, label, preset, canonical) =>

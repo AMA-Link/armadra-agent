@@ -33,6 +33,7 @@ const IMPLICIT_DEFAULTS: Partial<AmaConfig> = {
     requireStrict: false,
     maxHeapMb: 256,
     maxWorkers: 2,
+    engine: "auto",
   },
   cache: { ...DEFAULT_CACHE_CONFIG },
   request: {

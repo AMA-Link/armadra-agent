@@ -19,6 +19,7 @@ import {
   CHECKPOINT_MODES,
   SANDBOX_ENABLED_MODES,
   SANDBOX_NETWORK_MODES,
+  CODEMODE_ENGINES,
   CODEMODE_MODES,
   IMAGE_RESIZE_MODES,
   PLAN_BASH_MODES_STRICT_FIRST,
@@ -319,6 +320,7 @@ function buildBaseSchema(): Schema {
         requireStrict: bool(),
         maxHeapMb: num(0),
         maxWorkers: num(1),
+        engine: oneOf(CODEMODE_ENGINES),
       }),
       hooks: object({ timeoutMs: num(1, HOOK_TIMEOUT_MAX_MS) }),
       ui: object({

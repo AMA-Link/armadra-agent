@@ -51,6 +51,7 @@ import {
   CHECKPOINT_MODES,
   SANDBOX_ENABLED_MODES,
   SANDBOX_NETWORK_MODES,
+  CODEMODE_ENGINES,
   CODEMODE_MODES,
   TOOLS_PRESET_INPUTS,
 } from "./types.js";
@@ -365,13 +366,14 @@ export function validateConfig(value: unknown): Diagnostic[] {
     c,
     value,
     "codemode",
-    ["mode", "inlineBudget", "requireStrict", "maxHeapMb", "maxWorkers"],
+    ["mode", "inlineBudget", "requireStrict", "maxHeapMb", "maxWorkers", "engine"],
     (s, p) => {
       c.oneOf(s, "mode", p, CODEMODE_MODES);
       c.number(s, "inlineBudget", p, 0);
       c.boolean(s, "requireStrict", p);
       c.number(s, "maxHeapMb", p, 0);
       c.number(s, "maxWorkers", p, 1);
+      c.oneOf(s, "engine", p, CODEMODE_ENGINES);
     },
   );
   checkSection(c, value, "hooks", ["timeoutMs"], (s, p) => {

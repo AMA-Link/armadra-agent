@@ -195,6 +195,11 @@ export type CodemodeMode = "off" | "on" | "only";
 
 export const CODEMODE_MODES: readonly CodemodeMode[] = ["off", "on", "only"];
 
+/** codemode 脚本引擎：node = Node 子进程；quickjs = WebAssembly 里的 QuickJS；auto 按网络隔离能力选。 */
+export type CodemodeEngineSetting = "auto" | "node" | "quickjs";
+
+export const CODEMODE_ENGINES: readonly CodemodeEngineSetting[] = ["auto", "node", "quickjs"];
+
 export interface CodemodeConfig {
   /** 命令行 `--codemode`；项目级只接受 "off"。 */
   mode?: CodemodeMode;
@@ -209,6 +214,8 @@ export interface CodemodeConfig {
    * `AMA_CODEMODE_MAX_WORKERS` 优先于它；只认用户级。
    */
   maxWorkers?: number;
+  /** 脚本引擎，缺省 auto：网络已隔离（Node ≥ 25 或 OS 沙箱）用 node，否则用 quickjs；只认用户级。 */
+  engine?: CodemodeEngineSetting;
 }
 
 export interface HooksSettings {

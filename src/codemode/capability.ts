@@ -13,7 +13,7 @@
  * `detectSandboxCapability()`（不经宿主 status）；组装根先用 `configureOsSandbox` 记下 `sandbox.enabled`。
  */
 
-import type { SandboxConfig } from "../config/types.js";
+import type { CodemodeEngineSetting, SandboxConfig } from "../config/types.js";
 import { NO_OS_SANDBOX, osSandboxStatus, type OsSandboxStatus } from "../sandbox/detect.js";
 import { msg } from "../i18n/index.js";
 
@@ -28,6 +28,30 @@ export interface SandboxCapability {
   permissionFlag: "--permission" | "--experimental-permission";
   /** 操作系统沙箱（`kind: none` 表示没有）；codemode 子进程经它启动。 */
   os: OsSandboxStatus;
+  /** 实际使用的引擎；缺省（直接 `detectSandboxCapability()`）是 Node 子进程。 */
+  engine?: "node" | "quickjs";
+  /** 引擎是配置显式指定（config）还是 auto 按网络隔离能力选的。 */
+  engineSource?: "config" | "auto";
+}
+
+/**
+ * 按 `codemode.engine`（缺省 auto）选引擎：auto = 网络已隔离（Node ≥ 25 或 OS 沙箱）时用 Node 子进程，
+ * 否则用 QuickJS。QuickJS 下脚本只能经 `tools.*` 触达外界，所以 `strict`（codemode 为 read 类）。
+ */
+export function applyCodemodeEngine(
+  capability: SandboxCapability,
+  setting: CodemodeEngineSetting = "auto",
+): SandboxCapability {
+  const source = setting === "auto" ? "auto" : "config";
+  const engine = setting === "auto" ? (capability.strict ? "node" : "quickjs") : setting;
+  if (engine === "node") return { ...capability, engine, engineSource: source };
+  return {
+    ...capability,
+    strict: true,
+    engine,
+    engineSource: source,
+    reason: "QuickJS engine: scripts run in a WebAssembly VM and can only reach tools",
+  };
 }
 
 export const NETWORK_NOT_ISOLATED = "network not isolated";
@@ -84,17 +108,25 @@ export function detectSandboxCapability(
 }
 
 /** 按配置的 `sandbox.enabled`（缺省 auto）得到运行时能力。 */
-export function sandboxCapabilityFor(config: { sandbox?: SandboxConfig }): SandboxCapability {
-  return detectSandboxCapability(
-    undefined,
-    undefined,
-    osSandboxStatus(config.sandbox?.enabled ?? "auto"),
+export function sandboxCapabilityFor(config: {
+  sandbox?: SandboxConfig;
+  codemode?: { engine?: CodemodeEngineSetting };
+}): SandboxCapability {
+  return applyCodemodeEngine(
+    detectSandboxCapability(
+      undefined,
+      undefined,
+      osSandboxStatus(config.sandbox?.enabled ?? "auto"),
+    ),
+    config.codemode?.engine,
   );
 }
 
 /** strict 是否依赖 OS 沙箱（Node 22 / 24）：此时子进程必须经 OS 沙箱启动，包装不了就报错。 */
-export function strictNeedsOsSandbox(capability: Pick<SandboxCapability, "strict" | "nodeMajor">) {
-  return capability.strict && capability.nodeMajor < 25;
+export function strictNeedsOsSandbox(
+  capability: Pick<SandboxCapability, "strict" | "nodeMajor" | "engine">,
+) {
+  return capability.strict && capability.nodeMajor < 25 && capability.engine !== "quickjs";
 }
 
 export type CodemodeAvailability =

@@ -124,10 +124,12 @@ const keysEn = {
     "Budget (estimated tokens) for inlining tool declarations in the description in only mode; beyond it only names are listed",
   "codemode.requireStrict":
     "true: disable codemode when the runtime Node does not isolate the network (Node 22 / 24)",
-  "codemode.maxHeapMb":
-    "V8 heap limit (MB) for the script child process; a script that exceeds it ends with an error; 0 sets no limit",
   "codemode.maxWorkers":
     "Most script child processes alive at once across all sessions in this process (default 2); the AMA_CODEMODE_MAX_WORKERS environment variable takes precedence",
+  "codemode.maxHeapMb":
+    "Memory limit (MB) for the script engine (V8 heap of the node child process, QuickJS heap of the quickjs engine); a script that exceeds it ends with an error; 0 sets no limit",
+  "codemode.engine":
+    "auto | node | quickjs; auto uses the Node child process when the network is isolated (Node ≥ 25 or an OS sandbox) and QuickJS in WebAssembly otherwise; quickjs makes codemode a read-class tool on every platform; user level only",
   hooks: "Hook settings (the hooks themselves live in hooks.json)",
   "hooks.timeoutMs": "Default timeout for a single hook command (ms)",
   ui: "Terminal interface",
@@ -316,9 +318,12 @@ const keysZh = {
     "off | on | only；不写时跟随预设：default → on（Node ≥ 25；Node 22 / 24 → off）、codemode-only → only、minimal / coordinator → off；项目级只接受 off",
   "codemode.inlineBudget": "only 模式在描述里内联工具声明的预算（估算 token），超出只列名字",
   "codemode.requireStrict": "true：运行时 Node 不隔离网络（Node 22 / 24）时直接禁用 codemode",
-  "codemode.maxHeapMb": "脚本子进程的 V8 堆上限（MB），超出时脚本以错误结束；0 不设上限",
   "codemode.maxWorkers":
     "本进程内所有会话同时存活的脚本子进程数上限（缺省 2）；环境变量 AMA_CODEMODE_MAX_WORKERS 优先",
+  "codemode.maxHeapMb":
+    "脚本引擎的内存上限（MB）：node 引擎是子进程的 V8 堆，quickjs 引擎是 QuickJS 堆；超出时脚本以错误结束；0 不设上限",
+  "codemode.engine":
+    "auto | node | quickjs；auto：网络已隔离（Node ≥ 25 或操作系统沙箱）时用 Node 子进程，否则用 WebAssembly 里的 QuickJS；quickjs 让 codemode 在所有平台都是 read 类；只认用户级",
   hooks: "Hook 设置（Hook 本身写在 hooks.json）",
   "hooks.timeoutMs": "单个 Hook 命令的缺省超时（毫秒）",
   ui: "终端界面",

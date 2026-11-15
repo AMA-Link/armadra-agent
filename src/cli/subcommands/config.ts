@@ -47,6 +47,7 @@ import {
 } from "../../config/types.js";
 import {
   codemodeAvailability,
+  applyCodemodeEngine,
   detectSandboxCapability,
   sandboxCapabilityFor,
 } from "../../codemode/capability.js";
@@ -326,6 +327,9 @@ export interface CodemodeDescription {
   /** 人读原因。 */
   reason: string;
   strict: boolean;
+  /** 实际使用的脚本引擎与原因（`codemode.engine`，缺省 auto）。 */
+  engine: "node" | "quickjs";
+  engineReason: string;
   /** 生效模式不是 off 但 codemode 工具不可用（requireStrict）时的说明。 */
   unavailable?: string;
 }
@@ -336,15 +340,26 @@ export interface CodemodeDescription {
  */
 export function describeCodemode(config: AmaConfig, nodeVersion?: string): CodemodeDescription {
   const capability =
-    nodeVersion === undefined ? sandboxCapabilityFor(config) : detectSandboxCapability(nodeVersion);
+    nodeVersion === undefined
+      ? sandboxCapabilityFor(config)
+      : applyCodemodeEngine(detectSandboxCapability(nodeVersion), config.codemode?.engine);
   const resolved = resolveCodemodeMode(config, capability.strict);
   const m = msg().subcommands.configShow;
+  const engine = capability.engine ?? "node";
   const sandbox =
-    capability.nodeMajor >= 25
-      ? m.sandboxIsolated(capability.nodeMajor)
-      : capability.strict
-        ? m.sandboxOs(capability.nodeMajor, capability.os.kind)
-        : m.sandboxNone(capability.nodeMajor);
+    engine === "quickjs"
+      ? m.sandboxQuickjs(capability.nodeMajor)
+      : capability.nodeMajor >= 25
+        ? m.sandboxIsolated(capability.nodeMajor)
+        : capability.strict
+          ? m.sandboxOs(capability.nodeMajor, capability.os.kind)
+          : m.sandboxNone(capability.nodeMajor);
+  const engineReason =
+    capability.engineSource === "config"
+      ? m.engineExplicit(engine)
+      : engine === "quickjs"
+        ? m.engineAutoQuickjs(capability.nodeMajor)
+        : m.engineAutoNode(sandbox);
   const reason =
     resolved.source === "config"
       ? m.codemodeExplicit(sandbox)
@@ -354,6 +369,8 @@ export function describeCodemode(config: AmaConfig, nodeVersion?: string): Codem
     source: resolved.source,
     reason,
     strict: capability.strict,
+    engine,
+    engineReason,
   };
   if (resolved.mode !== "off") {
     const availability = codemodeAvailability(config.codemode?.requireStrict, capability);
@@ -450,6 +467,9 @@ export async function runConfig(
     value,
     source: sources.get(path) ?? "default",
   }));
+  const engineRow = rows.find((row) => row.path === "codemode.engine");
+  if (engineRow !== undefined && config.codemode?.engine === undefined)
+    engineRow.source = m.defaultSource(codemode.engineReason);
   if (config.codemode?.mode === undefined)
     rows.push({
       path: "codemode.mode",

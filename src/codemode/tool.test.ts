@@ -7,7 +7,7 @@ import type { SessionEvent } from "../agent/types.js";
 import { builtinTools } from "../tools/registry.js";
 import type { ToolDefinition } from "../tools/types.js";
 import { sandboxEntryForTests } from "../../test/helpers/codemode-sandbox.js";
-import { detectSandboxCapability } from "./capability.js";
+import { applyCodemodeEngine, detectSandboxCapability } from "./capability.js";
 import { STORE_CUSTOM_TYPE } from "./store.js";
 import {
   CODEMODE_ONLY_GUIDELINE,
@@ -553,5 +553,54 @@ describe("结果与返回值", () => {
       { parent: "cm1", name: "write", ok: false, target: "bad" },
     ]);
     expect(JSON.stringify(calls)).not.toContain("secret body");
+  });
+});
+
+describe("codemode 工具：QuickJS 引擎", () => {
+  it("auto 在网络未隔离的运行时选 QuickJS：read 类，脚本经 tools.* 走完整门禁", async () => {
+    const capability = applyCodemodeEngine(loose);
+    const tool = createCodemodeTool({
+      listTools: () => [
+        {
+          tool: stubTool({
+            name: "read",
+            properties: { path: { type: "string" } },
+            run: (input) => ({ content: `<${String(input["path"])}>` }),
+          }) as ToolDefinition,
+          textResult: true,
+        },
+      ],
+      capability,
+    }) as ToolDefinition;
+    expect(tool.permission).toBe("read");
+    expect(tool.description).not.toContain("Sandbox:");
+    const h = createHarness({
+      script: [call('return await tools.read({ path: "q.ts" });'), { text: "done" }],
+      tools: [
+        tool,
+        ...[stubTool({ name: "read", run: () => ({ content: "<q.ts>" }) })],
+      ] as ToolDefinition[],
+      activeTools: ["codemode"],
+    });
+    await h.session.prompt("go");
+    const results = toolResults(h);
+    expect(String(results[0]?.content)).toMatch(/^Script completed in \d+\.\d\ds\n\n<q\.ts>$/);
+  });
+
+  it("脚本失败时给出行号与 require 提示", async () => {
+    const tool = createCodemodeTool({
+      listTools: () => [],
+      capability: applyCodemodeEngine(loose),
+    }) as ToolDefinition;
+    const h = createHarness({
+      script: [call("text(1);\nconst fs = require('fs');"), { text: "done" }],
+      tools: [tool],
+      activeTools: ["codemode"],
+    });
+    await h.session.prompt("go");
+    const text = String(toolResults(h)[0]?.content);
+    expect(text).toContain("Script failed");
+    expect(text).toContain("ReferenceError: require is not defined (line 2)");
+    expect(text).toContain("Only tools.<name>(args) is available");
   });
 });
