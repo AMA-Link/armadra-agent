@@ -2,7 +2,7 @@
 
 English · [简体中文](../../guides/extensions.md)
 
-> Translated from the Chinese [docs/guides/extensions.md](../../guides/extensions.md) as of commit `b61be61`. When the two differ, the Chinese
+> Translated from the Chinese [docs/guides/extensions.md](../../guides/extensions.md) as of commit `639e66c`. When the two differ, the Chinese
 > version is authoritative.
 
 User-installed host adapters, as many as you like: they observe events in-process, register tools and slash commands, and show notifications and status, without taking the host slot (`--host` / profile `host`, e.g. the Armadra canvas). Command hooks ([hooks.md](../../guides/hooks.md), Chinese) only run external commands at fixed points; extensions add the in-process layer.
