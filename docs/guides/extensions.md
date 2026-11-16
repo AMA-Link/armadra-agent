@@ -50,6 +50,7 @@ export function create(api) {
 | `ui.notify` / `ui.setStatus`  | 都可用；状态栏把各模块的键合并显示，同名键后加载的覆盖先加载的，所以键名建议带自己的前缀             |
 | `cache.onWarmingDecision`     | 跨模块最后注册且未注销的处理器生效                                                                   |
 | `commands.register`           | 见下节；命令名全局唯一，先注册先得                                                                   |
+| `runners.provide` / `onDone`  | 只对宿主适配器生效；扩展调用不报错但注入的 runner 不会被 `task` 使用                                 |
 | `create()` 失败 / 超时        | 宿主适配器失败仍是退出码 6；**扩展失败只记 warning 并跳过**，不阻止启动                              |
 | 加载失败 / `hostApi` 版本不等 | 宿主适配器仍是退出码 78 / 6；扩展跳过并 warning                                                      |
 | 退出                          | 按加载的逆序 `dispose`（扩展先、宿主适配器最后），某个失败只记 warning                               |
@@ -93,6 +94,8 @@ export function create(api) {
    - 其它模式（`-p`、RPC、ACP）：不加载，写 warning（RPC / `-p` 的 stderr）。要启用，先在交互会话里确认一次。
 
 哈希在加载前计算；加载之间文件被替换的竞争不在防护范围内（本地用户目录已是同一信任域）。
+
+只校验入口文件本身：扩展 `import` 的其它文件不计入哈希，改了它们不会重新询问。依赖请打包进单个文件。
 
 ## `ama doctor`
 

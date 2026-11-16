@@ -55,6 +55,7 @@ Each module gets its own `HostApi` instance (its own tool list and status keys) 
 | `ui.notify` / `ui.setStatus`    | All usable; the status bar merges every module's keys, a later module overrides an earlier one on the same key, so prefix your keys                 |
 | `cache.onWarmingDecision`       | The last registered, not yet unregistered handler across modules wins                                                                               |
 | `commands.register`             | See below; command names are global, first registration wins                                                                                        |
+| `runners.provide` / `onDone`    | Host adapter only; an extension's call does not fail, but its runners are never used by `task`                                                      |
 | `create()` fails / times out    | A host adapter still exits 6; **an extension only produces a warning and is skipped**, startup continues                                            |
 | Load failure / version mismatch | Host adapter still exits 6 / 78; an extension is skipped with a warning                                                                             |
 | Exit                            | `dispose` in reverse load order (extensions first, host adapter last); a failure only warns                                                         |
@@ -98,6 +99,8 @@ Decision order:
    - other modes (`-p`, RPC, ACP): not loaded, with a warning on stderr. To enable, approve once in an interactive session.
 
 The hash is computed before loading; a file swapped between hashing and loading is out of scope (the local user directory is already one trust domain).
+
+Only the entry file is hashed: files the extension `import`s are not covered, and changing them does not ask again. Bundle dependencies into a single file.
 
 ## `ama doctor`
 
