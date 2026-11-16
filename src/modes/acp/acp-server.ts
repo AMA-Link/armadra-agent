@@ -71,6 +71,8 @@ import {
 import { clientCapabilitiesOf, type AcpConnection } from "./acp-connection.js";
 import {
   PromptQueue,
+  ZERO_USAGE,
+  dispatchHostSlash,
   cancelledResult,
   disposeQuiet,
   pageSessions,
@@ -177,7 +179,7 @@ export class AcpServer {
   private extras(session: AgentSession) {
     return {
       configOptions: this.configOptions(session),
-      commands: availableCommands(this.runtime.resources),
+      commands: availableCommands(this.runtime.resources, this.runtime.hostCommands),
     };
   }
 
@@ -446,6 +448,10 @@ export class AcpServer {
     let before = session.getStats().tokens;
     let failure: unknown;
     try {
+      if (await dispatchHostSlash(job, this.runtime, session, entry.mapper)) {
+        await this.peer.flush();
+        return { stopReason: "end_turn", usage: { ...ZERO_USAGE } };
+      }
       // [#166] 起点取在真正发起时：等待期间结束的通知回合不计入本次 usage
       await promptWhenIdle(session, job, () => void (before = session.getStats().tokens));
     } catch (error) {

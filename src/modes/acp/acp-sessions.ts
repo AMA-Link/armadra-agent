@@ -9,6 +9,7 @@
 
 import type { ImageBlock } from "../../ai/types.js";
 import type { AgentSessionImpl } from "../../agent/session.js";
+import type { AgentSession } from "../../agent/types.js";
 import type { TaskControl } from "../../agents/task-control.js";
 import { disposeSessionAlongside } from "../../cli/compose-session.js";
 import type { Runtime } from "../../cli/runtime.js";
@@ -23,6 +24,7 @@ import { RpcError } from "../../drivers/jsonrpc.js";
 import { AmaError } from "../../errors.js";
 import type { PermissionMode } from "../../permissions/types.js";
 import { msg } from "../../i18n/index.js";
+import { parseSlash, runHostSlash } from "../commands-core.js";
 import type { AcpEventMapper } from "./acp-events.js";
 
 /** `session/list` 每页条数。 */
@@ -43,7 +45,8 @@ export interface PooledSession {
 /** 排队或在跑的一次 `session/prompt`。 */
 export interface PromptJob {
   readonly sessionId: string;
-  readonly text: string;
+  /** [#303] 扩展命令的 `prompt` 结果会改写它。 */
+  text: string;
   readonly images: ImageBlock[];
   /** `session/cancel` / `session/close` / `$/cancel_request` 要求中断。 */
   cancelRequested: boolean;
@@ -291,4 +294,23 @@ export async function disposeQuiet(
     }
   }
   await session.abort();
+}
+
+/**
+ * [#303] `/<名> 参数` 命中宿主 / 扩展注册的命令：`handled` 发出 `message`（`agent_message_chunk`）并返回 true，
+ * 调用方不开模型回合；`prompt` 改写 `job.text` 并返回 false；没有同名命令返回 false。命令抛错原样上抛。
+ */
+export async function dispatchHostSlash(
+  job: PromptJob,
+  runtime: Pick<Runtime, "hostCommands" | "mode">,
+  session: Pick<AgentSession, "state">,
+  mapper: Pick<AcpEventMapper, "emitMessage">,
+): Promise<boolean> {
+  const slash = parseSlash(job.text);
+  if (slash === undefined) return false;
+  const hosted = await runHostSlash(slash.name, slash.args, runtime, session);
+  if (hosted?.kind === "prompt") job.text = hosted.text;
+  if (hosted?.kind !== "handled") return false;
+  if (hosted.message !== undefined && hosted.message !== "") mapper.emitMessage(hosted.message);
+  return true;
 }
