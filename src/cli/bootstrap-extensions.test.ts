@@ -200,4 +200,51 @@ describe("本地扩展共存", () => {
     expect(await run(["-p", "hi", "--profile", profile])).toBe(0);
     expect(ids).toEqual(["m-dir", "profile"]);
   });
+
+  it("扩展的 runners.provide 进共享注册表（有 / 无宿主适配器）；同 id 先到先得，runner_exists", async () => {
+    home.write(
+      "work/host.cjs",
+      `module.exports = { hostApi: 1, create(api) {
+        api.runners.provide({ id: "shared", description: "host", start: async () => { throw new Error("x"); } });
+        return { id: "host" };
+      } };`,
+    );
+    ext(
+      "a",
+      `api.runners.provide({ id: "mine", description: "a", start: async () => { throw new Error("x"); } });
+       try { api.runners.provide({ id: "shared", description: "ext", start: async () => { throw new Error("x"); } }); }
+       catch (e) { globalThis.__ext.events.push("dup:" + e.code); }`,
+    );
+    const ids: string[][] = [];
+    h.deps.modes.print = async () => {
+      ids.push(h.calls.assembly?.host.runners?.list().map((r) => r.id) ?? []);
+      return 0;
+    };
+    expect(await run(["-p", "hi", "--host", "host.cjs"])).toBe(0);
+    expect(await run(["-p", "hi"])).toBe(0);
+    expect(ids).toEqual([
+      ["shared", "mine"],
+      ["mine", "shared"], // 无宿主：扩展的 shared 不再冲突
+    ]);
+    expect(g.__ext?.events).toEqual(["dup:runner_exists"]);
+  });
+
+  it("扩展 create 抛错：它提供的 runner 与工具一并撤回", async () => {
+    ext(
+      "a",
+      `${tool("gone_tool")}
+       api.runners.provide({ id: "gone", description: "a", start: async () => { throw new Error("x"); } });
+       throw new Error("boom");`,
+    );
+    let seen: [string[], string[]] = [[], []];
+    h.deps.modes.print = async (runtime) => {
+      seen = [
+        h.calls.assembly?.host.runners?.list().map((r) => r.id) ?? ["?"],
+        runtime.tools.list().filter((n) => n === "gone_tool"),
+      ];
+      return 0;
+    };
+    expect(await run(["-p", "hi"])).toBe(0);
+    expect(seen).toEqual([[], []]);
+  });
 });

@@ -369,6 +369,7 @@ export async function bootstrap(
         extensions,
         warmingDecider: binding.warmingDecider,
         resources: hostResources.list(),
+        runners: hostContext.runners,
       },
       uiBroker: () => uiBroker,
       onSessionReplaced: (next) => {

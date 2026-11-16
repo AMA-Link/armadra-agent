@@ -92,7 +92,8 @@ export function subagentEnvironment(
 export function externalWiring(deps: ComposeExtensionDeps): ExternalWiring {
   const { assembly } = deps;
   const api = assembly.host.handle?.api;
-  const hostRunners = api === undefined ? undefined : hostRunnersOf(api);
+  // [#306] 共享注册表（宿主适配器与扩展）；`hosted` 仍只看宿主适配器
+  const hostRunners = assembly.host.runners ?? (api === undefined ? undefined : hostRunnersOf(api));
   const config = assembly.config;
   const wiring: ExternalWiring = {
     env: deps.env,

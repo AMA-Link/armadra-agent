@@ -18,6 +18,7 @@ import type { TrustPromptAnswer } from "../config/trust.js";
 import type { HookDispatcherApi } from "../hooks/types.js";
 import type { MemoryRuntime } from "../memory/runtime.js";
 import type { WarmingDecisionHandler } from "../ai/cache/types.js";
+import type { HostRunnerRegistry } from "../drivers/host-runners.js";
 import type { AgentEventBus } from "../host/api-impl.js";
 import type { ApprovalBroker, HostAdapterHandle, InstructionSource } from "../host/types.js";
 import type { PermissionMode, PermissionPipelineApi } from "../permissions/types.js";
@@ -104,6 +105,8 @@ export interface SessionAssembly {
     warmingDecider?(): WarmingDecisionHandler | undefined;
     /** [#270] 宿主注册的资源（系统提示 tools 节的资源行）；会话开始时已冻结。 */
     resources?: readonly { scheme: string; describe: string }[];
+    /** [#306] 宿主适配器与本地扩展共用的 runner 注册表（`task` 与 `/agents` 读它）。 */
+    runners?: HostRunnerRegistry;
   };
   /** `Runtime.approvals.setUiBroker` 设置的 UI broker（链尾）；每次审批现取，未设置为 undefined。 */
   uiBroker(): ApprovalBroker | undefined;
