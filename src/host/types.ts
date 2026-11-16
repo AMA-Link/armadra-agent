@@ -19,6 +19,8 @@
  *   增量递增 {@link HOST_API_MINOR}，宿主按成员是否存在做特性探测。
  * - （#270）host-api 1.2：可选面 `HostApi.resources`（宿主资源命名空间，内置 `read` 读 `scheme://path`；
  *   类型在 tools/resource-ref.ts，此处再导出）。
+ * - （#301）host-api 1.4：可选面 `HostApi.commands`（`register` 斜杠命令，宿主适配器与本地扩展都可用）。
+ *   只加不改，主版本不变。
  * - （#268）host-api 1.3：`session_start` 在 `reason: "resume"` 时带 `uncleanEnd`（上一轮没有正常结束，
  *   判定见 session/unclean-end.ts）。只加不改，主版本不变。
  */
@@ -68,10 +70,10 @@ export type { CacheMiss, WarmDecision, WarmingDecisionHandler } from "../ai/cach
 export const HOST_API_VERSION = 1 as const;
 export type HostApiVersion = typeof HOST_API_VERSION;
 /**
- * host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`，2 = `resources`，3 = `session_start.uncleanEnd`）；
+ * host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`，2 = `resources`，3 = `session_start.uncleanEnd`，4 = `commands`）；
  * 旧运行时没有 `api.minor`，按 0 算。
  */
-export const HOST_API_MINOR = 3 as const;
+export const HOST_API_MINOR = 4 as const;
 
 export type HostMode = "interactive" | "line" | "print" | "rpc";
 
@@ -133,6 +135,28 @@ export interface AgentEvents {
   /** [W6-O] ChatGPT 订阅配额更新（docs/history/wave6-plan.md §4.5）。 */
   quota_update: Omit<QuotaUpdateEvent, "type">;
 }
+
+/** [#301] `commands.register` 的命令：`name` 不带斜杠，`^[a-z][a-z0-9-]{0,63}$`。 */
+export interface HostCommand {
+  readonly name: string;
+  readonly description: string;
+  /** 参数占位（`/help`、补全里显示），如 `"[topic]"`。 */
+  readonly args?: string;
+  run(args: string, ctx: HostCommandContext): HostCommandResult | Promise<HostCommandResult>;
+}
+
+/** [#301] 传给命令 `run` 的上下文（刻意很小；要更多能力用注册时拿到的 `api`）。 */
+export interface HostCommandContext {
+  readonly mode: HostMode;
+  readonly session: { id(): string; cwd(): string };
+}
+
+/**
+ * [#301] 命令结果：`handled` 把 `message` 显示给用户（不进对话）；`prompt` 改发 `text` 作为用户提示。
+ * 返回 `undefined` 等同 `{ kind: "handled" }`；其它形状按错误处理。
+ */
+export type HostCommandResult =
+  { kind: "handled"; message?: string } | { kind: "prompt"; text: string } | undefined;
 
 /** [W5-C0] 宿主注入的 runner：`id` 即 `task(agent=<id>)` 的名字，`description` 进 task 工具描述。 */
 export type HostRunner = SubagentRunner & { readonly description: string };
@@ -223,6 +247,16 @@ export interface HostApi {
      * 可选面（host-api 1.1）：旧版本运行时没有它，用前判断 `typeof api.runners?.onDone === "function"`。
      */
     onDone?(handler: (event: RunnerDoneEvent) => void | Promise<void>): () => void;
+  };
+  /**
+   * [#301] 斜杠命令（host-api 1.4）：在内置命令之后、提示模板之前分派；与内置命令（含别名）或已注册的命令
+   * 同名则抛错；返回值用于注销。`/help`、补全与 RPC `get_commands`（`source: "extension"`）都列出。
+   * 可选面：旧版本运行时没有它，用前判断 `api.commands !== undefined`。
+   */
+  readonly commands?: {
+    register(command: HostCommand): () => void;
+    /** 已注册的命令名（全部模块），按注册顺序。 */
+    list(): readonly string[];
   };
   /**
    * [#270] 宿主资源命名空间（host-api 1.2）：注册后内置 `read` 认 `<scheme>://<path>`，按 `read` 的分页与

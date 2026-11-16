@@ -222,7 +222,8 @@ export interface RpcModelInfo {
 export interface RpcCommandInfo {
   name: string;
   description?: string;
-  source: "builtin" | "template" | "skill";
+  /** `"extension"`：宿主适配器 / 本地扩展经 `commands.register` 注册（#301）。 */
+  source: "builtin" | "template" | "skill" | "extension";
 }
 
 export interface RpcSuccessResponse<D = unknown> {

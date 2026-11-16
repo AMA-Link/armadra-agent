@@ -125,6 +125,7 @@ const EN_DOCS = [
   "reference/host-api",
   "guides/sessions",
   "reference/acp",
+  "guides/extensions",
 ];
 const PACKAGE_FILES = ["docs/en", "README.zh-CN.md", "CHANGELOG.md", "CHANGELOG.zh-CN.md"];
 

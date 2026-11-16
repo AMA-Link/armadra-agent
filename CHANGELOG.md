@@ -5,6 +5,18 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Added
+
+- **Local extensions (#301)**: user-installed host adapters, several at once, next to the `--host` adapter. They load from `<configDir>/extensions/*.{mjs,cjs}` (sorted by file name) and then profile `extensions` (absolute paths); each gets its own `HostApi` sharing the tool registry, event bus, approval broker slot, resources and warming handlers. Tool names are first-wins, instructions append to the `host` section in load order, the first `approvals.setBroker` wins, the last `cache.onWarmingDecision` wins, status keys merge; a failing extension (load, version mismatch, `create()` error or timeout) only warns and is skipped, and all are disposed in reverse order on exit. Without extensions the system prompt and tool table are unchanged. See `docs/guides/extensions.md`.
+- **`api.commands.register` (host-api 1.4)**: host adapters and extensions register slash commands (`name`, `description`, `args?`, `run(args, ctx)` returning `{ kind: "handled", message? }` or `{ kind: "prompt", text }`), dispatched after built-in commands and before prompt templates in interactive, line and RPC modes, and listed by `/help`, completion and RPC `get_commands` (`source: "extension"`, additive; `RPC_PROTOCOL_VERSION` unchanged). Names that clash with built-ins, aliases or other commands throw. `HOST_API_MINOR` is 4.
+- **Hash trust for extensions**: `trust.json` gains an optional `extensions` section recording `{ path, sha256, trusted, at }`; interactive startup asks once for new or changed files (path and sha256), non-interactive runs skip untrusted extensions with a warning, `--no-trust` loads none, and `trustProject` does not apply. `ama doctor` lists enabled and skipped extensions with hash prefixes and reasons without running their code.
+
+### Maintenance
+
+- **Host API docs**: the minor-version table now says minor 2 and 3 first shipped in 0.16.0 (they were still marked unreleased). The local-extensions design draft became a current-state guide (`docs/guides/extensions.md`, with an English translation).
+
 ## 0.18.0 (2026-11-15)
 
 ### Added

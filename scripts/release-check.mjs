@@ -120,6 +120,7 @@ export const EN_DOCS = [
   "reference/host-api",
   "guides/sessions",
   "reference/acp",
+  "guides/extensions",
 ];
 
 /** 发布必须带的双语文档。 */

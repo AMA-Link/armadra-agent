@@ -27,11 +27,13 @@ import type {
   HostAdapter,
   HostAdapterHandle,
   HostApi,
+  HostCommand,
   HostMode,
   HostRunner,
   InstructionSource,
 } from "./types.js";
 import { HOST_API_MINOR, HOST_API_VERSION } from "./types.js";
+import { HostCommandRegistry } from "./commands.js";
 import { HostResourceRegistry } from "./resources.js";
 import type { HostResource } from "../tools/resource-ref.js";
 import type { ToolDefinition, ToolRegistryApi } from "../tools/types.js";
@@ -108,12 +110,56 @@ export interface HostApiDeps {
   resources?: HostResourceRegistry;
 }
 
+/**
+ * [#301] 多个模块（宿主适配器 + 本地扩展）共享的状态：工具注册表、事件总线、资源注册表经 deps 共享，
+ * 其余——指令列表、broker 槽、保温处理器、通知函数、各模块的状态表——放在这里。
+ * 单个宿主适配器时自己建一个，行为与此前一致。
+ */
+export interface HostContext {
+  /** 全部模块追加的指令，按加载顺序（宿主适配器在前）。 */
+  readonly instructions: InstructionSource[];
+  /** broker 槽：第一个设置的模块占有，其余模块的 setBroker 被忽略。 */
+  readonly broker: { owner?: symbol; value?: ApprovalBroker };
+  /** 全部模块经 `cache.onWarmingDecision` 注册的处理器，按注册顺序；最后一个生效。 */
+  readonly warming: WarmingDecisionHandler[];
+  /** 各模块的状态表（merged 后给状态栏）。 */
+  readonly statuses: Set<Map<string, string>>;
+  /** 晚绑定的通知函数（所有模块共用）。 */
+  notify: HostNotify | undefined;
+  /** 全部模块经 `commands.register` 注册的斜杠命令。 */
+  readonly commands: HostCommandRegistry;
+}
+
+export interface HostContextOptions {
+  notify?: HostNotify;
+  /** 保留的命令名（内置命令、别名、交互界面命令）；由装配方注入。 */
+  reservedCommand?: (name: string) => boolean;
+}
+
+export function createHostContext(options: HostContextOptions = {}): HostContext {
+  return {
+    instructions: [],
+    broker: {},
+    warming: [],
+    statuses: new Set(),
+    notify: options.notify,
+    commands: new HostCommandRegistry(options.reservedCommand),
+  };
+}
+
+/** 合并全部模块的状态（同键后加载者覆盖先加载者）。 */
+export function mergedHostStatus(context: HostContext): ReadonlyMap<string, string> {
+  const merged = new Map<string, string>();
+  for (const map of context.statuses) for (const [k, v] of map) merged.set(k, v);
+  return merged;
+}
+
 /** createHostApi 的产物：api 交给适配器，其余给 bootstrap / AgentSession。 */
 export interface HostApiBinding {
   readonly api: HostApi;
-  /** 适配器追加的指令（系统提示 host 节，按追加顺序）。 */
+  /** 共享上下文中全部模块追加的指令（系统提示 host 节，按加载与追加顺序）。 */
   readonly instructions: readonly InstructionSource[];
-  /** 适配器设置的 broker（最后一次 setBroker 生效）。 */
+  /** 共享的 broker 槽（第一个设置的模块占有；占有者可再次设置）。 */
   broker(): ApprovalBroker | undefined;
   /** 适配器注册的工具名。 */
   readonly registeredTools: readonly string[];
@@ -157,14 +203,19 @@ function validateTool(tool: ToolDefinition): void {
   }
 }
 
-export function createHostApi(deps: HostApiDeps): HostApiBinding {
-  const instructions: InstructionSource[] = [];
+export function createHostApi(
+  deps: HostApiDeps,
+  context: HostContext = createHostContext({
+    ...(deps.notify !== undefined ? { notify: deps.notify } : {}),
+  }),
+): HostApiBinding {
+  const instructions = context.instructions;
+  const token = Symbol("host-binding");
   const registeredTools: string[] = [];
   const disabledTools: string[] = [];
   const status = new Map<string, string>();
-  let broker: ApprovalBroker | undefined;
-  const warmingHandlers: WarmingDecisionHandler[] = [];
-  let notify: HostNotify | undefined = deps.notify;
+  context.statuses.add(status);
+  const warmingHandlers = context.warming;
   const writeErr = deps.stderr ?? ((text: string) => void process.stderr.write(text));
   const log: HostLogger =
     deps.log ??
@@ -220,7 +271,12 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
         if (typeof next?.ask !== "function") {
           throw new AmaError("invalid_arguments", msg().drivers.host.brokerNeedsAsk);
         }
-        broker = next;
+        if (context.broker.owner !== undefined && context.broker.owner !== token) {
+          log("warn", msg().drivers.host.brokerIgnored);
+          return;
+        }
+        context.broker.owner = token;
+        context.broker.value = next;
       },
     }),
     messages: Object.freeze({
@@ -229,8 +285,8 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
     ui: Object.freeze({
       notify(message: string, level: "info" | "warn" | "error" = "info"): void {
         // 交互 / line 由 UI 显示；rpc 由模式转成事件；print（或未注入）写 stderr。
-        if (notify !== undefined && deps.mode !== "print") {
-          notify(message, level);
+        if (context.notify !== undefined && deps.mode !== "print") {
+          context.notify(message, level);
           return;
         }
         writeErr(`ama: [host${level === "info" ? "" : ` ${level}`}] ${message}\n`);
@@ -258,6 +314,10 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
       provide: (runner: HostRunner) => runners.provide(runner),
       onDone: (handler: RunnerDoneHandler) => runners.onDone(handler),
     }),
+    commands: Object.freeze({
+      register: (command: HostCommand) => context.commands.register(command),
+      list: () => context.commands.list().map((c) => c.name),
+    }),
     resources: Object.freeze({
       register: (resource: HostResource) => resources.register(resource),
       list: () => resources.schemes(),
@@ -268,7 +328,7 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
   return {
     api,
     instructions,
-    broker: () => broker,
+    broker: () => context.broker.value,
     registeredTools,
     disabledTools,
     status: () => status,
@@ -276,7 +336,7 @@ export function createHostApi(deps: HostApiDeps): HostApiBinding {
       return { adapter, api, source, status: () => status };
     },
     setNotify(fn?: HostNotify): void {
-      notify = fn ?? deps.notify;
+      context.notify = fn ?? deps.notify;
     },
     warmingDecider: () => warmingHandlers.at(-1),
     resources,

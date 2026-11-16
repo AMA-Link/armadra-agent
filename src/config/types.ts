@@ -373,6 +373,8 @@ export interface ProfileFile {
   promptDirs?: string[];
   /** [W5-C0] 子 Agent 定义目录（发现顺序在 `--agent-dir` 之后、用户级之前，W5-G）。 */
   agentDirs?: string[];
+  /** [#301] 本地扩展文件（绝对路径），排在用户级 `extensions/` 之后。 */
+  extensions?: string[];
   hooksFile?: string;
   authFile?: string;
   /** false：key 只来自 authFile，不读环境变量（§11.2）。 */
@@ -393,8 +395,20 @@ export interface TrustEntry {
   at: string;
 }
 
+/** [#301] 本地扩展的信任记录：按文件内容 sha256；内容变了记录不再匹配，重新询问。 */
+export interface ExtensionTrustEntry {
+  path: string;
+  /** 小写十六进制，64 位。 */
+  sha256: string;
+  trusted: boolean;
+  /** ISO 8601。 */
+  at: string;
+}
+
 /** trust.json（只在用户级目录）。 */
 export interface TrustFile {
   version: typeof CONFIG_FILE_VERSION;
   entries: TrustEntry[];
+  /** [#301] 本地扩展的信任记录；旧文件没有这一段。 */
+  extensions?: ExtensionTrustEntry[];
 }

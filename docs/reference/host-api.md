@@ -1,6 +1,6 @@
 # 宿主适配器 API（@armadra/agent/host）
 
-宿主适配器是一个本地 JS 模块，ama 启动时加载它并交给它一个 `HostApi`：它可以注册工具、追加系统提示、观察事件、回答审批、注入用户消息、在界面上显示通知与状态。Armadra 画布就是以宿主适配器的形式接入的（画布工具 `canvas_*` / `context_*` 都由适配器注册）。类型定义在 `src/host/types.ts`，从 `@armadra/agent/host` 导出，`HOST_API_VERSION = 1`、`HOST_API_MINOR = 2`（host-api 1.2，见「版本」）。设计依据见 [design.md](../design/design.md) §6.2、§6.3、§11.1 第 13 步。
+宿主适配器是一个本地 JS 模块，ama 启动时加载它并交给它一个 `HostApi`：它可以注册工具、追加系统提示、观察事件、回答审批、注入用户消息、在界面上显示通知与状态。Armadra 画布就是以宿主适配器的形式接入的（画布工具 `canvas_*` / `context_*` 都由适配器注册）。类型定义在 `src/host/types.ts`，从 `@armadra/agent/host` 导出，`HOST_API_VERSION = 1`、`HOST_API_MINOR = 4`（host-api 1.4，见「版本」）。设计依据见 [design.md](../design/design.md) §6.2、§6.3、§11.1 第 13 步。
 
 ## 模块形状
 
@@ -56,8 +56,9 @@ export function create(api) {
 | ------ | ------------ | ----------------------------------------------------------------- |
 | 0      | —            | 现有全部成员（`cache?`、`runners?.provide` 等可选面同样要先判断） |
 | 1      | 0.11.0       | `minor`、`runners?.onDone`（见「runner 完成事件」）               |
-| 2      | 未发布       | `resources?.register` / `resources?.list`（见「宿主资源」）       |
-| 3      | 未发布       | `session_start.uncleanEnd`（`reason: "resume"` 时，#268）         |
+| 2      | 0.16.0       | `resources?.register` / `resources?.list`（见「宿主资源」）       |
+| 3      | 0.16.0       | `session_start.uncleanEnd`（`reason: "resume"` 时，#268）         |
+| 4      | 未发布       | `commands?.register` / `commands?.list`（见「斜杠命令」，#301）   |
 
 ## HostApi
 
@@ -83,6 +84,8 @@ export function create(api) {
 | `runners?.onDone(handler)`                      | 宿主 runner 每轮结束时回调（见「runner 完成事件」），返回注销函数；host-api 1.1 起，用前判断 `typeof api.runners?.onDone === "function"`                     |
 | `resources?.register(resource)`                 | 注册一个只读资源命名空间 `scheme://…`，内置 `read` 读它（见「宿主资源」）；只能在 `create()` 里调用；host-api 1.2 起，用前判断 `api.resources !== undefined` |
 | `resources?.list()`                             | 已注册的 scheme，按名排序                                                                                                                                    |
+| `commands?.register(command)`                   | 注册斜杠命令（见「斜杠命令」）；宿主适配器与本地扩展都可用，返回注销函数；host-api 1.4 起，用前判断 `api.commands !== undefined`                             |
+| `commands?.list()`                              | 已注册的命令名（全部模块），按注册顺序                                                                                                                       |
 | `minor?`                                        | `HOST_API_MINOR`（见「版本」）；旧运行时缺省                                                                                                                 |
 
 `create()` 期间会话还没组装完：`session.*` 返回启动时确定的值，`sendUser` 会以 `busy` 拒绝——要在启动时发消息，等 `session_start` 事件之后再调用。
@@ -119,6 +122,31 @@ interface ToolResult {
 
 导出的 `ToolPermission` 类型多了 `"network"`（内置 `web_fetch` 用，按 execute 判定、plan 下询问，见 [permissions.md](../guides/permissions.md)「网络类」）；宿主经 `tools.register` 注册的工具仍只接受 `read` / `write` / `execute`，`HOST_API_VERSION` 不变。
 
+## 斜杠命令
+
+`api.commands.register({ name, description, args?, run(args, ctx) })`（host-api 1.4）：注册 `/名` 命令，返回注销函数。
+
+```ts
+interface HostCommand {
+  name: string; // ^[a-z][a-z0-9-]{0,63}$，不带斜杠
+  description: string; // /help 与补全里显示
+  args?: string; // 参数占位，如 "[day]"
+  run(args: string, ctx: HostCommandContext): HostCommandResult | Promise<HostCommandResult>;
+}
+interface HostCommandContext {
+  mode: "interactive" | "line" | "print" | "rpc";
+  session: { id(): string; cwd(): string };
+}
+type HostCommandResult =
+  { kind: "handled"; message?: string } | { kind: "prompt"; text: string } | undefined;
+```
+
+- 与内置命令、别名（`quit`、`q`、`?`）、交互界面命令（`tree`、`permissions`）或已注册的命令同名时 `register` 抛错（`command_exists`）；名字格式、`description`、`run` 不合法抛 `invalid_arguments`。
+- 分派在内置命令之后、提示模板之前；`args` 是命令名之后的整段文本（已去首尾空白）。
+- `handled` 的 `message` 显示给用户（交互 / line 进消息区，RPC 为 `notification` 事件），不进对话；`prompt` 把 `text` 改发为用户提示；返回 `undefined` 等同 `{ kind: "handled" }`；其它形状或 `text` 为空抛错，按命令错误显示。
+- 交互、line、RPC 三种模式分派；`-p` 与 ACP 不分派斜杠命令。`/help`、补全与 RPC `get_commands`（`source: "extension"`）列出。
+- 宿主适配器与本地扩展共用一张表，命令名全局唯一。
+
 ## 事件
 
 `events.on` 的处理器只观察：抛错只记日志，不影响运行；处理器依次调用并等待，`session_shutdown` 被 await（退出前可以做清理）。
@@ -151,7 +179,7 @@ interface ToolResult {
 - `ask` 返回 `"allow"` / `"deny"` / `"allow_session"` 作答；返回 `undefined` 交给下一个回答者；抛错按 deny。
 - `request`：`requestId`、`toolName`、`input`、`reason: "mode" | "dangerous" | "hook"`、`hookReason?`、`preview?`（执行前预览，见 [rpc.md](rpc.md)「审批」）、`context?`（`depth > 0` 表示来自 `task` 子 Agent；codemode 内层调用带 `parentToolCallId`）。
 - 超时（缺省 10 分钟，`AMA_APPROVAL_TIMEOUT_MS`）或运行被中断时 `signal` abort，结论为 deny。审批串行，同一时刻只有一个请求在等。
-- 时机：broker 每次审批时现取，可以在 `create()` 里设，也可以之后任何时候设或替换；最后一次 `setBroker` 生效。
+- 时机：broker 每次审批时现取，可以在 `create()` 里设，也可以之后任何时候设或替换；同一个模块里最后一次 `setBroker` 生效。有多个模块（宿主适配器 + [本地扩展](../guides/extensions.md)）时只认第一个设置者，其余的调用被忽略并 warning。
 - 宿主 broker 只决定「谁来回答 ask」，不能放宽 deny 规则、命令式 Hook 的 deny 与危险命令识别（[design.md](../design/design.md) §6.3）。
 
 ## 缓存保温

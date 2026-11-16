@@ -4,6 +4,18 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 新增
+
+- **本地扩展（#301）**：用户自己安装、可以有多个的宿主适配器，与 `--host` 适配器并存。从 `<configDir>/extensions/*.{mjs,cjs}`（按文件名排序）与 profile 的 `extensions`（绝对路径）依次加载；每个模块有独立的 `HostApi`，共享工具注册表、事件总线、审批 broker 槽、资源注册表与保温处理器。工具名先到先得，指令按加载顺序追加到 `host` 节，`approvals.setBroker` 第一个设置者生效，`cache.onWarmingDecision` 最后注册者生效，状态键合并；扩展加载失败、版本不等、`create()` 报错或超时只记 warning 并跳过，退出时按加载逆序全部 dispose。没有扩展时系统提示与工具表不变。见 `docs/guides/extensions.md`。
+- **`api.commands.register`（host-api 1.4）**：宿主适配器与扩展注册斜杠命令（`name`、`description`、`args?`、`run(args, ctx)` 返回 `{ kind: "handled", message? }` 或 `{ kind: "prompt", text }`），在内置命令之后、提示模板之前分派，交互、line、RPC 三种模式可用，`/help`、补全与 RPC `get_commands`（`source: "extension"`，只加不改，`RPC_PROTOCOL_VERSION` 不变）列出。与内置命令、别名或已注册命令同名时注册抛错。`HOST_API_MINOR` 为 4。
+- **扩展按哈希信任**：`trust.json` 新增可选的 `extensions` 段，记录 `{ path, sha256, trusted, at }`；交互启动对新文件或内容变化的文件询问一次（列出路径与 sha256），非交互运行跳过未信任的扩展并 warning，`--no-trust` 一个都不加载，`trustProject` 不适用。`ama doctor` 列出已启用与被跳过的扩展、哈希前缀与原因，不执行扩展代码。
+
+### 维护
+
+- **宿主 API 文档**：小版本表里 2、3 原标「未发布」，实际在 0.16.0 已发布，已更正。本地扩展设计草案改为现状指南（`docs/guides/extensions.md`，附英文译本）。
+
 ## 0.18.0（2026-11-15）
 
 ### 新增

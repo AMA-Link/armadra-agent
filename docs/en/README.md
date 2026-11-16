@@ -2,7 +2,7 @@
 
 English · [简体中文](../README.md)
 
-Most documents are written in Chinese; seven have English translations, kept in the same layout under `docs/en/`.
+Most documents are written in Chinese; eight have English translations, kept in the same layout under `docs/en/`.
 When a translation and the Chinese version differ, the Chinese version is authoritative. Relative links and the
 `docs/…md` paths in source comments are checked by `pnpm check:docs` (`scripts/check-doc-links.mjs`).
 
@@ -26,6 +26,7 @@ When a translation and the Chinese version differ, the Chinese version is author
 | [RPC protocol](reference/rpc.md)            | `ama --mode rpc`: stdio JSONL commands, responses and events                        |
 | [ACP](reference/acp.md)                     | `ama --mode acp`, the Pi ACP bridge, sign-in methods, deviations, the ACP client    |
 | [Host adapter API](reference/host-api.md)   | `@armadra/agent/host`: tools, approvals, injected messages, status                  |
+| [Local extensions](guides/extensions.md)    | User-installed host adapters: loading, coexistence, slash commands, hash trust      |
 
 ## Chinese only
 
@@ -34,6 +35,5 @@ When a translation and the Chinese version differ, the Chinese version is author
   [codemode](../guides/codemode.md), [OS sandbox](../guides/sandbox.md), [interface language](../guides/i18n.md).
 - Reference: [session file format](../reference/session-format.md).
 - Design: [overall design](../design/design.md), [terminal UI visual spec](../design/tui-design.md),
-  [search and web access](../design/search-plan.md) (only local search is implemented),
-  [local extensions](../design/extensions.md) (draft, not implemented).
+  [search and web access](../design/search-plan.md) (only local search is implemented).
 - History, research and benchmarks: see the [Chinese index](../README.md).

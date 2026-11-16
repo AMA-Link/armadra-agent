@@ -94,6 +94,8 @@ export interface SessionAssembly {
   events: AgentEventBus;
   host: {
     handle: HostAdapterHandle | undefined;
+    /** [#301] 已激活的本地扩展（加载顺序）；没有时为空表。 */
+    extensions?: readonly HostAdapterHandle[];
     /** 宿主 broker（链首）；undefined 交给 UI / 无人值守。 */
     broker(): ApprovalBroker | undefined;
     /** 系统提示 host 节。 */
@@ -151,6 +153,8 @@ export type ModeRunner = (runtime: Runtime, context: ModeContext) => Promise<num
 /** 交互 UI 回调（B7 / B6 line 提供）；全部可选，缺省按非交互处理。 */
 export interface InteractiveUi {
   promptTrust?(cwd: string, resources: readonly string[]): Promise<TrustPromptAnswer>;
+  /** [#301] 本地扩展首次出现或内容变化时询问（一次，列出全部待定文件的路径与 sha256）。 */
+  promptExtensions?(files: readonly { path: string; sha256: string }[]): Promise<TrustPromptAnswer>;
   /** `--resume` 无 id：返回会话 id，undefined = 用户取消（退出码 5）。 */
   pickSession?(items: readonly SessionListItem[]): Promise<string | undefined>;
   /** 无 key / 无模型时选择模型；返回 `provider/id`，undefined = 取消（退出码 4）。 */

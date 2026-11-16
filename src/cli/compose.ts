@@ -288,6 +288,7 @@ function lazyUi(load: () => Promise<Required<InteractiveUi>>): Required<Interact
   const get = (): Promise<Required<InteractiveUi>> => (ui ??= load());
   return {
     promptTrust: async (cwd, resources) => (await get()).promptTrust(cwd, resources),
+    promptExtensions: async (files) => (await get()).promptExtensions(files),
     pickSession: async (items) => (await get()).pickSession(items),
     pickModel: async (providers, reason) => (await get()).pickModel(providers, reason),
     askCwd: async (missing) => (await get()).askCwd(missing),

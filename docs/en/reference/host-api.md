@@ -5,7 +5,7 @@ English · [简体中文](../../reference/host-api.md)
 > Translated from the Chinese [docs/reference/host-api.md](../../reference/host-api.md) as of commit `979608b`. When the two differ, the Chinese
 > version is authoritative.
 
-A host adapter is a local JS module that ama loads at startup and hands a `HostApi`. With it the adapter can register tools, append to the system prompt, observe events, answer approvals, inject user messages and show notifications and status in the interface. The Armadra canvas plugs in as a host adapter (the canvas tools `canvas_*` / `context_*` are all registered by the adapter). The types are defined in `src/host/types.ts` and exported from `@armadra/agent/host`; `HOST_API_VERSION = 1`, `HOST_API_MINOR = 2` (host-api 1.2, see "Versioning"). The design rationale is in [design.md](../../design/design.md) §6.2, §6.3 and §11.1 step 13 (Chinese).
+A host adapter is a local JS module that ama loads at startup and hands a `HostApi`. With it the adapter can register tools, append to the system prompt, observe events, answer approvals, inject user messages and show notifications and status in the interface. The Armadra canvas plugs in as a host adapter (the canvas tools `canvas_*` / `context_*` are all registered by the adapter). The types are defined in `src/host/types.ts` and exported from `@armadra/agent/host`; `HOST_API_VERSION = 1`, `HOST_API_MINOR = 4` (host-api 1.4, see "Versioning"). The design rationale is in [design.md](../../design/design.md) §6.2, §6.3 and §11.1 step 13 (Chinese).
 
 ## Module shape
 
@@ -61,8 +61,9 @@ export function create(api) {
 | ----- | ----------------- | -------------------------------------------------------------------------------------------------- |
 | 0     | —                 | Every existing member (optional facets such as `cache?` and `runners?.provide` still need a check) |
 | 1     | 0.11.0            | `minor`, `runners?.onDone` (see "Runner done event")                                               |
-| 2     | Unreleased        | `resources?.register` / `resources?.list` (see "Host resources")                                   |
-| 3     | Unreleased        | `session_start.uncleanEnd` (with `reason: "resume"`, #268)                                         |
+| 2     | 0.16.0            | `resources?.register` / `resources?.list` (see "Host resources")                                   |
+| 3     | 0.16.0            | `session_start.uncleanEnd` (with `reason: "resume"`, #268)                                         |
+| 4     | Unreleased        | `commands?.register` / `commands?.list` (see "Slash commands", #301)                               |
 
 ## HostApi
 
@@ -88,6 +89,8 @@ export function create(api) {
 | `runners?.onDone(handler)`                      | Called whenever a round of a host runner ends (see "Runner done event"); returns an unsubscribe function. Since host-api 1.1, so check `typeof api.runners?.onDone === "function"` before use                                                     |
 | `resources?.register(resource)`                 | Registers a read-only resource namespace `scheme://…` that the built-in `read` reads (see "Host resources"); only callable inside `create()`. Since host-api 1.2, so check `api.resources !== undefined` before use                               |
 | `resources?.list()`                             | The registered schemes, sorted by name                                                                                                                                                                                                            |
+| `commands?.register(command)`                   | Register a slash command (see "Slash commands"); available to host adapters and local extensions, returns an unregister function; since host-api 1.4, check `api.commands !== undefined` first                                                    |
+| `commands?.list()`                              | Registered command names (all modules), in registration order                                                                                                                                                                                     |
 | `minor?`                                        | `HOST_API_MINOR` (see "Versioning"); missing in older runtimes                                                                                                                                                                                    |
 
 During `create()` the session is not assembled yet: `session.*` returns the values fixed at startup, and `sendUser` is rejected with `busy`. To send a message at startup, wait for the `session_start` event.
@@ -124,6 +127,31 @@ Host tools take the same path as built-in tools: schema validation → command h
 
 The exported `ToolPermission` type gains `"network"` (used by the built-in `web_fetch`; judged as execute and asks in plan, see [permissions.md](../guides/permissions.md) "Network class"); tools registered by a host through `tools.register` still accept only `read` / `write` / `execute`, and `HOST_API_VERSION` is unchanged.
 
+## Slash commands
+
+`api.commands.register({ name, description, args?, run(args, ctx) })` (host-api 1.4): registers a `/name` command and returns an unregister function.
+
+```ts
+interface HostCommand {
+  name: string; // ^[a-z][a-z0-9-]{0,63}$, no slash
+  description: string; // shown in /help and completion
+  args?: string; // argument placeholder, e.g. "[day]"
+  run(args: string, ctx: HostCommandContext): HostCommandResult | Promise<HostCommandResult>;
+}
+interface HostCommandContext {
+  mode: "interactive" | "line" | "print" | "rpc";
+  session: { id(): string; cwd(): string };
+}
+type HostCommandResult =
+  { kind: "handled"; message?: string } | { kind: "prompt"; text: string } | undefined;
+```
+
+- `register` throws (`command_exists`) for a built-in command, an alias (`quit`, `q`, `?`), an interactive-UI command (`tree`, `permissions`) or an already registered name; a bad name format, `description` or `run` throws `invalid_arguments`.
+- Dispatch is after built-in commands and before prompt templates; `args` is everything after the command name, trimmed.
+- A `handled` `message` is shown to the user (message area in interactive / line, a `notification` event in RPC) and does not enter the conversation; `prompt` sends `text` as the user prompt; `undefined` means `{ kind: "handled" }`; any other shape, or an empty `text`, throws and is shown as a command error.
+- Dispatched in interactive, line and RPC modes; `-p` and ACP do not dispatch slash commands. Listed by `/help`, completion and RPC `get_commands` (`source: "extension"`).
+- Host adapters and local extensions share one table, so command names are globally unique.
+
 ## Events
 
 `events.on` handlers only observe: a throw is just logged and does not affect the run; handlers are called and awaited in order, and `session_shutdown` is awaited (so you can clean up before exit).
@@ -156,7 +184,7 @@ For token-level streaming content or the full event stream, use RPC or the SDK's
 - `ask` answers by returning `"allow"` / `"deny"` / `"allow_session"`; returning `undefined` passes to the next answerer; a throw counts as deny.
 - `request`: `requestId`, `toolName`, `input`, `reason: "mode" | "dangerous" | "hook"`, `hookReason?`, `preview?` (the pre-execution preview, see [rpc.md](rpc.md) "Approvals"), `context?` (`depth > 0` means it comes from a `task` sub-agent; codemode inner calls carry `parentToolCallId`).
 - On timeout (10 minutes by default, `AMA_APPROVAL_TIMEOUT_MS`) or when the run is interrupted, `signal` aborts and the decision is deny. Approvals are serial: only one request waits at a time.
-- Timing: the broker is looked up at each approval, so it can be set in `create()` or set / replaced at any later time; the last `setBroker` wins.
+- Timing: the broker is looked up at each approval, so it can be set in `create()` or set / replaced at any later time; within one module the last `setBroker` wins. With several modules (a host adapter plus [local extensions](../guides/extensions.md)) only the first setter counts; later calls are ignored with a warning.
 - The host broker only decides "who answers an ask"; it cannot loosen deny rules, command hook denies or dangerous-command detection ([design.md](../../design/design.md) §6.3, Chinese).
 
 ## Cache warming
