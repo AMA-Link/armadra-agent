@@ -62,6 +62,8 @@ export const en = {
     hostDisposeFailed: (error: string) => `Host adapter dispose failed: ${error}`,
     extensionSkipped: (path: string, reason: string) => `Extension skipped: ${path}: ${reason}`,
     extensionNotActivated: "create() returned no adapter",
+    extensionsTrustFailed: (reason: string) =>
+      `Local extensions skipped: trust decision failed: ${reason}`,
     extensionReason: {
       "no-trust": "disabled by --no-trust",
       untrusted: "not trusted (approve it in an interactive session)",
@@ -257,6 +259,7 @@ export const zh = {
     hostDisposeFailed: (error) => `宿主适配器 dispose 失败：${error}`,
     extensionSkipped: (path, reason) => `已跳过扩展：${path}：${reason}`,
     extensionNotActivated: "create() 没有返回适配器",
+    extensionsTrustFailed: (reason) => `已跳过全部本地扩展：信任判定失败：${reason}`,
     extensionReason: {
       "no-trust": "被 --no-trust 禁用",
       untrusted: "未信任（在交互会话里确认后启用）",

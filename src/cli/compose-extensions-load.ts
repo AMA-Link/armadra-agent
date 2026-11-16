@@ -27,13 +27,24 @@ export interface LoadExtensionsInput {
 export async function loadExtensions(input: LoadExtensionsInput): Promise<HostAdapterHandle[]> {
   const found = discoverExtensions(input.configDir, input.profileExtensions);
   if (found.length === 0) return [];
-  const decision = await decideExtensions({
-    paths: found,
-    configDir: input.configDir,
-    disabled: input.noTrust,
-    interactive: input.interactive,
-    prompt: input.prompt,
-  });
+  // 读 / 写 trust.json 或询问界面出错：全部跳过并 warning，不让扩展的问题变成启动失败（宿主已激活）
+  let decision: Awaited<ReturnType<typeof decideExtensions>>;
+  try {
+    decision = await decideExtensions({
+      paths: found,
+      configDir: input.configDir,
+      disabled: input.noTrust,
+      interactive: input.interactive,
+      prompt: input.prompt,
+    });
+  } catch (error) {
+    input.warn(
+      msg().cli.bootstrap.extensionsTrustFailed(
+        error instanceof Error ? error.message : String(error),
+      ),
+    );
+    return [];
+  }
   const m = msg().cli.bootstrap;
   for (const skipped of decision.skipped) {
     input.warn(m.extensionSkipped(skipped.path, m.extensionReason[skipped.reason]));

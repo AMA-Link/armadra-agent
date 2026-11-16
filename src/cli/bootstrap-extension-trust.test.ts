@@ -116,6 +116,18 @@ describe("信任决定", () => {
     );
   });
 
+  it("询问界面出错：全部扩展跳过并 warning，启动照常（不变成启动失败）", async () => {
+    writeExt("a");
+    h.deps.ui = {
+      promptExtensions: async () => {
+        throw new Error("tty gone");
+      },
+    };
+    expect(await run([])).toBe(0);
+    expect(loaded()).toEqual([]);
+    expect(h.err.join("")).toContain("信任判定失败：tty gone");
+  });
+
   it("交互拒绝并记住：之后不再问也不加载；拒绝不记住：下次再问", async () => {
     writeExt("a");
     let count = 0;
