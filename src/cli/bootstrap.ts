@@ -289,6 +289,9 @@ export async function bootstrap(
     profileExtensions: profile?.extensions ?? [],
     deps: hostDeps,
     context: hostContext,
+    noTrust: args.trust === false,
+    interactive,
+    prompt: deps.ui?.promptExtensions,
     warn,
   });
   hostResources.freeze();

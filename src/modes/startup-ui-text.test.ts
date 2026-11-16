@@ -56,6 +56,23 @@ describe("启动期文本问答", () => {
     }
   });
 
+  it("promptExtensions：列出路径与 sha256；y 仅本次、a 记住、其它不信任", async () => {
+    for (const [input, expected] of [
+      ["y", { trusted: true, remember: false }],
+      ["a", { trusted: true, remember: true }],
+      ["", { trusted: false, remember: false }],
+    ] as const) {
+      const { stdin, ui, text } = setup();
+      const pending = ui.promptExtensions([
+        { path: "/cfg/extensions/a.mjs", sha256: "ab".repeat(32) },
+      ]);
+      stdin.write(`${input}\n`);
+      expect(await pending).toEqual(expected);
+      expect(text()).toContain("/cfg/extensions/a.mjs");
+      expect(text()).toContain("ab".repeat(32));
+    }
+  });
+
   it("pickModel：列出全部候选，接受编号、完整值或唯一前缀", async () => {
     for (const [input, expected] of [
       ["2", "anthropic/sonnet"],

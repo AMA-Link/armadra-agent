@@ -62,6 +62,13 @@ export const en = {
     hostDisposeFailed: (error: string) => `Host adapter dispose failed: ${error}`,
     extensionSkipped: (path: string, reason: string) => `Extension skipped: ${path}: ${reason}`,
     extensionNotActivated: "create() returned no adapter",
+    extensionReason: {
+      "no-trust": "disabled by --no-trust",
+      untrusted: "not trusted (approve it in an interactive session)",
+      changed: "content changed since it was trusted (approve it in an interactive session)",
+      declined: "not trusted",
+      unreadable: "cannot read the file",
+    },
     extensionDisposeFailed: (path: string, error: string) =>
       `Extension dispose failed: ${path}: ${error}`,
     sessionStartBlocked: (reason?: string) =>
@@ -250,6 +257,13 @@ export const zh = {
     hostDisposeFailed: (error) => `宿主适配器 dispose 失败：${error}`,
     extensionSkipped: (path, reason) => `已跳过扩展：${path}：${reason}`,
     extensionNotActivated: "create() 没有返回适配器",
+    extensionReason: {
+      "no-trust": "被 --no-trust 禁用",
+      untrusted: "未信任（在交互会话里确认后启用）",
+      changed: "内容自信任后已改变（在交互会话里重新确认后启用）",
+      declined: "未信任",
+      unreadable: "读不了文件",
+    },
     extensionDisposeFailed: (path, error) => `扩展 dispose 失败：${path}：${error}`,
     sessionStartBlocked: (reason) => `SessionStart Hook 阻止启动：${reason ?? "（无原因）"}`,
     subcommandNotDispatched: "子命令应由 main 分派",

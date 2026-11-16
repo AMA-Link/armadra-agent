@@ -395,8 +395,20 @@ export interface TrustEntry {
   at: string;
 }
 
+/** [#301] 本地扩展的信任记录：按文件内容 sha256；内容变了记录不再匹配，重新询问。 */
+export interface ExtensionTrustEntry {
+  path: string;
+  /** 小写十六进制，64 位。 */
+  sha256: string;
+  trusted: boolean;
+  /** ISO 8601。 */
+  at: string;
+}
+
 /** trust.json（只在用户级目录）。 */
 export interface TrustFile {
   version: typeof CONFIG_FILE_VERSION;
   entries: TrustEntry[];
+  /** [#301] 本地扩展的信任记录；旧文件没有这一段。 */
+  extensions?: ExtensionTrustEntry[];
 }

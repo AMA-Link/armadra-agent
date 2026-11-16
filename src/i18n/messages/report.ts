@@ -88,6 +88,7 @@ export const en = {
     more: (count: number) => `  …${count} more`,
     trustQuestion: (cwd: string) => `Trust this directory's project resources? ${cwd}`,
     trustChoices: "[y this time / a trust and remember / N don't trust] ",
+    extensionsQuestion: "Enable these local extensions? They run code with your permissions",
     resumeQuestion: "Resume which session?",
     resumeAnswer: "Number or id: ",
     pickModel: "Choose a model:",
@@ -251,6 +252,13 @@ export const en = {
     trust: (cwd: string, trusted: boolean, from: string) =>
       `${cwd}: ${trusted ? "trusted" : "not trusted"} (${from})`,
     gated: (trusted: boolean) => `Resources that need trust${trusted ? "" : " (not loaded now)"}:`,
+    extensionsTitle: "Local extensions",
+    extensionsNote:
+      "Listed from files and trust records only; doctor never runs extension code, so load failures show at startup",
+    extensionsNone: "none (user-level extensions/ and profile extensions are empty)",
+    extensionLine: (enabled: boolean, path: string, sha: string, reason: string | undefined) =>
+      `${enabled ? "enabled" : "skipped"}  ${path}  sha256 ${sha}${reason === undefined ? "" : `  (${reason})`}`,
+    extensionSha: (sha256: string | undefined) => sha256?.slice(0, 12) ?? "-",
     keysTitle: "Key sources (sources only, never values)",
     authMode: (mode: string, path: string) => `auth.json mode ${mode}, should be 600: ${path}`,
     none: "none",
@@ -383,6 +391,7 @@ export const zh = {
     more: (count) => `  …另有 ${count} 项`,
     trustQuestion: (cwd) => `信任这个目录的项目资源？${cwd}`,
     trustChoices: "[y 仅本次 / a 信任并记住 / N 不信任] ",
+    extensionsQuestion: "启用这些本地扩展？它们以你的权限运行代码",
     resumeQuestion: "恢复哪个会话？",
     resumeAnswer: "编号或 id：",
     pickModel: "选择模型：",
@@ -524,6 +533,12 @@ export const zh = {
     trustInvalid: "trust.json 无效",
     trust: (cwd, trusted, from) => `${cwd}：${trusted ? "已信任" : "未信任"}（${from}）`,
     gated: (trusted) => `需要信任的资源${trusted ? "" : "（当前不加载）"}：`,
+    extensionsTitle: "本地扩展",
+    extensionsNote: "只按文件与信任记录列出；doctor 不执行扩展代码，加载失败在启动时才会出现",
+    extensionsNone: "无（用户级 extensions/ 与 profile 的 extensions 都为空）",
+    extensionLine: (enabled, path, sha, reason) =>
+      `${enabled ? "启用" : "跳过"}  ${path}  sha256 ${sha}${reason === undefined ? "" : `  （${reason}）`}`,
+    extensionSha: (sha256) => sha256?.slice(0, 12) ?? "-",
     keysTitle: "Key 来源（只显示来源，不显示值）",
     authMode: (mode, path) => `auth.json 权限 ${mode}，应为 600：${path}`,
     none: "无",

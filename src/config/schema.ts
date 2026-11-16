@@ -62,6 +62,7 @@ export type {
   ProfileFile,
   TrustFile,
   TrustEntry,
+  ExtensionTrustEntry,
   ProviderConfig,
   PermissionConfig,
   CompactionConfig,
@@ -541,6 +542,22 @@ export function validateTrustFile(value: unknown): Diagnostic[] {
     if (typeof entry["trusted"] !== "boolean")
       c.error(join(p, "trusted"), msg().config.schema.boolean);
   });
+  const extensions = value["extensions"];
+  if (extensions !== undefined) {
+    if (!Array.isArray(extensions)) {
+      c.error("extensions", msg().config.schema.array);
+      return c.diagnostics;
+    }
+    extensions.forEach((entry: unknown, index) => {
+      const p = join("extensions", index);
+      if (!c.object(entry, p)) return;
+      c.string(entry, "path", p, true);
+      c.string(entry, "sha256", p, true);
+      c.string(entry, "at", p, true);
+      if (typeof entry["trusted"] !== "boolean")
+        c.error(join(p, "trusted"), msg().config.schema.boolean);
+    });
+  }
   return c.diagnostics;
 }
 

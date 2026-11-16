@@ -75,10 +75,15 @@ export function recordTrust(
     (e) => normalize(e.path, process.platform) !== normalize(abs, process.platform),
   );
   entries.push({ path: abs, trusted, at: now.toISOString() });
+  writeTrustFile(configDir, { ...file, entries });
+}
+
+/** 原子写 trust.json（保留 `extensions` 段）。 */
+export function writeTrustFile(configDir: string, file: TrustFile): void {
   const target = trustFilePath(configDir);
   mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
   const tmp = `${target}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify({ version: CONFIG_FILE_VERSION, entries }, null, 2)}\n`, {
+  writeFileSync(tmp, `${JSON.stringify({ ...file, version: CONFIG_FILE_VERSION }, null, 2)}\n`, {
     mode: 0o600,
   });
   renameSync(tmp, target);

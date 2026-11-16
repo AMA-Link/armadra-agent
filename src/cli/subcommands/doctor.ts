@@ -17,6 +17,9 @@ import { findContextFiles } from "../../config/context-files.js";
 import { loadConfigFile, probeConfigFile } from "../../config/load.js";
 import { mergeProjectAndCli } from "../../config/merge.js";
 import { CONFIG_FILE, HOOKS_FILE, projectFile, userFile } from "../../config/paths.js";
+import { inspectExtension, type ExtensionSkipReason } from "../../config/extension-trust.js";
+import type { ExtensionTrustEntry } from "../../config/types.js";
+import { discoverExtensions } from "../../host/extensions.js";
 import { findTrustEntry, readTrustFile, trustGatedResources } from "../../config/trust.js";
 import { loadHookConfigs } from "../../hooks/config.js";
 import { osSandboxStatus } from "../../sandbox/detect.js";
@@ -108,6 +111,43 @@ function trustSection(
     for (const path of gated) report.item(`  ${path}`);
   }
   return trusted;
+}
+
+/** [#301] 本地扩展：文件、哈希前缀与信任状态；不执行扩展代码。 */
+function extensionsSection(report: Report, level: UserLevel, noTrust: boolean): void {
+  const m = msg().report.doctor;
+  const reasons = msg().cli.bootstrap.extensionReason;
+  report.section(m.extensionsTitle);
+  const paths = discoverExtensions(level.configDir, level.profile?.extensions ?? []);
+  if (paths.length === 0) {
+    report.item(m.extensionsNone);
+    return;
+  }
+  report.item(m.extensionsNote);
+  let recorded: readonly ExtensionTrustEntry[] = [];
+  try {
+    recorded = readTrustFile(level.configDir).extensions ?? [];
+  } catch (error) {
+    report.problem((error as Error).message);
+  }
+  for (const path of paths) {
+    const info = inspectExtension(path, recorded);
+    const reason: ExtensionSkipReason | undefined = noTrust
+      ? "no-trust"
+      : info.status === "trusted"
+        ? undefined
+        : info.status === "unknown"
+          ? "untrusted"
+          : info.status;
+    report.item(
+      m.extensionLine(
+        reason === undefined,
+        info.path,
+        m.extensionSha(info.sha256),
+        reason === undefined ? undefined : reasons[reason],
+      ),
+    );
+  }
 }
 
 async function keySection(
@@ -323,6 +363,7 @@ export async function runDoctor(
   for (const file of context.files)
     report.item(`${file.scope === "user" ? m.contextUser : m.contextProject}  ${file.path}`);
   await keySection(report, io, level, deps);
+  extensionsSection(report, level, flags.has("no-trust"));
   hookSection(report, io, level, trusted);
   report.item(m.userHooks(userFile(level, HOOKS_FILE)));
   proxySection(report, io);

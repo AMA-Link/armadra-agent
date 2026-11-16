@@ -249,6 +249,22 @@ export function createStartupUi(options: StartupUiOptions = {}): Required<Intera
       return choice?.answer ?? { trusted: false, remember: false };
     },
 
+    async promptExtensions(files) {
+      const m = msg().interactive.startup.ui;
+      const choices = trustChoices();
+      const shown = files.slice(0, 4).flatMap((f) => [`${f.path}`, `  sha256 ${f.sha256}`]);
+      if (files.length > 4) shown.push(m.moreResources(files.length - 4));
+      const picked = await askSelect(r, {
+        title: m.extensionsTitle,
+        lines: shown,
+        items: choices.map(({ value, label }) => ({ value, label })),
+        selected: "skip",
+        numberKeys: true,
+      });
+      const choice = choices.find((c) => c.value === picked?.value);
+      return choice?.answer ?? { trusted: false, remember: false };
+    },
+
     async pickSession(items) {
       if (items.length === 0) return undefined;
       const picked = await askSelect(r, {

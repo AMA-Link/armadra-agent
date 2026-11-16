@@ -76,6 +76,16 @@ export function createTextStartupUi(io: TextUiIo): Required<InteractiveUi> {
       return { trusted: key === "y" || key === "yes", remember: false };
     },
 
+    async promptExtensions(files) {
+      const m = msg().report.startup;
+      const shown = files.slice(0, 6).flatMap((f) => [`  ${f.path}`, `    sha256 ${f.sha256}`]);
+      if (files.length > 6) shown.push(m.more(files.length - 6));
+      const answer = await ask([m.extensionsQuestion, ...shown], m.trustChoices);
+      const key = answer?.trim().toLowerCase();
+      if (key === "a") return { trusted: true, remember: true };
+      return { trusted: key === "y" || key === "yes", remember: false };
+    },
+
     async pickSession(items) {
       if (items.length === 0) return undefined;
       const sorted = [...items].sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
