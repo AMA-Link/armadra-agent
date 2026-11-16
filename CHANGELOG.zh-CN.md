@@ -10,7 +10,12 @@
 
 - **本地扩展（#301）**：用户自己安装、可以有多个的宿主适配器，与 `--host` 适配器并存。从 `<configDir>/extensions/*.{mjs,cjs}`（按文件名排序）与 profile 的 `extensions`（绝对路径）依次加载；每个模块有独立的 `HostApi`，共享工具注册表、事件总线、审批 broker 槽、资源注册表与保温处理器。工具名先到先得，指令按加载顺序追加到 `host` 节，`approvals.setBroker` 第一个设置者生效，`cache.onWarmingDecision` 最后注册者生效，状态键合并；扩展加载失败、版本不等、`create()` 报错或超时只记 warning 并跳过，退出时按加载逆序全部 dispose。没有扩展时系统提示与工具表不变。见 `docs/guides/extensions.md`。
 - **`api.commands.register`（host-api 1.4）**：宿主适配器与扩展注册斜杠命令（`name`、`description`、`args?`、`run(args, ctx)` 返回 `{ kind: "handled", message? }` 或 `{ kind: "prompt", text }`），在内置命令之后、提示模板之前分派，交互、line、RPC 三种模式可用，`/help`、补全与 RPC `get_commands`（`source: "extension"`，只加不改，`RPC_PROTOCOL_VERSION` 不变）列出。与内置命令、别名或已注册命令同名时注册抛错。`HOST_API_MINOR` 为 4。
+- **扩展可注入子 Agent runner（#306）**：`runners.provide` / `runners.onDone` 改走宿主适配器与扩展共用的一张 runner 表，`task`、`/agents` 与 RPC `get_agents` 无论有无宿主适配器都使用扩展的 runner（与宿主注入的同等优先；“有宿主时不自起外部 CLI”的判定仍只看宿主适配器）。同 id 先到先得，后来者抛 `runner_exists`；`onDone` 只回调本模块的 runner；被撤回的扩展其 runner 一并移除。宿主适配器不再静默替换同 id 的 runner。`HOST_API_MINOR` 不变。
 - **扩展按哈希信任**：`trust.json` 新增可选的 `extensions` 段，记录 `{ path, sha256, trusted, at }`；交互启动对新文件或内容变化的文件询问一次（列出路径与 sha256），非交互运行跳过未信任的扩展并 warning，`--no-trust` 一个都不加载，`trustProject` 不适用。`ama doctor` 列出已启用与被跳过的扩展、哈希前缀与原因，不执行扩展代码。
+
+### 修复
+
+- **扩展激活失败时撤回已注册内容（#304）**：扩展的 `create()` 抛错、超时或没有返回适配器时，它注册的工具（及工具禁用）、事件订阅、命令、指令、状态键、保温处理器、broker（自己持有槽位时）、runner 与资源都会撤回；该模块之后再调用注册类方法（如超时后迟到的注册）一律忽略并 warning。系统提示与工具表回到没有该扩展时逐字节相同。宿主适配器的失败规则不变。
 
 ### 维护
 

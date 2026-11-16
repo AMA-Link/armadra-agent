@@ -45,24 +45,32 @@ A module is `.mjs` (ESM) or `.cjs`; exporting `default` or named `hostApi` + `cr
 
 Each module gets its own `HostApi` instance (its own tool list and status keys) and they share one tool registry, event bus, approval broker slot, resource registry and warming handlers.
 
-| Surface                         | With several modules                                                                                                                                |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tools.register`                | First wins; a later duplicate throws `tool_exists` (an extension may catch it; if it does not, `create()` fails and the whole extension is skipped) |
-| `tools.disable`                 | Cumulative                                                                                                                                          |
-| `instructions.add`              | Appended to the system prompt's `host` section in load order (host adapter first)                                                                   |
-| `events.on`                     | All receive, called in registration order                                                                                                           |
-| `approvals.setBroker`           | Only the first setter counts (usually the host adapter); other calls are ignored with a warning. The same module may set it again                   |
-| `ui.notify` / `ui.setStatus`    | All usable; the status bar merges every module's keys, a later module overrides an earlier one on the same key, so prefix your keys                 |
-| `cache.onWarmingDecision`       | The last registered, not yet unregistered handler across modules wins                                                                               |
-| `commands.register`             | See below; command names are global, first registration wins                                                                                        |
-| `runners.provide` / `onDone`    | Host adapter only; an extension's call does not fail, but its runners are never used by `task`                                                      |
-| `create()` fails / times out    | A host adapter still exits 6; **an extension only produces a warning and is skipped**, startup continues                                            |
-| Load failure / version mismatch | Host adapter still exits 6 / 78; an extension is skipped with a warning                                                                             |
-| Exit                            | `dispose` in reverse load order (extensions first, host adapter last); a failure only warns                                                         |
+| Surface                         | With several modules                                                                                                                                                               |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools.register`                | First wins; a later duplicate throws `tool_exists` (an extension may catch it; if it does not, `create()` fails and the whole extension is skipped)                                |
+| `tools.disable`                 | Cumulative                                                                                                                                                                         |
+| `instructions.add`              | Appended to the system prompt's `host` section in load order (host adapter first)                                                                                                  |
+| `events.on`                     | All receive, called in registration order                                                                                                                                          |
+| `approvals.setBroker`           | Only the first setter counts (usually the host adapter); other calls are ignored with a warning. The same module may set it again                                                  |
+| `ui.notify` / `ui.setStatus`    | All usable; the status bar merges every module's keys, a later module overrides an earlier one on the same key, so prefix your keys                                                |
+| `cache.onWarmingDecision`       | The last registered, not yet unregistered handler across modules wins                                                                                                              |
+| `commands.register`             | See below; command names are global, first registration wins                                                                                                                       |
+| `runners.provide` / `onDone`    | One shared runner table, first wins (a later same-id call throws `runner_exists`); `onDone` fires only for the module's own runners; used by `task` with or without a host adapter |
+| `create()` fails / times out    | A host adapter still exits 6; **an extension only produces a warning and is skipped**, startup continues                                                                           |
+| Load failure / version mismatch | Host adapter still exits 6 / 78; an extension is skipped with a warning                                                                                                            |
+| Exit                            | `dispose` in reverse load order (extensions first, host adapter last); a failure only warns                                                                                        |
 
 With no extensions the system prompt and tool table are byte-identical to before. The `host` field in hook context stays the host adapter's id.
 
-An extension whose `create()` throws is skipped, but tools, event handlers and commands it registered before throwing are not rolled back, so do anything that can fail before registering.
+When an extension's `create()` throws, times out or returns no adapter, everything it registered is revoked: tools (tools it disabled are re-enabled), event subscriptions, commands, instructions, status keys, warming handlers, the broker if it owns it, runners and resources. After that, any registration call from the module (for example a late one after a timeout) is ignored with a warning.
+
+## Sub-agent runners
+
+`api.runners.provide(runner)` uses one table shared by the host adapter and extensions; `task(agent=<id>)`, `/agents` and RPC `get_agents` all read it:
+
+- For one id the first provider wins and a later one throws `runner_exists`; after an unsubscribe or a revoke the id can be provided again.
+- Extension runners also work without a host adapter, at the same priority as host-injected ones (the same id replaces a built-in external runner such as `claude`). The "with a host adapter ama starts no external CLI of its own" rule still depends only on the host adapter; extensions do not change it.
+- `api.runners.onDone(handler)` fires only for the module's own runners.
 
 ## Slash commands
 
