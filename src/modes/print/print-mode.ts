@@ -26,6 +26,9 @@
  *   在跑或通知待投递，stderr 一行提示并等它们结束、跑完通知回合再输出（最终文本 = 最后一条助手回复）；
  *   受 `--max-turns` / `--max-cost` / `limits.*` 约束（到限即停止等待，退出码 8），SIGINT / SIGTERM 照常中止
  *   （未结束的任务随会话关闭被停止）；json 结果带 `tasks`（同 `getStats().tasks`）。
+ * - [#303] 提示整段形如 `/名 参数` 且命中扩展命令（`api.commands.register`）：`handled` 把 `message` 写到 stdout、
+ *   退出 0、不调模型（json 与 stream-json 给一行 `result` 对象，`text` 为 message）；`prompt` 改发其 `text`；
+ *   命令抛错 → stderr 一行、退出码 1。
  * - 退出码：最终助手消息 `error / aborted` 或提示被拒 → 1；有工具调用被拒 → 7；到达预算 → 8；
  *   计划待审批 → 9；SIGINT 130、SIGTERM 143（先 abort）。
  */
@@ -34,6 +37,7 @@ import type { CliIo, ModeContext } from "../../cli/deps.js";
 import { currentSession } from "../../cli/compose-session.js";
 import { ExitCode } from "../../cli/exit-codes.js";
 import type { Runtime } from "../../cli/runtime.js";
+import { parseSlash, runHostSlash } from "../commands-core.js";
 import { errorText, lastAssistant, onStdoutClosed, onTerminationSignals } from "../shared.js";
 import { toJsonLine, toWireEvent } from "./json-event.js";
 import { formatUsd } from "../../agent/limits.js";
@@ -124,12 +128,25 @@ export async function runPrintMode(runtime: Runtime, context: ModeContext): Prom
   const format = context.args.outputFormat ?? "text";
   const stdinMode = context.args.noStdin ? "off" : context.args.stdin ? "explicit" : "auto";
   const piped = await readPromptStdin(io, context.prompt, stdinMode);
-  const prompt = joinPrompt(context.prompt, piped);
+  let prompt = joinPrompt(context.prompt, piped);
   if (prompt === "") {
     io.stderr(msg().print.print.needsPrompt);
     return ExitCode.Usage;
   }
   const session = currentSession(runtime);
+  // [#303] `/<名> 参数` 命中扩展命令：handled 直接输出 message、不调模型；prompt 改发其文本
+  let handledText: string | undefined;
+  const slash = parseSlash(prompt);
+  if (slash !== undefined) {
+    try {
+      const hosted = await runHostSlash(slash.name, slash.args, runtime, session);
+      if (hosted?.kind === "handled") handledText = hosted.message ?? "";
+      else if (hosted?.kind === "prompt") prompt = hosted.text;
+    } catch (error) {
+      io.stderr(`ama: ${errorText(error)}\n`);
+      return ExitCode.RuntimeError;
+    }
+  }
   let images: ImageBlock[];
   const resize = runtime.config.images?.resize;
   try {
@@ -197,9 +214,11 @@ export async function runPrintMode(runtime: Runtime, context: ModeContext): Prom
   });
   let failure: string | undefined;
   try {
-    await session.prompt(prompt, images.length > 0 ? { images } : {});
+    if (handledText === undefined)
+      await session.prompt(prompt, images.length > 0 ? { images } : {});
     const ended = lastAssistant(session)?.stopReason;
     if (
+      handledText === undefined &&
       signalled === undefined &&
       !stdoutClosed &&
       limit === undefined &&
@@ -214,15 +233,17 @@ export async function runPrintMode(runtime: Runtime, context: ModeContext): Prom
     offEpipe();
     unsubscribe();
   }
-  const last = lastAssistant(session);
-  const text = session.getLastAssistantText() ?? "";
+  // handled 没有模型回合：会话里更早的助手消息不算本次结果
+  const last = handledText === undefined ? lastAssistant(session) : undefined;
+  const text = handledText ?? session.getLastAssistantText() ?? "";
   const stopReason = failure !== undefined ? "error" : (last?.stopReason ?? "stop");
   if (format === "text") {
     // 部分模型在正文前多发空行：只去前导空行，保留首行缩进；json / stream-json 原样。
     const shown = text.replace(/^\s*\n/, "");
     if (shown !== "" && last?.stopReason !== "error")
       io.stdout(shown.endsWith("\n") ? shown : `${shown}\n`);
-  } else if (format === "json") {
+  } else if (format === "json" || (format === "stream-json" && handledText !== undefined)) {
+    // stream-json 本来只有事件行；handled 没有事件，就给一行与 json 相同的 result 对象
     const stats = session.getStats();
     io.stdout(
       `${toJsonLine({
