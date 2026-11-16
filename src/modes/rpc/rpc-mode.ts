@@ -76,6 +76,9 @@ export async function runRpcMode(
       session = next;
       unsubscribe = subscribe(next);
     },
+    notify(message, level) {
+      void write({ type: "notification", level, message });
+    },
     onBackgroundError(error) {
       void write({ type: "notification", level: "error", message: errorText(error) });
     },

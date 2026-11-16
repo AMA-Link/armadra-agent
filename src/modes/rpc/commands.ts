@@ -38,7 +38,7 @@ import type {
   RpcCommandType,
   RpcModelInfo,
 } from "../../rpc.js";
-import { availableCommands } from "../commands-core.js";
+import { availableCommands, parseSlash, runHostSlash } from "../commands-core.js";
 import { msg } from "../../i18n/index.js";
 import { sessionTrace } from "../../trace/query-session.js";
 
@@ -110,6 +110,8 @@ export interface RpcContext {
   readonly approvals: RpcApprovals;
   /** 会话被换掉后调用（模式据此重新订阅）。 */
   onSessionChanged(next: AgentSession): void;
+  /** [#301] 命令（宿主 / 扩展注册的斜杠命令）的文字输出：作 `notification` 事件发给客户端。 */
+  notify?(message: string, level: "info" | "warn" | "error"): void;
   /** 运行开始后提示命令自身的失败（应答已发出）。 */
   onBackgroundError(error: unknown): void;
   /** [W5-F] `get_tasks`：子 Agent 任务注册表的只读视图（W5-G 装配；缺省回空表）。 */
@@ -213,7 +215,7 @@ function commands(runtime: Runtime, session: AgentSession): RpcCommandInfo[] {
     ...availableCommands(runtime, session).map((c) => ({
       name: c.name,
       description: c.description,
-      source: "builtin" as const,
+      source: c.source ?? ("builtin" as const),
     })),
     ...runtime.resources.prompts.map((p) => ({ name: p.name, source: "template" as const })),
     ...runtime.resources.skills.map((s) => ({
@@ -225,14 +227,27 @@ function commands(runtime: Runtime, session: AgentSession): RpcCommandInfo[] {
 }
 
 export const handlers: RpcHandlers = {
-  prompt: (p, ctx) =>
-    startRun(ctx, () =>
-      ctx.session().prompt(p.message, {
+  prompt: async (p, ctx) => {
+    // [#301] `/<名>` 命中宿主 / 扩展注册的命令：先分派；handled 直接应答，prompt 改发其文本
+    let message = p.message;
+    const parsed = parseSlash(message);
+    const hosted =
+      parsed === undefined
+        ? undefined
+        : await runHostSlash(parsed.name, parsed.args, ctx.runtime, ctx.session());
+    if (hosted?.kind === "handled") {
+      if (hosted.message !== undefined) ctx.notify?.(hosted.message, "info");
+      return { disposition: "handled" as const };
+    }
+    if (hosted?.kind === "prompt") message = hosted.text;
+    return startRun(ctx, () =>
+      ctx.session().prompt(message, {
         ...(p.images !== undefined ? { images: p.images } : {}),
         ...(p.streamingBehavior !== undefined ? { streamingBehavior: p.streamingBehavior } : {}),
         ...(interruptFlag(p.interrupt) ? { interrupt: true } : {}),
       }),
-    ),
+    );
+  },
   steer: (p, ctx) =>
     startRun(ctx, () =>
       interruptFlag(p.interrupt)

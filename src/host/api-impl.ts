@@ -27,11 +27,13 @@ import type {
   HostAdapter,
   HostAdapterHandle,
   HostApi,
+  HostCommand,
   HostMode,
   HostRunner,
   InstructionSource,
 } from "./types.js";
 import { HOST_API_MINOR, HOST_API_VERSION } from "./types.js";
+import { HostCommandRegistry } from "./commands.js";
 import { HostResourceRegistry } from "./resources.js";
 import type { HostResource } from "../tools/resource-ref.js";
 import type { ToolDefinition, ToolRegistryApi } from "../tools/types.js";
@@ -124,15 +126,24 @@ export interface HostContext {
   readonly statuses: Set<Map<string, string>>;
   /** 晚绑定的通知函数（所有模块共用）。 */
   notify: HostNotify | undefined;
+  /** 全部模块经 `commands.register` 注册的斜杠命令。 */
+  readonly commands: HostCommandRegistry;
 }
 
-export function createHostContext(notify?: HostNotify): HostContext {
+export interface HostContextOptions {
+  notify?: HostNotify;
+  /** 保留的命令名（内置命令、别名、交互界面命令）；由装配方注入。 */
+  reservedCommand?: (name: string) => boolean;
+}
+
+export function createHostContext(options: HostContextOptions = {}): HostContext {
   return {
     instructions: [],
     broker: {},
     warming: [],
     statuses: new Set(),
-    notify,
+    notify: options.notify,
+    commands: new HostCommandRegistry(options.reservedCommand),
   };
 }
 
@@ -194,7 +205,9 @@ function validateTool(tool: ToolDefinition): void {
 
 export function createHostApi(
   deps: HostApiDeps,
-  context: HostContext = createHostContext(deps.notify),
+  context: HostContext = createHostContext({
+    ...(deps.notify !== undefined ? { notify: deps.notify } : {}),
+  }),
 ): HostApiBinding {
   const instructions = context.instructions;
   const token = Symbol("host-binding");
@@ -300,6 +313,10 @@ export function createHostApi(
     runners: Object.freeze({
       provide: (runner: HostRunner) => runners.provide(runner),
       onDone: (handler: RunnerDoneHandler) => runners.onDone(handler),
+    }),
+    commands: Object.freeze({
+      register: (command: HostCommand) => context.commands.register(command),
+      list: () => context.commands.list().map((c) => c.name),
     }),
     resources: Object.freeze({
       register: (resource: HostResource) => resources.register(resource),

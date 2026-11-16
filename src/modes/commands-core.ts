@@ -22,6 +22,7 @@ import type { ModelThinkingLevel } from "../ai/types.js";
 import type { SwitchRequest } from "../cli/compose-session.js";
 import type { Runtime } from "../cli/runtime.js";
 import { AmaError } from "../errors.js";
+import { runHostCommand } from "../host/commands.js";
 import {
   PERMISSION_MODE_ORDER,
   parsePermissionMode,
@@ -84,6 +85,8 @@ export interface CommandInfo {
   name: string;
   args?: string;
   description: string;
+  /** [#301] 经 `commands.register` 注册的命令（宿主适配器 / 本地扩展）；缺省为内置。 */
+  source?: "extension";
   /** 只在该能力可用时列出（`/help`、补全、RPC `get_commands`）；输入时照常分派。 */
   requires?: "memory" | "task";
 }
@@ -147,7 +150,7 @@ export const BUILTIN_COMMANDS: readonly CommandInfo[] = [
  * task = 模型能直接调 `task`，或能经 codemode 脚本调（`task` 已注册且 codemode 在活动集）。
  */
 export function availableCommands(
-  runtime: Pick<Runtime, "tools">,
+  runtime: Pick<Runtime, "tools" | "hostCommands">,
   session: Pick<AgentSession, "getTools">,
   list: readonly CommandInfo[] = BUILTIN_COMMANDS,
 ): CommandInfo[] {
@@ -159,10 +162,28 @@ export function availableCommands(
       : requires === "task"
         ? active.has("task") || (active.has("codemode") && registered.has("task"))
         : true;
-  return list.filter((c) => has(c.requires));
+  const extension: CommandInfo[] = (runtime.hostCommands?.list() ?? []).map((c) => ({
+    name: c.name,
+    description: c.description,
+    ...(c.args !== undefined ? { args: c.args } : {}),
+    source: "extension" as const,
+  }));
+  return [...list.filter((c) => has(c.requires)), ...extension];
 }
 
 const ALIASES: Readonly<Record<string, string>> = { quit: "exit", q: "exit", "?": "help" };
+
+/** 交互界面自己处理的命令（interactive/commands.ts 的 INTERACTIVE_COMMANDS；测试锁定一致）。 */
+export const INTERACTIVE_COMMAND_NAMES: readonly string[] = ["tree", "permissions"];
+
+/** [#301] 保留的命令名：内置命令、别名与交互界面命令；`commands.register` 不得占用。 */
+export function isReservedCommandName(name: string): boolean {
+  return (
+    BUILTIN_COMMANDS.some((c) => c.name === name) ||
+    Object.hasOwn(ALIASES, name) ||
+    INTERACTIVE_COMMAND_NAMES.includes(name)
+  );
+}
 
 export function parseSlash(line: string): { name: string; args: string } | undefined {
   const m = /^\/([A-Za-z?][\w-]*)(?:\s+([\s\S]*))?$/.exec(line.trim());
@@ -373,6 +394,33 @@ export async function runSlashCommand(
     case "memory":
       return { kind: "handled", message: msg().interactive.commands.unavailable(name) };
     default:
-      return undefined;
+      return extensionCommand(name, args, ctx);
   }
+}
+
+/** [#301] 内置命令之后、提示模板之前：宿主适配器 / 扩展注册的命令；没有同名的返回 undefined。 */
+async function extensionCommand(
+  name: string,
+  args: string,
+  ctx: CommandContext,
+): Promise<CommandResult | undefined> {
+  return runHostSlash(name, args, ctx.runtime, ctx.session());
+}
+
+/**
+ * [#301] 只查宿主 / 扩展注册的命令（RPC 的 `prompt` 没有内置命令分派，只认它）；`name` 已按 `parseSlash`
+ * 规整。没有同名命令返回 undefined。
+ */
+export async function runHostSlash(
+  name: string,
+  args: string,
+  runtime: Pick<Runtime, "hostCommands" | "mode">,
+  session: Pick<AgentSession, "state">,
+): Promise<Extract<CommandResult, { kind: "handled" | "prompt" }> | undefined> {
+  const command = runtime.hostCommands?.get(name);
+  if (command === undefined) return undefined;
+  return runHostCommand(command, args, {
+    mode: runtime.mode,
+    session: { id: () => session.state.sessionId, cwd: () => session.state.cwd },
+  });
 }

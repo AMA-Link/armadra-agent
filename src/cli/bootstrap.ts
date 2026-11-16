@@ -53,6 +53,7 @@ import {
 import type { LoadedResources, Runtime } from "./runtime.js";
 import { resolveSystemPromptArg } from "./system-prompt-arg.js";
 import { memoryEnvOverride, resolveMemory } from "./compose-memory.js";
+import { isReservedCommandName } from "../modes/commands-core.js";
 import { msg, resolveLocale, setLocale } from "../i18n/index.js";
 
 /** §11.1 第 3–14 步。 */
@@ -254,7 +255,7 @@ export async function bootstrap(
     if (level === "warn" || level === "error")
       warn(m().eventWarning(message, detail instanceof Error ? detail.message : undefined));
   });
-  const hostContext = createHostContext();
+  const hostContext = createHostContext({ reservedCommand: isReservedCommandName });
   const hostDeps: HostApiDeps = {
     mode,
     env: io.env as NodeJS.ProcessEnv,
@@ -439,6 +440,7 @@ export async function bootstrap(
       hooks,
       host,
       extensions,
+      hostCommands: hostContext.commands,
       hostStatus: () => mergedHostStatus(hostContext),
       permission,
       tools,

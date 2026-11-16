@@ -16,6 +16,7 @@ import type {
   HostMode,
   InstructionSource,
 } from "../host/types.js";
+import type { HostCommandSource } from "../host/commands.js";
 import type { PermissionPipelineApi } from "../permissions/types.js";
 import type { SessionManagerApi } from "../session/types.js";
 import type { ToolRegistryApi } from "../tools/types.js";
@@ -87,6 +88,8 @@ export interface Runtime {
   readonly extensions?: readonly HostAdapterHandle[];
   /** [#301] 宿主适配器与全部扩展 `ui.setStatus` 合并后的状态表（状态栏）。 */
   hostStatus?(): ReadonlyMap<string, string>;
+  /** [#301] 宿主适配器与扩展经 `commands.register` 注册的斜杠命令（分派与列出）。 */
+  readonly hostCommands?: HostCommandSource;
   readonly permission: PermissionPipelineApi;
   readonly tools: ToolRegistryApi;
   readonly approvals: RuntimeApprovals;
