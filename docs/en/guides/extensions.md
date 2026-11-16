@@ -81,7 +81,10 @@ When an extension's `create()` throws, times out or returns no adapter, everythi
 - **`args`**: everything after the command name, trimmed. `description` and `args` (a placeholder such as `"[day]"`) appear in `/help` and completion. No argument completion.
 - **`ctx`**: deliberately small, `{ mode, session: { id(), cwd() } }`. For more (send messages, read state) use the `api` you got at registration.
 - **Result**: `{ kind: "handled", message? }` (`message` is shown to the user and does not enter the conversation) or `{ kind: "prompt", text }` (send this text as the user prompt); `undefined` means `{ kind: "handled" }`; any other shape is an error, and an error thrown by `run` is shown as an error without affecting the session.
-- **Modes**: interactive, line and RPC. In RPC, a `prompt` whose `message` looks like `/name args` and matches an extension command is dispatched inside ama: `handled` emits `message` as a `notification` event and returns `disposition: "handled"` without starting a turn; `prompt` sends its `text` instead. One-shot `-p` runs and ACP do not dispatch slash commands.
+- **Modes**: interactive, line, RPC, `-p` and ACP. A prompt that is entirely `/name args` and matches an extension command is dispatched inside ama; `prompt` always sends its `text` instead, and `handled` delivers `message` per mode, never starting a model turn:
+  - RPC: `message` is emitted as a `notification` event and the call returns `disposition: "handled"`.
+  - `-p`: `message` is written to stdout and the run exits 0 (`--output-format text` prints it as is; `json` and `stream-json` print one `result` object whose `text` is `message`, with zero usage); if `run` throws, stderr gets one `ama: <error>` line and the exit code is 1.
+  - ACP: `message` is emitted as one `agent_message_chunk` and `session/prompt` ends with `end_turn` (zero usage); if `run` throws, `session/prompt` answers with an internal error. `available_commands_update` lists extension commands (`args` becomes `input.hint`), shadowing same-name prompt templates.
 - **Listing**: `/help`, interactive completion, RPC `get_commands` (`source: "extension"`).
 
 ## Trust

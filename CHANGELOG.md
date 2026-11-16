@@ -19,6 +19,8 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 
 - **Extension activation failures are rolled back (#304)**: when an extension's `create()` throws, times out or returns no adapter, its tools (and tool disables), event subscriptions, commands, instructions, status keys, warming handlers, broker (if it owns the slot), runners and resources are revoked, and later registration calls from that module (such as late ones after a timeout) are ignored with a warning. The system prompt and tool table end up byte-identical to running without it. Host adapter failure rules are unchanged.
 
+- **Extension slash commands in `-p` and ACP (#303)**: a `-p` prompt or ACP `session/prompt` that is entirely `/name args` and matches an extension command is dispatched inside ama. `handled` prints `message` to stdout and exits 0 (`json` and `stream-json` print one `result` object) or, in ACP, emits it as an `agent_message_chunk` and ends with `end_turn`, with no model turn; `prompt` sends its `text`; a throwing command exits 1 in `-p` and answers an internal error in ACP. ACP `available_commands_update` lists extension commands (`args` as `input.hint`), shadowing same-name prompt templates.
+
 ### Maintenance
 
 - **Host API docs**: the minor-version table now says minor 2 and 3 first shipped in 0.16.0 (they were still marked unreleased). The local-extensions design draft became a current-state guide (`docs/guides/extensions.md`, with an English translation).

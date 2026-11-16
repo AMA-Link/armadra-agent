@@ -131,7 +131,7 @@ Zed 的配置（`settings.json`）：
 
 - `mode` 与 `modes` / `session/set_mode` 是同一状态：规范要求客户端有 `configOptions` 时用它代替 `modes`（Zed 给了就不再看 `modes`），所以模式也放进配置项；`modes` 照给，留给只认 `modes` 的客户端。设 `mode` 与 `session/set_mode` 一样按会话记，变化时 `current_mode_update` 与 `config_option_update` 都发。没有 boolean 型配置项。
 - `session/set_config_option`：`mode` → 改权限模式，`model` → 切模型，`thinking` → 改思考级别，答复是全部配置项的新状态；未知 id、找不到的模型、不认识的级别回 invalid params（-32602）。模型或级别在会话里变了（含 plan 流程自动切换）时发 `config_option_update`。
-- 命令表：Skill 列为 `skill:<名字>`，提示模板列为 `<名字>`（frontmatter 的 `argument-hint` 作 `input.hint`）。这两类在 prompt 文本里本来就会展开（`/skill:<名字> …`、`/<名字> …`）。`/new`、`/compact` 等内置斜杠命令在 ACP 下不执行，不列。
+- 命令表：Skill 列为 `skill:<名字>`，提示模板列为 `<名字>`（frontmatter 的 `argument-hint` 作 `input.hint`）。这两类在 prompt 文本里本来就会展开（`/skill:<名字> …`、`/<名字> …`）。[#303] 宿主适配器与本地扩展注册的命令也列为 `<名字>`（`args` 作 `input.hint`），遮住同名提示模板；`session/prompt` 的文本整段形如 `/<名字> 参数` 且命中时由 ama 分派：`handled` 把 `message` 作为一条 `agent_message_chunk` 发出并以 `end_turn` 结束（不开模型回合，用量为 0），`prompt` 改发其 `text`，命令抛错则答复 internal error。`/new`、`/compact` 等内置斜杠命令在 ACP 下不执行，不列。
 
 ### 退出
 

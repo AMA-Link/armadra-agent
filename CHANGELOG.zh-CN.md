@@ -18,6 +18,8 @@
 
 - **扩展激活失败时撤回已注册内容（#304）**：扩展的 `create()` 抛错、超时或没有返回适配器时，它注册的工具（及工具禁用）、事件订阅、命令、指令、状态键、保温处理器、broker（自己持有槽位时）、runner 与资源都会撤回；该模块之后再调用注册类方法（如超时后迟到的注册）一律忽略并 warning。系统提示与工具表回到没有该扩展时逐字节相同。宿主适配器的失败规则不变。
 
+- **`-p` 与 ACP 分派扩展斜杠命令（#303）**：`-p` 的提示或 ACP `session/prompt` 的文本整段形如 `/名 参数` 且命中扩展命令时在 ama 内分派。`handled` 把 `message` 写到 stdout 并退出 0（`json` 与 `stream-json` 给一行 `result` 对象），ACP 下则作为 `agent_message_chunk` 发出并以 `end_turn` 结束，都不开模型回合；`prompt` 改发其 `text`；命令抛错时 `-p` 退出 1，ACP 答复 internal error。ACP 的 `available_commands_update` 列出扩展命令（`args` 作 `input.hint`），遮住同名提示模板。
+
 ### 维护
 
 - **宿主 API 文档**：小版本表里 2、3 原标「未发布」，实际在 0.16.0 已发布，已更正。本地扩展设计草案改为现状指南（`docs/guides/extensions.md`，附英文译本）。

@@ -76,7 +76,10 @@ export function create(api) {
 - **`args`**：命令名之后的整段文本（已去掉首尾空白）；`description` 与 `args`（占位提示，如 `"[day]"`）显示在 `/help` 与补全里。不做参数补全。
 - **`ctx`**：刻意很小——`{ mode, session: { id(), cwd() } }`。要更多能力（发消息、读状态）用注册时拿到的 `api`。
 - **返回值**：`{ kind: "handled", message? }`（`message` 显示给用户，不进对话）或 `{ kind: "prompt", text }`（改发这段文本作为用户提示）；返回 `undefined` 等同 `{ kind: "handled" }`；其它形状按错误处理，`run` 自己抛的错也按错误显示，不影响会话。
-- **在哪些模式可用**：交互、line、RPC。RPC 里 `prompt` 的 `message` 形如 `/名 参数` 且命中扩展命令时在 ama 内分派：`handled` 把 `message` 作为 `notification` 事件发出并返回 `disposition: "handled"`，不开回合；`prompt` 改发其 `text`。`-p` 单次运行与 ACP 不分派斜杠命令。
+- **在哪些模式可用**：交互、line、RPC、`-p`、ACP。提示整段形如 `/名 参数` 且命中扩展命令时在 ama 内分派，`prompt` 一律改发其 `text`；`handled` 按模式给出 `message`，都不开模型回合：
+  - RPC：`message` 作为 `notification` 事件发出，返回 `disposition: "handled"`。
+  - `-p`：`message` 写到 stdout 后退出 0（`--output-format text` 原样输出，`json` 与 `stream-json` 给一行 `result` 对象，`text` 是 `message`、用量为 0）；`run` 抛错时 stderr 一行 `ama: <错误>`，退出码 1。
+  - ACP：`message` 作为一条 `agent_message_chunk` 发出，`session/prompt` 以 `end_turn` 结束（用量为 0）；`run` 抛错时 `session/prompt` 答复 internal error。`available_commands_update` 列出扩展命令（`args` → `input.hint`），遮住同名提示模板。
 - **列出**：`/help`、交互补全、RPC `get_commands`（`source: "extension"`）。
 
 ## 信任
