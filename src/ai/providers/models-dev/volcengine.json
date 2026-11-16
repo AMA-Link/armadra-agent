@@ -155,7 +155,7 @@
         "field": "reasoning_content"
       },
       "limit": {
-        "context": 256000,
+        "context": 1024000,
         "output": 256000
       },
       "modalities": {
@@ -244,7 +244,7 @@
         "field": "reasoning_content"
       },
       "limit": {
-        "context": 256000,
+        "context": 1024000,
         "output": 256000
       },
       "modalities": {
