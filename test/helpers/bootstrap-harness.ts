@@ -123,6 +123,9 @@ export function toolRegistry(): ToolRegistryApi {
   return {
     register: (tool) => void tools.set(tool.name, tool),
     disable: (name) => void disabled.add(name),
+    enable: (name) => void disabled.delete(name),
+    isDisabled: (name) => disabled.has(name),
+    unregister: (name) => tools.delete(name),
     get: (name) => tools.get(name),
     list,
     active: () =>

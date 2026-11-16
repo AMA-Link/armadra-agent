@@ -18,6 +18,7 @@ export type KnownErrorCode =
   | "provider_not_found"
   | "tool_not_found"
   | "tool_exists" // HostApi.tools.register 同名
+  | "runner_exists" // HostApi.runners.provide 同 id 已被其它提供者占用
   | "config_invalid"
   | "profile_invalid"
   | "session_not_found"

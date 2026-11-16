@@ -5,7 +5,7 @@
  *   不加载项目级。
  * - 激活：每个模块一个独立的 {@link HostApiBinding}，共享工具注册表、事件总线、broker 槽、资源注册表与
  *   保温处理器（共享状态见 api-impl 的 `HostContext`）；任何失败（加载、版本不等、create 抛错或超时、
- *   没有返回适配器）只产生 warning 并跳过，不阻止启动（宿主适配器的失败规则不变）。
+ *   没有返回适配器）撤回该模块已注册的全部内容（#304）、只产生 warning 并跳过，不阻止启动（宿主适配器的失败规则不变）。
  * - 释放：按加载的逆序 dispose，失败只回调 onError。
  */
 
@@ -89,16 +89,20 @@ export async function activateExtensions(
     input.warn(msg().cli.bootstrap.extensionSkipped(path, reason));
   };
   for (const path of input.paths) {
+    // [#304] 失败（抛错 / 超时 / 未返回适配器）一律撤回它已注册的内容；之后迟到的注册被忽略
+    let binding: HostApiBinding | undefined;
     try {
       const module = await loadHostModule(path);
-      const binding = input.createBinding();
+      binding = input.createBinding();
       const adapter = await createAdapter(module, binding.api, path, input.timeoutMs);
       if (adapter === undefined) {
+        binding.revoke();
         skip(path, msg().cli.bootstrap.extensionNotActivated);
         continue;
       }
       handles.push(binding.handle(adapter, path));
     } catch (error) {
+      binding?.revoke();
       skip(path, error instanceof StartupError ? error.message : errorText(error));
     }
   }

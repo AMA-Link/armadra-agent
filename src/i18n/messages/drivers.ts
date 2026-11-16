@@ -92,6 +92,9 @@ export const en = {
     warmingNeedsFunction: "cache.onWarmingDecision: needs a function",
     runnerNeedsIdStart: "runners.provide: needs a runner with id and start",
     runnerDoneNeedsFunction: "runners.onDone: needs a function",
+    runnerExists: (id: string) => `runners.provide: runner ${id} already exists`,
+    revokedIgnored: (what: string) =>
+      `${what}: ignored, this module's registrations were revoked (activation failed)`,
     resourceFrozen:
       "resources.register: resources must be registered inside create(); the list is fixed once the session starts",
     resourceNotObject: "resources.register: the resource must be an object",
@@ -185,6 +188,8 @@ export const zh = {
     warmingNeedsFunction: "cache.onWarmingDecision：需要函数",
     runnerNeedsIdStart: "runners.provide：需要带 id 与 start 的 runner",
     runnerDoneNeedsFunction: "runners.onDone：需要函数",
+    runnerExists: (id) => `runners.provide：runner ${id} 已存在`,
+    revokedIgnored: (what) => `${what}：已忽略，本模块的注册已撤回（激活失败）`,
     resourceFrozen: "resources.register：资源只能在 create() 里注册，会话开始后列表已固定",
     resourceNotObject: "resources.register：资源应为对象",
     resourceBadScheme: (scheme) =>

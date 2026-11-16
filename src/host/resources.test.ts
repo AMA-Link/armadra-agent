@@ -25,6 +25,9 @@ function stubRegistry(): ToolRegistryApi {
   return {
     register: () => undefined,
     disable: () => undefined,
+    enable: () => undefined,
+    isDisabled: () => false,
+    unregister: () => false,
     get: () => undefined,
     list: () => [],
     active: () => [],
