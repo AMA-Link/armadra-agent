@@ -231,6 +231,10 @@ pnpm run ci              # typecheck, format, dependency, i18n and doc-link chec
 AMA_E2E=1 pnpm test:e2e  # bundle-level end-to-end tests with the free fake provider
 ```
 
+`pnpm install` also points `core.hooksPath` at `.githooks`: before `git push`, `scripts/hooks/pre-push.mjs` checks only
+what the push changes, the same way CI picks its jobs, and blocks the push on failure. Skip it once with
+`git push --no-verify`, or `ARMADRA_SKIP_PREPUSH=1` (everything) / `ARMADRA_SKIP_PREPUSH=test,e2e` (named steps).
+
 Tests use the scripted `fake` provider, never a real model. Conventions are in [AGENTS.md](AGENTS.md) and
 [CONTRIBUTING](.github/CONTRIBUTING.md). Releases are cut by pushing a `v<version>` tag: CI creates the GitHub Release
 and publishes to npm through trusted publishing.
