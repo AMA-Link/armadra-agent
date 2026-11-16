@@ -113,9 +113,10 @@ The hash is computed before loading; a file swapped between hashing and loading 
 
 A **directory extension** is hashed as a whole tree. The `trust.json` entry shape is unchanged (`path` is the directory, `sha256` the tree hash), and a change to any file in the tree asks again, so multi-file extensions belong in a directory rather than trusting only the entry:
 
-- Every regular file under the directory takes part, sorted by its forward-slash relative path in byte order (independent of platform, traversal and creation order). Each item writes `<F|L> <path byte length> <path> <content byte length>\n` followed by the content bytes, after the fixed prefix `armadra-ext-tree-v1\n`. Path and content are length-prefixed, so different trees cannot produce the same byte stream.
-- Entries named `.git` at any depth are skipped; symlinks (`L`) are hashed by their target string and **not followed**; sockets, fifos and the like are ignored. `node_modules` is not special and is counted.
-- Caps: at most 2000 files and 50 MiB in total. Beyond that the extension is skipped with the reason "directory extension is too large"; it is neither asked about nor loaded.
+- Every regular file under the directory takes part, sorted by its forward-slash relative path in byte order (independent of platform, traversal and creation order). Each item writes `F <path byte length> <path> <content byte length>\n` followed by the content bytes, after the fixed prefix `armadra-ext-tree-v2\n`. Path and content are length-prefixed, so different trees cannot produce the same byte stream.
+- **Nothing is skipped** (`.git` and `node_modules` included): a skipped file can still be `import`ed, so skipping would open a way around trust.
+- Symlinks are **followed**: hashed by their target's content (also when it lies outside the directory), and directory links are walked into; a cyclic or dangling link counts as unreadable. Sockets, fifos and the like are ignored.
+- Caps: at most 2000 files, 2000 directories, 32 levels deep and 50 MiB in total. Beyond that the extension is skipped with the reason "directory extension is too large"; it is neither asked about nor loaded.
 - The interactive prompt and `ama doctor` mark directories.
 
 Single-file extensions are unchanged: only that file is hashed, and files it `import`s are not covered; use a directory extension, or bundle dependencies into one file.

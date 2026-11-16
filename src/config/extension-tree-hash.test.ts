@@ -26,7 +26,7 @@ describe("sha256OfTree", () => {
     put(root, "index.mjs", "ab");
     put(root, "lib/x.js", "c");
     const expected = createHash("sha256")
-      .update("armadra-ext-tree-v1\nF 9 index.mjs 2\nab")
+      .update("armadra-ext-tree-v2\nF 9 index.mjs 2\nab")
       .update("F 8 lib/x.js 1\nc")
       .digest("hex");
     expect(sha256OfTree(root)).toBe(expected);
@@ -59,13 +59,15 @@ describe("sha256OfTree", () => {
     expect(sha256OfTree(a)).not.toBe(sha256OfTree(b));
   });
 
-  it("跳过任意层级的 .git", () => {
+  it("不跳过 .git：其中的文件同样计入（能被 import 就必须受哈希保护）", () => {
     const a = join(root, "a");
     put(a, "index.mjs", "1");
     const base = sha256OfTree(a);
-    put(a, ".git/HEAD", "ref");
-    put(a, "lib/.git/x", "y");
-    expect(sha256OfTree(a)).toBe(base);
+    put(a, ".git/x.mjs", "evil");
+    const withGit = sha256OfTree(a);
+    expect(withGit).not.toBe(base);
+    put(a, ".git/x.mjs", "evil2");
+    expect(sha256OfTree(a)).not.toBe(withGit);
   });
 
   it("上限：文件数与总字节数超出抛 TreeLimitError，等于上限不算超", () => {
@@ -76,30 +78,56 @@ describe("sha256OfTree", () => {
     expect(() => sha256OfTree(root, { maxFiles: 10, maxBytes: 3 })).toThrow(TreeLimitError);
   });
 
+  it("上限：目录数与深度超出抛 TreeLimitError", () => {
+    put(root, "a/b/c/x", "1");
+    expect(() => sha256OfTree(root, { maxFiles: 10, maxBytes: 10, maxDepth: 3 })).not.toThrow();
+    expect(() => sha256OfTree(root, { maxFiles: 10, maxBytes: 10, maxDepth: 2 })).toThrow(
+      TreeLimitError,
+    );
+    expect(() => sha256OfTree(root, { maxFiles: 10, maxBytes: 10, maxDirs: 4 })).not.toThrow();
+    expect(() => sha256OfTree(root, { maxFiles: 10, maxBytes: 10, maxDirs: 3 })).toThrow(
+      TreeLimitError,
+    );
+  });
+
   it("读不了的根目录抛原始错误（不是 TreeLimitError）", () => {
     expect(() => sha256OfTree(join(root, "missing"))).toThrow(/ENOENT/);
   });
 
-  it.skipIf(process.platform === "win32")("符号链接按目标字符串计入，不跟随", () => {
+  it.skipIf(process.platform === "win32")("符号链接跟随：按目标内容计入，目录链接递归", () => {
     const a = join(root, "a");
     const outside = join(root, "outside.txt");
     writeFileSync(outside, "one");
     put(a, "index.mjs", "1");
     symlinkSync(outside, join(a, "link"));
     const base = sha256OfTree(a);
-    // 目标文件内容变化不影响哈希（没有跟随）
+    // 树外目标的内容变化也会改变哈希
     writeFileSync(outside, "two");
-    expect(sha256OfTree(a)).toBe(base);
-    // 目标字符串变化才影响
-    rmSync(join(a, "link"));
-    symlinkSync(join(root, "other.txt"), join(a, "link"));
     expect(sha256OfTree(a)).not.toBe(base);
-    // 指向目录的链接也不递归
+    // 与把同样内容的普通文件放在原处等价（只看内容）
+    const plain = join(root, "plain");
+    put(plain, "index.mjs", "1");
+    put(plain, "link", "two");
+    expect(sha256OfTree(a)).toBe(sha256OfTree(plain));
+    // 指向目录的链接递归进去
     const b = join(root, "b");
     put(b, "index.mjs", "1");
-    symlinkSync(a, join(b, "dir-link"));
+    symlinkSync(join(root, "shared"), join(b, "lib"));
+    put(root, "shared/x.js", "x");
     const withLink = sha256OfTree(b);
-    put(a, "extra.js", "x");
-    expect(sha256OfTree(b)).toBe(withLink);
+    put(root, "shared/x.js", "y");
+    expect(sha256OfTree(b)).not.toBe(withLink);
+  });
+
+  it.skipIf(process.platform === "win32")("成环或断开的链接按读不了抛错", () => {
+    const a = join(root, "a");
+    put(a, "index.mjs", "1");
+    symlinkSync(a, join(a, "loop"));
+    expect(() => sha256OfTree(a)).toThrow(/cycle/);
+    expect(() => sha256OfTree(a)).not.toThrow(TreeLimitError);
+    const b = join(root, "b");
+    put(b, "index.mjs", "1");
+    symlinkSync(join(root, "missing"), join(b, "dangling"));
+    expect(() => sha256OfTree(b)).toThrow(/ENOENT/);
   });
 });
