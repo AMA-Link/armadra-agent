@@ -9,12 +9,7 @@
 import { isAbsolute } from "node:path";
 import { msg } from "../i18n/index.js";
 import { MAX_TIMER_MS } from "../tools/timers.js";
-import {
-  MIN_CONTEXT_BUDGET,
-  type AmaConfig,
-  type AuthFile,
-  type ProfileFile,
-} from "./types.js";
+import { MIN_CONTEXT_BUDGET, type AmaConfig, type AuthFile, type ProfileFile } from "./types.js";
 import {
   Checker,
   THINKING_LEVELS,
