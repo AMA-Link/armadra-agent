@@ -252,7 +252,12 @@ export function createStartupUi(options: StartupUiOptions = {}): Required<Intera
     async promptExtensions(files) {
       const m = msg().interactive.startup.ui;
       const choices = trustChoices();
-      const shown = files.slice(0, 4).flatMap((f) => [`${f.path}`, `  sha256 ${f.sha256}`]);
+      const shown = files
+        .slice(0, 4)
+        .flatMap((f) => [
+          f.directory === true ? `${f.path}  ${m.extensionDirectory}` : f.path,
+          `  sha256 ${f.sha256}`,
+        ]);
       if (files.length > 4) shown.push(m.moreResources(files.length - 4));
       const picked = await askSelect(r, {
         title: m.extensionsTitle,

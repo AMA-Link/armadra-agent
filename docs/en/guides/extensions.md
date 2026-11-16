@@ -36,7 +36,7 @@ A module is `.mjs` (ESM) or `.cjs`; exporting `default` or named `hostApi` + `cr
 
 ## Location and loading
 
-- **User-level directory**: `<configDir>/extensions/*.{mjs,cjs}` (default `~/.config/ama/extensions/`, changeable with `AMA_CONFIG_DIR`), sorted by file name.
+- **User-level directory**: under `<configDir>/extensions/`, single files `*.{mjs,cjs}` and **directory extensions** `<name>/index.{mjs,cjs}` (`index.mjs` wins), sorted together by entry name (file or directory name; default `~/.config/ama/extensions/`, changeable with `AMA_CONFIG_DIR`). Subdirectories without an `index.*` are ignored.
 - **Profile**: `extensions: ["/abs/a.mjs", …]` (absolute paths), after the user-level directory; a path is loaded once.
 - **No project level**: `.ama/extensions/` in a repository is not loaded. An extension runs with the process's permissions and can register tools, which is arbitrary code execution, so it does not ship with repositories.
 - **Order**: the host adapter activates first; extensions come after it and before the session is assembled (startup step 13).
@@ -86,7 +86,7 @@ When an extension's `create()` throws, times out or returns no adapter, everythi
 
 ## Trust
 
-Extensions run with the process's permissions, so they must be trusted before loading. The decision is recorded by the **sha256 of the file content** in the `extensions` section of the user-level `trust.json`:
+Extensions run with the process's permissions, so they must be trusted before loading. The decision is recorded by the **sha256 of the file content** (for a directory extension, the sha256 of the whole directory tree) in the `extensions` section of the user-level `trust.json`:
 
 ```json
 {
@@ -108,11 +108,18 @@ Decision order:
 
 The hash is computed before loading; a file swapped between hashing and loading is out of scope (the local user directory is already one trust domain).
 
-Only the entry file is hashed: files the extension `import`s are not covered, and changing them does not ask again. Bundle dependencies into a single file.
+A **directory extension** is hashed as a whole tree. The `trust.json` entry shape is unchanged (`path` is the directory, `sha256` the tree hash), and a change to any file in the tree asks again, so multi-file extensions belong in a directory rather than trusting only the entry:
+
+- Every regular file under the directory takes part, sorted by its forward-slash relative path in byte order (independent of platform, traversal and creation order). Each item writes `<F|L> <path byte length> <path> <content byte length>\n` followed by the content bytes, after the fixed prefix `armadra-ext-tree-v1\n`. Path and content are length-prefixed, so different trees cannot produce the same byte stream.
+- Entries named `.git` at any depth are skipped; symlinks (`L`) are hashed by their target string and **not followed**; sockets, fifos and the like are ignored. `node_modules` is not special and is counted.
+- Caps: at most 2000 files and 50 MiB in total. Beyond that the extension is skipped with the reason "directory extension is too large"; it is neither asked about nor loaded.
+- The interactive prompt and `ama doctor` mark directories.
+
+Single-file extensions are unchanged: only that file is hashed, and files it `import`s are not covered; use a directory extension, or bundle dependencies into one file.
 
 ## `ama doctor`
 
-`ama doctor` has a "Local extensions" section: each file's path, the first 12 hex digits of its sha256 and its state: **enabled** (a matching trusted record) or **skipped** with the reason (not trusted, content changed since it was trusted, declined, unreadable, `--no-trust`). Doctor only reads files and trust records and **never runs extension code**, so reasons that only loading can reveal (load failure, version mismatch, `create()` failure, no adapter returned) are not shown there; they appear as warnings in startup output (stderr for `-p` and RPC, the message area in interactive mode).
+`ama doctor` has a "Local extensions" section: each file's path, the first 12 hex digits of its sha256 and its state: **enabled** (a matching trusted record) or **skipped** with the reason (not trusted, content changed since it was trusted, declined, unreadable, directory extension too large, `--no-trust`); directory extensions are marked `[directory]` and the hash prefix is the tree hash. Doctor only reads files and trust records and **never runs extension code**, so reasons that only loading can reveal (load failure, version mismatch, `create()` failure, no adapter returned) are not shown there; they appear as warnings in startup output (stderr for `-p` and RPC, the message area in interactive mode).
 
 ## Typical uses
 

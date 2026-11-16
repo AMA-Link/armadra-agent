@@ -145,6 +145,7 @@ function extensionsSection(report: Report, level: UserLevel, noTrust: boolean): 
         info.path,
         m.extensionSha(info.sha256),
         reason === undefined ? undefined : reasons[reason],
+        info.directory === true,
       ),
     );
   }

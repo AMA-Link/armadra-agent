@@ -157,7 +157,9 @@ export type ModeRunner = (runtime: Runtime, context: ModeContext) => Promise<num
 export interface InteractiveUi {
   promptTrust?(cwd: string, resources: readonly string[]): Promise<TrustPromptAnswer>;
   /** [#301] 本地扩展首次出现或内容变化时询问（一次，列出全部待定文件的路径与 sha256）。 */
-  promptExtensions?(files: readonly { path: string; sha256: string }[]): Promise<TrustPromptAnswer>;
+  promptExtensions?(
+    files: readonly { path: string; sha256: string; directory?: boolean }[],
+  ): Promise<TrustPromptAnswer>;
   /** `--resume` 无 id：返回会话 id，undefined = 用户取消（退出码 5）。 */
   pickSession?(items: readonly SessionListItem[]): Promise<string | undefined>;
   /** 无 key / 无模型时选择模型；返回 `provider/id`，undefined = 取消（退出码 4）。 */

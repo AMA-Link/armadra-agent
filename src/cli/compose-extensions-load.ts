@@ -3,7 +3,7 @@
  * 资源注册表在它之后冻结。
  */
 
-import { decideExtensions } from "../config/extension-trust.js";
+import { decideExtensions, type ExtensionPromptFile } from "../config/extension-trust.js";
 import type { TrustPromptAnswer } from "../config/trust.js";
 import { type HostApiDeps, type HostContext, createHostApi } from "../host/api-impl.js";
 import { activateExtensions, discoverExtensions } from "../host/extensions.js";
@@ -18,9 +18,7 @@ export interface LoadExtensionsInput {
   /** `--no-trust`。 */
   noTrust: boolean;
   interactive: boolean;
-  prompt?:
-    | ((files: readonly { path: string; sha256: string }[]) => Promise<TrustPromptAnswer>)
-    | undefined;
+  prompt?: ((files: readonly ExtensionPromptFile[]) => Promise<TrustPromptAnswer>) | undefined;
   warn(message: string): void;
 }
 
