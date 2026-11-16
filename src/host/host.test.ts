@@ -38,6 +38,12 @@ export function stubRegistry(names: string[] = ["read", "bash", "task"]): ToolRe
       sources.set(tool.name, source);
     },
     disable: (name) => void disabled.add(name),
+    enable: (name) => void disabled.delete(name),
+    isDisabled: (name) => disabled.has(name),
+    unregister: (name) => {
+      sources.delete(name);
+      return tools.delete(name);
+    },
     get: (name) => tools.get(name),
     list,
     active: () =>

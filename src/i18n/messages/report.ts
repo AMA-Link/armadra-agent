@@ -256,8 +256,14 @@ export const en = {
     extensionsNote:
       "Listed from files and trust records only; doctor never runs extension code, so load failures show at startup",
     extensionsNone: "none (user-level extensions/ and profile extensions are empty)",
-    extensionLine: (enabled: boolean, path: string, sha: string, reason: string | undefined) =>
-      `${enabled ? "enabled" : "skipped"}  ${path}  sha256 ${sha}${reason === undefined ? "" : `  (${reason})`}`,
+    extensionLine: (
+      enabled: boolean,
+      path: string,
+      sha: string,
+      reason: string | undefined,
+      directory: boolean,
+    ) =>
+      `${enabled ? "enabled" : "skipped"}  ${directory ? "[directory] " : ""}${path}  sha256 ${sha}${reason === undefined ? "" : `  (${reason})`}`,
     extensionSha: (sha256: string | undefined) => sha256?.slice(0, 12) ?? "-",
     keysTitle: "Key sources (sources only, never values)",
     authMode: (mode: string, path: string) => `auth.json mode ${mode}, should be 600: ${path}`,
@@ -536,8 +542,8 @@ export const zh = {
     extensionsTitle: "本地扩展",
     extensionsNote: "只按文件与信任记录列出；doctor 不执行扩展代码，加载失败在启动时才会出现",
     extensionsNone: "无（用户级 extensions/ 与 profile 的 extensions 都为空）",
-    extensionLine: (enabled, path, sha, reason) =>
-      `${enabled ? "启用" : "跳过"}  ${path}  sha256 ${sha}${reason === undefined ? "" : `  （${reason}）`}`,
+    extensionLine: (enabled, path, sha, reason, directory) =>
+      `${enabled ? "启用" : "跳过"}  ${directory ? "[目录] " : ""}${path}  sha256 ${sha}${reason === undefined ? "" : `  （${reason}）`}`,
     extensionSha: (sha256) => sha256?.slice(0, 12) ?? "-",
     keysTitle: "Key 来源（只显示来源，不显示值）",
     authMode: (mode, path) => `auth.json 权限 ${mode}，应为 600：${path}`,

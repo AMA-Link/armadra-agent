@@ -12,7 +12,8 @@
  *   之后 `buildConfigOptions` 同步取（映射器的 `extras()` 是同步的）。没准备过时只列本地供应商与当前模型。
  * - `applyConfigOption`：`session/set_config_option` → `setModel()` / `setThinkingLevel()`；未知 id、
  *   非字符串值、找不到的模型、不认识的级别回 invalid params。
- * - `availableCommands`：skills → `skill:<name>`，提示模板 → `<name>`（`argumentHint` → `input.hint`）。
+ * - `availableCommands`：skills → `skill:<name>`，提示模板 → `<name>`（`argumentHint` → `input.hint`）；
+ *   [#303] 宿主 / 扩展命令 → `<name>`（`args` → `input.hint`），遮住同名提示模板（与其它模式一致）。
  *   内置斜杠命令（`/new`、`/compact`…）在 ACP 下不执行，不列。
  */
 
@@ -28,6 +29,7 @@ import {
 import type { ModelThinkingLevel, ProviderRegistryApi } from "../../ai/types.js";
 import { hideFakeProvider } from "../../cli/fake-visibility.js";
 import type { LoadedResources } from "../../cli/runtime.js";
+import type { HostCommandSource } from "../../host/commands.js";
 import {
   RPC_ERRORS,
   type AcpAvailableCommand,
@@ -185,16 +187,31 @@ export async function applyConfigOption(
   }
 }
 
-export function availableCommands(resources: LoadedResources): AcpAvailableCommand[] {
+export function availableCommands(
+  resources: LoadedResources,
+  hostCommands?: HostCommandSource,
+): AcpAvailableCommand[] {
+  const hosted = hostCommands?.list() ?? [];
+  const shadowed = new Set(hosted.map((c) => c.name));
   const commands: AcpAvailableCommand[] = resources.skills.map((skill) => ({
     name: `skill:${skill.name}`,
     description: skill.description,
   }));
-  for (const prompt of resources.prompts)
+  for (const prompt of resources.prompts) {
+    if (shadowed.has(prompt.name)) continue;
     commands.push({
       name: prompt.name,
       description: prompt.description ?? "",
       ...(prompt.argumentHint !== undefined ? { input: { hint: prompt.argumentHint } } : {}),
+    });
+  }
+  for (const command of hosted)
+    commands.push({
+      name: command.name,
+      description: command.description,
+      ...(command.args !== undefined && command.args !== ""
+        ? { input: { hint: command.args } }
+        : {}),
     });
   return commands;
 }

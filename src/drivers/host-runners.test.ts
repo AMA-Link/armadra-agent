@@ -3,7 +3,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { AgentEventBus, createHostApi, hostRunnersOf } from "../host/api-impl.js";
+import {
+  AgentEventBus,
+  createHostApi,
+  createHostContext,
+  hostRunnersOf,
+} from "../host/api-impl.js";
 import { HOST_API_MINOR, HOST_API_VERSION } from "../host/types.js";
 import type { RunnerDoneEvent } from "../host/types.js";
 import type {
@@ -317,5 +322,72 @@ describe("HostApi：host-api 1.1（#226）", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0]![0]).toBe("error");
     expect(logs[0]![1]).toMatch(/runners\.onDone/);
+  });
+});
+
+describe("共享 runner 注册表（#306）：多个模块共用一张表", () => {
+  function twoModules() {
+    const context = createHostContext();
+    const make = () =>
+      createHostApi(
+        {
+          mode: "rpc",
+          session: {
+            id: () => "s",
+            file: () => undefined,
+            cwd: () => "/w",
+            model: () => undefined,
+          },
+          tools: {} as ToolRegistryApi,
+          bus: new AgentEventBus(),
+          sendUser: async () => "queued",
+          stderr: () => undefined,
+        },
+        context,
+      );
+    return { context, a: make(), b: make() };
+  }
+
+  it("同 id 先到先得：后来者 runner_exists，注销后可再提供", () => {
+    const { context, a, b } = twoModules();
+    const first = { id: "node", description: "a", start: async () => ({}) as never };
+    const off = a.api.runners!.provide(first);
+    expect(() => b.api.runners!.provide({ ...first, description: "b" })).toThrow(
+      expect.objectContaining({ code: "runner_exists" }),
+    );
+    expect(context.runners.get("node")).toBe(first);
+    expect(hostRunnersOf(b.api)).toBe(context.runners);
+    off();
+    b.api.runners!.provide({ ...first, description: "b" });
+    expect(context.runners.get("node")?.description).toBe("b");
+  });
+
+  it("onDone 只回调本模块提供的 runner；revoke 一并移除本模块的 runner 与处理器", async () => {
+    const { context, a, b } = twoModules();
+    const one = scripted("a-1");
+    const two = scripted("b-1");
+    a.api.runners!.provide({ id: "ra", description: "d", start: async () => one.handle });
+    b.api.runners!.provide({ id: "rb", description: "d", start: async () => two.handle });
+    const seenA: string[] = [];
+    const seenB: string[] = [];
+    a.api.runners!.onDone!((e) => void seenA.push(e.runner));
+    b.api.runners!.onDone!((e) => void seenB.push(e.runner));
+    for (const [id, rounds] of [
+      ["ra", one.rounds],
+      ["rb", two.rounds],
+    ] as const) {
+      const started = await context.runners.resolve(id)!.start(request());
+      const waiting = started.wait();
+      rounds[0]!.resolve(result("ok"));
+      await waiting;
+    }
+    await flush();
+    expect(seenA).toEqual(["ra"]);
+    expect(seenB).toEqual(["rb"]);
+    a.revoke();
+    expect(context.runners.list().map((r) => r.id)).toEqual(["rb"]);
+    // 撤回后再 provide / onDone 被忽略
+    a.api.runners!.provide({ id: "late", description: "d", start: async () => ({}) as never });
+    expect(context.runners.get("late")).toBeUndefined();
   });
 });

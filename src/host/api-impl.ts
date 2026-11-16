@@ -13,11 +13,21 @@
  * [#226] `runners.onDone` 与 `minor`（host-api 1.1）：每轮结束的事件由 registry 的观察包装发出，
  * 处理器异常走本适配器的 `log`。
  *
+ * [#304] 每个 binding 记下自己的全部注册，`revoke()` 一次撤回（扩展 create 抛错 / 超时 / 未返回适配器时
+ * 调用）；撤回后注册类方法一律忽略并记 warning（防住超时后迟到的注册）。
+ *
+ * [#306] runner 注册表放在 {@link HostContext}（宿主适配器与扩展共用，同 id 先到先得，`runner_exists`），
+ * `onDone` 只回调本模块自己提供的 runner。
+ *
  * [#270] `resources`（host-api 1.2）：注册进 bootstrap 注入的 {@link HostResourceRegistry}（read 工具
  * 持同一个实例）；未注入时本地新建一个（SDK / 测试），宿主激活后由 bootstrap 冻结。
  */
 
-import { HostRunnerRegistry, type RunnerDoneHandler } from "../drivers/host-runners.js";
+import {
+  HostRunnerRegistry,
+  type RunnerDoneHandler,
+  type RunnerScope,
+} from "../drivers/host-runners.js";
 import { AmaError } from "../errors.js";
 import { AMA_VERSION } from "../version.js";
 import type {
@@ -128,6 +138,10 @@ export interface HostContext {
   notify: HostNotify | undefined;
   /** 全部模块经 `commands.register` 注册的斜杠命令。 */
   readonly commands: HostCommandRegistry;
+  /** [#306] 全部模块经 `runners.provide` 注入的 runner（同 id 先到先得）。 */
+  readonly runners: HostRunnerRegistry;
+  /** [#304] 由模块禁用的工具名 → 持有它的模块；最后一个持有者撤回时才解除禁用。 */
+  readonly disabledBy: Map<string, Set<symbol>>;
 }
 
 export interface HostContextOptions {
@@ -144,6 +158,8 @@ export function createHostContext(options: HostContextOptions = {}): HostContext
     statuses: new Set(),
     notify: options.notify,
     commands: new HostCommandRegistry(options.reservedCommand),
+    runners: new HostRunnerRegistry(),
+    disabledBy: new Map(),
   };
 }
 
@@ -177,13 +193,15 @@ export interface HostApiBinding {
   warmingDecider(): WarmingDecisionHandler | undefined;
   /** [#270] 宿主资源注册表（系统提示资源行与 read 工具都读它）。 */
   readonly resources: HostResourceRegistry;
+  /** [#304] 撤回本 binding 的全部注册（幂等）；之后注册类调用被忽略并记 warning。 */
+  revoke(): void;
 }
 
 const TOOL_NAME = /^[a-z][a-z0-9_]{1,63}$/;
 
 const hostRunnerRegistries = new WeakMap<HostApi, HostRunnerRegistry>();
 
-/** [W5-EG] 宿主经 `runners.provide` 注入的 runner（HostApi 不是本模块创建的返回 undefined）。 */
+/** 共享的 runner 注册表（HostApi 不是本模块创建的返回 undefined；[#306] 全部模块共用同一张）。 */
 export function hostRunnersOf(api: HostApi): HostRunnerRegistry | undefined {
   return hostRunnerRegistries.get(api);
 }
@@ -222,8 +240,22 @@ export function createHostApi(
     ((level, message) => {
       if (level === "warn" || level === "error") writeErr(`ama: [host] ${message}\n`);
     });
-  const runners = new HostRunnerRegistry({ log: (message, error) => log("error", message, error) });
+  const runners = context.runners;
+  const scope: RunnerScope = {
+    owner: token,
+    log: (message, error) => log("error", message, error),
+  };
   const resources = deps.resources ?? new HostResourceRegistry();
+
+  // [#304] 撤回材料：按注册顺序逆序执行；revoked 之后的注册类调用一律忽略
+  const undo: (() => void)[] = [];
+  let revoked = false;
+  const ignored = (what: string): boolean => {
+    if (revoked) log("warn", msg().drivers.host.revokedIgnored(what));
+    return revoked;
+  };
+  const noop = (): void => undefined;
+  const ownInstructions: InstructionSource[] = [];
 
   const api: HostApi = Object.freeze({
     version: HOST_API_VERSION,
@@ -239,14 +271,38 @@ export function createHostApi(
     }),
     tools: Object.freeze({
       register(tool: ToolDefinition): void {
+        if (ignored("tools.register")) return;
         validateTool(tool);
         if (deps.tools.get(tool.name) !== undefined) {
           throw new AmaError("tool_exists", msg().drivers.host.toolExists(tool.name));
         }
         deps.tools.register(tool, "host");
         registeredTools.push(tool.name);
+        undo.push(() => deps.tools.unregister(tool.name));
       },
       disable(name: string): void {
+        if (ignored("tools.disable")) return;
+        // 按名记持有者：只有由模块禁用（禁用前是启用的）的名字才记；全部持有者撤回后才解除。
+        // 配置或启动前就禁用的名字不记，永远不会被扩展的撤回放开（伴随工具同理逐个判断）。
+        const targets = deps.tools.disableTargets?.(name) ?? [name];
+        const held: string[] = [];
+        for (const target of targets) {
+          const holders = context.disabledBy.get(target);
+          if (holders !== undefined) holders.add(token);
+          else if (!deps.tools.isDisabled(target)) context.disabledBy.set(target, new Set([token]));
+          else continue;
+          held.push(target);
+        }
+        if (held.length > 0) {
+          undo.push(() => {
+            for (const target of held) {
+              const holders = context.disabledBy.get(target);
+              if (holders === undefined || !holders.delete(token) || holders.size > 0) continue;
+              context.disabledBy.delete(target);
+              deps.tools.enable(target);
+            }
+          });
+        }
         deps.tools.disable(name);
         if (!disabledTools.includes(name)) disabledTools.push(name);
       },
@@ -254,20 +310,29 @@ export function createHostApi(
     }),
     instructions: Object.freeze({
       add(source: InstructionSource): void {
+        if (ignored("instructions.add")) return;
         if (source.kind === "file" && typeof source.path !== "string") {
           throw new AmaError("invalid_arguments", msg().drivers.host.instructionNeedsPath);
         }
         if (source.kind === "text" && typeof source.text !== "string") {
           throw new AmaError("invalid_arguments", msg().drivers.host.instructionNeedsText);
         }
-        instructions.push({ ...source });
+        const copy = { ...source };
+        instructions.push(copy);
+        ownInstructions.push(copy);
       },
     }),
     events: Object.freeze({
-      on: <E extends AgentEventName>(name: E, handler: Handler<E>) => deps.bus.on(name, handler),
+      on<E extends AgentEventName>(name: E, handler: Handler<E>): () => void {
+        if (ignored("events.on")) return noop;
+        const off = deps.bus.on(name, handler);
+        undo.push(off);
+        return off;
+      },
     }),
     approvals: Object.freeze({
       setBroker(next: ApprovalBroker): void {
+        if (ignored("approvals.setBroker")) return;
         if (typeof next?.ask !== "function") {
           throw new AmaError("invalid_arguments", msg().drivers.host.brokerNeedsAsk);
         }
@@ -280,10 +345,15 @@ export function createHostApi(
       },
     }),
     messages: Object.freeze({
-      sendUser: (text: string, origin?: string) => deps.sendUser(text, origin ?? "host"),
+      // [#304] 撤回后忽略（只记 warning）；不 reject，免得没 await 的扩展触发未处理的拒绝
+      sendUser: (text: string, origin?: string) =>
+        ignored("messages.sendUser")
+          ? Promise.resolve("queued" as const)
+          : deps.sendUser(text, origin ?? "host"),
     }),
     ui: Object.freeze({
       notify(message: string, level: "info" | "warn" | "error" = "info"): void {
+        if (ignored("ui.notify")) return;
         // 交互 / line 由 UI 显示；rpc 由模式转成事件；print（或未注入）写 stderr。
         if (context.notify !== undefined && deps.mode !== "print") {
           context.notify(message, level);
@@ -292,6 +362,7 @@ export function createHostApi(
         writeErr(`ama: [host${level === "info" ? "" : ` ${level}`}] ${message}\n`);
       },
       setStatus(key: string, text?: string): void {
+        if (ignored("ui.setStatus")) return;
         if (text === undefined || text === "") status.delete(key);
         else status.set(key, text);
         deps.onStatus?.(key, text);
@@ -300,30 +371,81 @@ export function createHostApi(
     log,
     cache: Object.freeze({
       onWarmingDecision(handler: WarmingDecisionHandler): () => void {
+        if (ignored("cache.onWarmingDecision")) return noop;
         if (typeof handler !== "function") {
           throw new AmaError("invalid_arguments", msg().drivers.host.warmingNeedsFunction);
         }
         warmingHandlers.push(handler);
-        return () => {
+        const off = (): void => {
           const index = warmingHandlers.lastIndexOf(handler);
           if (index >= 0) warmingHandlers.splice(index, 1);
         };
+        undo.push(off);
+        return off;
       },
     }),
     runners: Object.freeze({
-      provide: (runner: HostRunner) => runners.provide(runner),
-      onDone: (handler: RunnerDoneHandler) => runners.onDone(handler),
+      provide(runner: HostRunner): () => void {
+        if (ignored("runners.provide")) return noop;
+        const off = runners.provide(runner, token);
+        undo.push(off);
+        return off;
+      },
+      onDone(handler: RunnerDoneHandler): () => void {
+        if (ignored("runners.onDone")) return noop;
+        const off = runners.onDone(handler, scope);
+        undo.push(off);
+        return off;
+      },
     }),
     commands: Object.freeze({
-      register: (command: HostCommand) => context.commands.register(command),
+      register(command: HostCommand): () => void {
+        if (ignored("commands.register")) return noop;
+        const off = context.commands.register(command);
+        undo.push(off);
+        return off;
+      },
       list: () => context.commands.list().map((c) => c.name),
     }),
     resources: Object.freeze({
-      register: (resource: HostResource) => resources.register(resource),
+      register(resource: HostResource): void {
+        if (ignored("resources.register")) return;
+        resources.register(resource);
+        undo.push(() => resources.remove(resource.scheme, resource));
+      },
       list: () => resources.schemes(),
     }),
   });
   hostRunnerRegistries.set(api, runners);
+
+  const revoke = (): void => {
+    if (revoked) return;
+    revoked = true;
+    for (const fn of undo.reverse()) {
+      try {
+        fn();
+      } catch (error) {
+        log("warn", String(error));
+      }
+    }
+    undo.length = 0;
+    for (const entry of ownInstructions) {
+      const index = instructions.indexOf(entry);
+      if (index >= 0) instructions.splice(index, 1);
+    }
+    registeredTools.length = 0;
+    disabledTools.length = 0;
+    if (context.broker.owner === token) {
+      delete context.broker.owner;
+      delete context.broker.value;
+    }
+    const keys = [...status.keys()];
+    status.clear();
+    context.statuses.delete(status);
+    // 其它模块可能也设了同名键：按合并后的剩余值重新通知，而不是一律清掉
+    const merged = mergedHostStatus(context);
+    for (const key of keys) deps.onStatus?.(key, merged.get(key));
+  };
 
   return {
     api,
@@ -340,5 +462,6 @@ export function createHostApi(
     },
     warmingDecider: () => warmingHandlers.at(-1),
     resources,
+    revoke,
   };
 }

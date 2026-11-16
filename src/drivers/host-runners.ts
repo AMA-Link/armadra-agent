@@ -1,8 +1,9 @@
 /**
  * 宿主注入的 runner（`HostApi.runners.provide` 的底座，docs/history/wave5-plan.md §5.5，D17）。[W5-E → W5-EG]
  *
- * 一个宿主适配器一份（host/api-impl.ts 建，经 {@link ExternalAgents} 的 `hostRunners` 选项交给每个
- * 主会话）：宿主可以在 `create()` 里或之后任何时候 `provide`，同名替换；返回的函数注销。
+ * [#306] 一个 HostContext 一份（宿主适配器与本地扩展共用，经 {@link ExternalAgents} 的 `hostRunners`
+ * 选项交给每个主会话）：模块可以在 `create()` 里或之后任何时候 `provide`，跨模块同 id 先到先得（后来者
+ * `runner_exists`）；返回的函数注销。`onDone` 带 {@link RunnerScope} 时只回调该模块提供的 runner。
  * `onChange` 供 `/agents` / RPC `get_agents` 的缓存刷新。
  *
  * [#226] `onDone`（`HostApi.runners.onDone`）：任务入口经 {@link HostRunnerRegistry.resolve} 拿到的是
@@ -20,6 +21,12 @@ import type {
   SubagentRunRequest,
   SubagentStatus,
 } from "../tools/types.js";
+
+/** [#306] 提供方范围：onDone 只回调同一 owner 提供的 runner；log 缺省走注册表的 log。 */
+export interface RunnerScope {
+  owner: symbol;
+  log?: (message: string, error: unknown) => void;
+}
 
 export type RunnerDoneHandler = (event: RunnerDoneEvent) => void | Promise<void>;
 
@@ -49,7 +56,8 @@ function statusOf(result: SubagentResult, aborted: boolean): SubagentStatus {
 export class HostRunnerRegistry {
   private readonly runners = new Map<string, HostRunner>();
   private readonly listeners = new Set<() => void>();
-  private readonly doneHandlers = new Set<RunnerDoneHandler>();
+  private readonly doneHandlers = new Map<RunnerDoneHandler, RunnerScope | undefined>();
+  private readonly owners = new Map<string, symbol | undefined>();
   private readonly observed = new WeakMap<HostRunner, HostRunner>();
   private readonly now: () => number;
   private readonly log: (message: string, error: unknown) => void;
@@ -59,14 +67,22 @@ export class HostRunnerRegistry {
     this.log = options.log ?? (() => undefined);
   }
 
-  provide(runner: HostRunner): () => void {
+  /**
+   * [#306] 跨模块同 id 先到先得，后来者抛 `runner_exists`；同一模块再次提供同 id 照旧替换（旧的注销函数
+   * 随之失效）。`owner` 供 onDone 按模块过滤。
+   */
+  provide(runner: HostRunner, owner?: symbol): () => void {
     if (typeof runner?.id !== "string" || runner.id === "" || typeof runner.start !== "function")
       throw new AmaError("invalid_arguments", msg().drivers.host.runnerNeedsIdStart);
+    if (this.runners.has(runner.id) && this.owners.get(runner.id) !== owner)
+      throw new AmaError("runner_exists", msg().drivers.host.runnerExists(runner.id));
     this.runners.set(runner.id, runner);
+    this.owners.set(runner.id, owner);
     this.changed();
     return () => {
       if (this.runners.get(runner.id) !== runner) return;
       this.runners.delete(runner.id);
+      this.owners.delete(runner.id);
       this.changed();
     };
   }
@@ -81,7 +97,7 @@ export class HostRunnerRegistry {
     if (runner === undefined) return undefined;
     let wrapped = this.observed.get(runner);
     if (wrapped === undefined) {
-      wrapped = this.observe(runner);
+      wrapped = this.observe(runner, this.owners.get(runner.id));
       this.observed.set(runner, wrapped);
     }
     return wrapped;
@@ -98,10 +114,10 @@ export class HostRunnerRegistry {
   }
 
   /** [#226] 每轮结束时回调（`HostApi.runners.onDone`）；返回注销函数。 */
-  onDone(handler: RunnerDoneHandler): () => void {
+  onDone(handler: RunnerDoneHandler, scope?: RunnerScope): () => void {
     if (typeof handler !== "function")
       throw new AmaError("invalid_arguments", msg().drivers.host.runnerDoneNeedsFunction);
-    this.doneHandlers.add(handler);
+    this.doneHandlers.set(handler, scope);
     return () => void this.doneHandlers.delete(handler);
   }
 
@@ -115,33 +131,37 @@ export class HostRunnerRegistry {
     }
   }
 
-  private emitDone(event: RunnerDoneEvent): void {
-    for (const handler of [...this.doneHandlers]) {
+  private emitDone(event: RunnerDoneEvent, owner: symbol | undefined): void {
+    for (const [handler, scope] of [...this.doneHandlers]) {
+      // 带 scope 的处理器只收本模块 runner 的事件
+      if (scope !== undefined && scope.owner !== owner) continue;
+      const fail = (error: unknown): void => this.fail(error, scope);
       try {
         const out = handler(event);
-        if (out instanceof Promise) out.catch((error: unknown) => this.fail(error));
+        if (out instanceof Promise) out.catch(fail);
       } catch (error) {
-        this.fail(error);
+        fail(error);
       }
     }
   }
 
-  private fail(error: unknown): void {
-    this.log(msg().drivers.host.handlerFailed("runners.onDone"), error);
+  private fail(error: unknown, scope?: RunnerScope): void {
+    (scope?.log ?? this.log)(msg().drivers.host.handlerFailed("runners.onDone"), error);
   }
 
-  private observe(runner: HostRunner): HostRunner {
+  private observe(runner: HostRunner, owner: symbol | undefined): HostRunner {
     return new Proxy(runner, {
       get: (target, prop) => {
         if (prop !== "start") return forward(target, prop);
         return async (request: SubagentRunRequest) =>
-          this.observeHandle(target.id, request, this.now(), await target.start(request));
+          this.observeHandle(target.id, owner, request, this.now(), await target.start(request));
       },
     });
   }
 
   private observeHandle(
     runner: string,
+    owner: symbol | undefined,
     request: SubagentRunRequest,
     startedAt: number,
     handle: RunnerHandle,
@@ -172,7 +192,7 @@ export class HostRunnerRegistry {
       if (request.taskId !== undefined) event.taskId = request.taskId;
       if (done.text !== undefined) event.text = done.text;
       if (done.error !== undefined) event.error = done.error;
-      this.emitDone(event);
+      this.emitDone(event, owner);
     };
     const wait = (): Promise<SubagentResult> => {
       const result = handle.wait();

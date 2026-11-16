@@ -104,6 +104,22 @@ export class ToolRegistry implements ToolRegistryApi {
     }
   }
 
+  /** [#304] 撤回扩展注册的工具（同时从活动集移除）；不存在返回 false。 */
+  unregister(name: string): boolean {
+    this.activeNames?.delete(name);
+    return this.entries.delete(name);
+  }
+
+  /** [#304] `disable(name)` 会禁用的全部名字（本名 + 伴随工具）。 */
+  disableTargets(name: string): readonly string[] {
+    return [name, ...(TOOL_COMPANIONS[name] ?? [])];
+  }
+
+  /** [#304] 只解除这一个名字的禁用（伴随工具各自按名解除，撤回方逐个决定）。 */
+  enable(name: string): void {
+    this.disabled.delete(name);
+  }
+
   isDisabled(name: string): boolean {
     return this.disabled.has(name);
   }

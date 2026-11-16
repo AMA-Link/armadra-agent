@@ -10,7 +10,15 @@
 
 - **本地扩展（#301）**：用户自己安装、可以有多个的宿主适配器，与 `--host` 适配器并存。从 `<configDir>/extensions/*.{mjs,cjs}`（按文件名排序）与 profile 的 `extensions`（绝对路径）依次加载；每个模块有独立的 `HostApi`，共享工具注册表、事件总线、审批 broker 槽、资源注册表与保温处理器。工具名先到先得，指令按加载顺序追加到 `host` 节，`approvals.setBroker` 第一个设置者生效，`cache.onWarmingDecision` 最后注册者生效，状态键合并；扩展加载失败、版本不等、`create()` 报错或超时只记 warning 并跳过，退出时按加载逆序全部 dispose。没有扩展时系统提示与工具表不变。见 `docs/guides/extensions.md`。
 - **`api.commands.register`（host-api 1.4）**：宿主适配器与扩展注册斜杠命令（`name`、`description`、`args?`、`run(args, ctx)` 返回 `{ kind: "handled", message? }` 或 `{ kind: "prompt", text }`），在内置命令之后、提示模板之前分派，交互、line、RPC 三种模式可用，`/help`、补全与 RPC `get_commands`（`source: "extension"`，只加不改，`RPC_PROTOCOL_VERSION` 不变）列出。与内置命令、别名或已注册命令同名时注册抛错。`HOST_API_MINOR` 为 4。
+- **扩展可注入子 Agent runner（#306）**：`runners.provide` / `runners.onDone` 改走宿主适配器与扩展共用的一张 runner 表，`task`、`/agents` 与 RPC `get_agents` 无论有无宿主适配器都使用扩展的 runner（与宿主注入的同等优先；“有宿主时不自起外部 CLI”的判定仍只看宿主适配器）。不同模块之间同 id 先到先得，后来者抛 `runner_exists`（同一模块再次提供仍替换自己的）；`onDone` 只回调本模块的 runner；被撤回的扩展其 runner 一并移除。`HOST_API_MINOR` 不变。
 - **扩展按哈希信任**：`trust.json` 新增可选的 `extensions` 段，记录 `{ path, sha256, trusted, at }`；交互启动对新文件或内容变化的文件询问一次（列出路径与 sha256），非交互运行跳过未信任的扩展并 warning，`--no-trust` 一个都不加载，`trustProject` 不适用。`ama doctor` 列出已启用与被跳过的扩展、哈希前缀与原因，不执行扩展代码。
+- **目录扩展（#305）**：`<configDir>/extensions/<名>/index.{mjs,cjs}` 与单文件扩展一起（按入口名排序）加载，profile 的 `extensions` 也可以给目录。目录扩展按整棵树的 sha256 信任：每个常规文件按正斜杠相对路径排序，相对路径与内容带长度前缀一起计入，不跳过任何项（包括 `.git`），符号链接跟随、按目标内容计入（成环或断开的按读不了处理）。超过 2000 个文件、2000 个目录、32 层或 50 MiB 时跳过该扩展并给出单独的原因。`trust.json` 记录形状不变；任一嵌套文件变化都重新询问，交互询问与 `ama doctor` 标出目录。单文件扩展行为不变。
+
+### 修复
+
+- **扩展激活失败时撤回已注册内容（#304）**：扩展的 `create()` 抛错、超时或没有返回适配器时，它注册的工具（及工具禁用）、事件订阅、命令、指令、状态键、保温处理器、broker（自己持有槽位时）、runner 与资源都会撤回；该模块之后再调用注册类方法（如超时后迟到的注册）一律忽略并 warning。系统提示与工具表回到没有该扩展时逐字节相同。宿主适配器的失败规则不变。
+
+- **`-p` 与 ACP 分派扩展斜杠命令（#303）**：`-p` 的提示或 ACP `session/prompt` 的文本整段形如 `/名 参数` 且命中扩展命令时在 ama 内分派。`handled` 把 `message` 写到 stdout 并退出 0（`json` 与 `stream-json` 给一行 `result` 对象），ACP 下则作为 `agent_message_chunk` 发出并以 `end_turn` 结束，都不开模型回合；`prompt` 改发其 `text`；命令抛错时 `-p` 退出 1，ACP 答复 internal error。ACP 的 `available_commands_update` 列出扩展命令（`args` 作 `input.hint`），遮住同名提示模板。`-p` 只分派命令行给的提示，有管道 stdin 时原样发给模型。
 
 ### 维护
 

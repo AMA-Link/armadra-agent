@@ -53,6 +53,11 @@ export class HostResourceRegistry implements HostResourceLookup {
     this.entries.set(scheme, resource);
   }
 
+  /** [#304] 撤回：移除 scheme（激活失败的扩展用，不受冻结限制）。 */
+  remove(scheme: string, resource: HostResource): void {
+    if (this.entries.get(scheme) === resource) this.entries.delete(scheme);
+  }
+
   /** 宿主激活后调用：之后不再接受注册。 */
   freeze(): void {
     this.frozen = true;

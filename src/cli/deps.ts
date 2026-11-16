@@ -18,6 +18,7 @@ import type { TrustPromptAnswer } from "../config/trust.js";
 import type { HookDispatcherApi } from "../hooks/types.js";
 import type { MemoryRuntime } from "../memory/runtime.js";
 import type { WarmingDecisionHandler } from "../ai/cache/types.js";
+import type { HostRunnerRegistry } from "../drivers/host-runners.js";
 import type { AgentEventBus } from "../host/api-impl.js";
 import type { ApprovalBroker, HostAdapterHandle, InstructionSource } from "../host/types.js";
 import type { PermissionMode, PermissionPipelineApi } from "../permissions/types.js";
@@ -104,6 +105,8 @@ export interface SessionAssembly {
     warmingDecider?(): WarmingDecisionHandler | undefined;
     /** [#270] 宿主注册的资源（系统提示 tools 节的资源行）；会话开始时已冻结。 */
     resources?: readonly { scheme: string; describe: string }[];
+    /** [#306] 宿主适配器与本地扩展共用的 runner 注册表（`task` 与 `/agents` 读它）。 */
+    runners?: HostRunnerRegistry;
   };
   /** `Runtime.approvals.setUiBroker` 设置的 UI broker（链尾）；每次审批现取，未设置为 undefined。 */
   uiBroker(): ApprovalBroker | undefined;
@@ -154,7 +157,9 @@ export type ModeRunner = (runtime: Runtime, context: ModeContext) => Promise<num
 export interface InteractiveUi {
   promptTrust?(cwd: string, resources: readonly string[]): Promise<TrustPromptAnswer>;
   /** [#301] 本地扩展首次出现或内容变化时询问（一次，列出全部待定文件的路径与 sha256）。 */
-  promptExtensions?(files: readonly { path: string; sha256: string }[]): Promise<TrustPromptAnswer>;
+  promptExtensions?(
+    files: readonly { path: string; sha256: string; directory?: boolean }[],
+  ): Promise<TrustPromptAnswer>;
   /** `--resume` 无 id：返回会话 id，undefined = 用户取消（退出码 5）。 */
   pickSession?(items: readonly SessionListItem[]): Promise<string | undefined>;
   /** 无 key / 无模型时选择模型；返回 `provider/id`，undefined = 取消（退出码 4）。 */

@@ -97,6 +97,11 @@ export class AcpEventMapper {
     this.emitUsage(true);
   }
 
+  /** [#303] 扩展命令 handled 的输出：一条 `agent_message_chunk`（不开模型回合）。 */
+  emitMessage(text: string): void {
+    this.emit({ sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
+  }
+
   /** 回合结束后由服务端调：`session_info_update`（标题与上次不同才带 title）。 */
   emitSessionInfo(title: string | null, updatedAt: string): void {
     const changed = title !== this.lastTitle;

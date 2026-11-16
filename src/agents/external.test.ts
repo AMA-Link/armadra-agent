@@ -11,7 +11,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { SessionCore } from "../agent/session-core.js";
 import type { SessionEvent } from "../agent/types.js";
 import { HostRunnerRegistry } from "../drivers/host-runners.js";
-import { AgentEventBus, createHostApi, hostRunnersOf } from "../host/api-impl.js";
+import {
+  AgentEventBus,
+  createHostApi,
+  createHostContext,
+  hostRunnersOf,
+} from "../host/api-impl.js";
 import type { ToolRegistryApi } from "../tools/types.js";
 import { ProgramProbe } from "../drivers/probe.js";
 import {
@@ -489,7 +494,7 @@ describe("宿主注入的 ama runner", () => {
 });
 
 describe("HostRunnerRegistry", () => {
-  it("provide / 注销触发 onChange；同名替换，旧注销函数不删新 runner", () => {
+  it("provide / 注销触发 onChange；同一提供方同名替换，旧注销函数不删新 runner", () => {
     const registry = new HostRunnerRegistry();
     let changes = 0;
     const off = registry.onChange(() => changes++);
@@ -533,5 +538,90 @@ describe("HostApi.runners（W5-EG）", () => {
     expect(registry!.list()).toEqual([]);
     expect(() => binding.api.runners!.provide({ id: "x" } as never)).toThrow(/runners.provide/);
     expect(Object.isFrozen(binding.api.runners)).toBe(true);
+  });
+});
+
+describe("HostRunnerRegistry 跨提供方（#306）", () => {
+  it("不同 owner 同 id：后来者 runner_exists；先来者注销后可再提供", () => {
+    const registry = new HostRunnerRegistry();
+    const a = { id: "n", description: "a", start: () => Promise.reject(new Error("x")) };
+    const b = { ...a, description: "b" };
+    const host = Symbol("host");
+    const ext = Symbol("ext");
+    const dropA = registry.provide(a, host);
+    expect(() => registry.provide(b, ext)).toThrow(
+      expect.objectContaining({ code: "runner_exists" }),
+    );
+    expect(registry.get("n")?.description).toBe("a");
+    dropA();
+    registry.provide(b, ext);
+    expect(registry.get("n")?.description).toBe("b");
+  });
+});
+
+describe("扩展提供的 runner 被 task 使用（#306）", () => {
+  const handle = {
+    id: "ext-1",
+    send: async () => undefined,
+    wait: async () => ({ text: "from-ext" }),
+    stop: async () => undefined,
+  };
+
+  /** 经扩展的 binding 提供 runner（与宿主适配器共用 HostContext 的注册表）。 */
+  function provideViaExtension(id: string) {
+    const context = createHostContext();
+    const binding = createHostApi(
+      {
+        mode: "print",
+        session: { id: () => "s", file: () => undefined, cwd: () => "/w", model: () => undefined },
+        tools: {} as ToolRegistryApi,
+        bus: new AgentEventBus(),
+        sendUser: async () => "queued",
+        stderr: () => undefined,
+      },
+      context,
+    );
+    const starts: SubagentRunRequest[] = [];
+    binding.api.runners!.provide({
+      id,
+      description: "ext agent",
+      start: async (req) => {
+        starts.push(req);
+        return handle as never;
+      },
+    });
+    return { context, binding, starts };
+  }
+
+  for (const hosted of [false, true]) {
+    it(`${hosted ? "有" : "无"}宿主适配器：扩展 runner 进目录并被 task 入口启动`, async () => {
+      const { context, starts } = provideViaExtension("mine");
+      const catalog = new AgentCatalog();
+      const w = wiring({ hosted, hostRunners: context.runners, probe: false });
+      registerExternalAgents(catalog, w);
+      expect(catalog.get("mine")).toMatchObject({ name: "mine", source: "host" });
+      const { core } = fakeCore({ mode: "full-auto" });
+      const ext = new SessionExternalAgents(core, w, catalog);
+      const started = await ext.runner(catalog.get("mine")!)!.start(request("default"));
+      await expect(started.wait()).resolves.toMatchObject({ text: "from-ext" });
+      expect(starts).toHaveLength(1);
+    });
+  }
+
+  it("与内置外部 runner 同 id 时替换它（无宿主）；撤回后回到内置解析", async () => {
+    const { context, binding, starts } = provideViaExtension("claude");
+    const w = wiring({ hosted: false, hostRunners: context.runners, probe: false });
+    const catalog = new AgentCatalog();
+    registerExternalAgents(catalog, w);
+    expect(catalog.get("claude")).toMatchObject({ source: "host" });
+    const { core } = fakeCore({ mode: "full-auto" });
+    const ext = new SessionExternalAgents(core, w, catalog);
+    await ext.runner(catalog.get("claude")!)!.start(request("default"));
+    expect(starts).toHaveLength(1);
+    binding.revoke();
+    expect(context.runners.get("claude")).toBeUndefined();
+    const after = new AgentCatalog();
+    registerExternalAgents(after, w);
+    expect(after.get("claude")).toMatchObject({ runner: "claude" });
   });
 });

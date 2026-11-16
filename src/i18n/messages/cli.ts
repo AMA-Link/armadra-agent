@@ -70,6 +70,7 @@ export const en = {
       changed: "content changed since it was trusted (approve it in an interactive session)",
       declined: "not trusted",
       unreadable: "cannot read the file",
+      "too-large": "directory extension is too large (more than 2000 files or 50 MiB)",
     },
     extensionDisposeFailed: (path: string, error: string) =>
       `Extension dispose failed: ${path}: ${error}`,
@@ -266,6 +267,7 @@ export const zh = {
       changed: "内容自信任后已改变（在交互会话里重新确认后启用）",
       declined: "未信任",
       unreadable: "读不了文件",
+      "too-large": "目录扩展过大（超过 2000 个文件或 50 MiB）",
     },
     extensionDisposeFailed: (path, error) => `扩展 dispose 失败：${path}：${error}`,
     sessionStartBlocked: (reason) => `SessionStart Hook 阻止启动：${reason ?? "（无原因）"}`,
