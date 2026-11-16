@@ -14,7 +14,6 @@ import {
   type AmaConfig,
   type AuthFile,
   type ProfileFile,
-  type TrustFile,
 } from "./types.js";
 import {
   Checker,
@@ -86,6 +85,7 @@ export type { HookConfig } from "../hooks/types.js";
 export type { Diagnostic } from "./checker.js";
 
 export { THINKING_LEVELS } from "./checker.js";
+export { asTrustFile, validateTrustFile } from "./schema-trust.js";
 export const HOOK_TIMEOUT_MAX_MS = 600_000;
 
 export function hasErrors(diagnostics: readonly Diagnostic[]): boolean {
@@ -525,42 +525,6 @@ export function validateProfile(value: unknown): Diagnostic[] {
   return c.diagnostics;
 }
 
-export function validateTrustFile(value: unknown): Diagnostic[] {
-  const c = new Checker();
-  if (!c.object(value, "")) return c.diagnostics;
-  c.version(value, "");
-  const entries = value["entries"];
-  if (!Array.isArray(entries)) {
-    c.error("entries", msg().config.schema.array);
-    return c.diagnostics;
-  }
-  entries.forEach((entry: unknown, index) => {
-    const p = join("entries", index);
-    if (!c.object(entry, p)) return;
-    c.string(entry, "path", p, true);
-    c.string(entry, "at", p, true);
-    if (typeof entry["trusted"] !== "boolean")
-      c.error(join(p, "trusted"), msg().config.schema.boolean);
-  });
-  const extensions = value["extensions"];
-  if (extensions !== undefined) {
-    if (!Array.isArray(extensions)) {
-      c.error("extensions", msg().config.schema.array);
-      return c.diagnostics;
-    }
-    extensions.forEach((entry: unknown, index) => {
-      const p = join("extensions", index);
-      if (!c.object(entry, p)) return;
-      c.string(entry, "path", p, true);
-      c.string(entry, "sha256", p, true);
-      c.string(entry, "at", p, true);
-      if (typeof entry["trusted"] !== "boolean")
-        c.error(join(p, "trusted"), msg().config.schema.boolean);
-    });
-  }
-  return c.diagnostics;
-}
-
 export function validateHookConfig(value: unknown): Diagnostic[] {
   const c = new Checker();
   if (!c.object(value, "")) return c.diagnostics;
@@ -614,9 +578,6 @@ export function asAuthFile(value: unknown): AuthFile {
 }
 export function asProfile(value: unknown): ProfileFile {
   return value as ProfileFile;
-}
-export function asTrustFile(value: unknown): TrustFile {
-  return value as TrustFile;
 }
 export function asHookConfig(value: unknown): HookConfig {
   return value as HookConfig;
