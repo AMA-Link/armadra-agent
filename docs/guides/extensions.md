@@ -40,20 +40,20 @@ export function create(api) {
 
 每个模块有独立的 `HostApi` 实例（各自的工具清单与状态键），共享同一个工具注册表、事件总线、审批 broker 槽、资源注册表与保温处理器。
 
-| 面                            | 多个模块共存时                                                                                                                 |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `tools.register`              | 先到先得；同名时后来者抛 `tool_exists`（扩展可以自己捕获；不捕获则 `create()` 失败，整个扩展被跳过）                           |
-| `tools.disable`               | 累加                                                                                                                           |
-| `instructions.add`            | 按加载顺序（宿主适配器在前）追加到系统提示的 `host` 节                                                                         |
-| `events.on`                   | 都收到，按注册顺序依次调用                                                                                                     |
-| `approvals.setBroker`         | 只认第一个设置者（通常是宿主适配器）；其余调用忽略并 warning。同一个模块可以再次设置覆盖自己                                   |
-| `ui.notify` / `ui.setStatus`  | 都可用；状态栏把各模块的键合并显示，同名键后加载的覆盖先加载的，所以键名建议带自己的前缀                                       |
-| `cache.onWarmingDecision`     | 跨模块最后注册且未注销的处理器生效                                                                                             |
-| `commands.register`           | 见下节；命令名全局唯一，先注册先得                                                                                             |
-| `runners.provide` / `onDone`  | 共享一张 runner 表，先到先得（同 id 后来者抛 `runner_exists`）；`onDone` 只回调本模块的 runner；有无宿主适配器都被 `task` 使用 |
-| `create()` 失败 / 超时        | 宿主适配器失败仍是退出码 6；**扩展失败只记 warning 并跳过**，不阻止启动                                                        |
-| 加载失败 / `hostApi` 版本不等 | 宿主适配器仍是退出码 78 / 6；扩展跳过并 warning                                                                                |
-| 退出                          | 按加载的逆序 `dispose`（扩展先、宿主适配器最后），某个失败只记 warning                                                         |
+| 面                            | 多个模块共存时                                                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tools.register`              | 先到先得；同名时后来者抛 `tool_exists`（扩展可以自己捕获；不捕获则 `create()` 失败，整个扩展被跳过）                                                               |
+| `tools.disable`               | 累加                                                                                                                                                               |
+| `instructions.add`            | 按加载顺序（宿主适配器在前）追加到系统提示的 `host` 节                                                                                                             |
+| `events.on`                   | 都收到，按注册顺序依次调用                                                                                                                                         |
+| `approvals.setBroker`         | 只认第一个设置者（通常是宿主适配器）；其余调用忽略并 warning。同一个模块可以再次设置覆盖自己                                                                       |
+| `ui.notify` / `ui.setStatus`  | 都可用；状态栏把各模块的键合并显示，同名键后加载的覆盖先加载的，所以键名建议带自己的前缀                                                                           |
+| `cache.onWarmingDecision`     | 跨模块最后注册且未注销的处理器生效                                                                                                                                 |
+| `commands.register`           | 见下节；命令名全局唯一，先注册先得                                                                                                                                 |
+| `runners.provide` / `onDone`  | 共享一张 runner 表，模块之间先到先得（同 id 后来者抛 `runner_exists`，同一模块再次提供替换自己的）；`onDone` 只回调本模块的 runner；有无宿主适配器都被 `task` 使用 |
+| `create()` 失败 / 超时        | 宿主适配器失败仍是退出码 6；**扩展失败只记 warning 并跳过**，不阻止启动                                                                                            |
+| 加载失败 / `hostApi` 版本不等 | 宿主适配器仍是退出码 78 / 6；扩展跳过并 warning                                                                                                                    |
+| 退出                          | 按加载的逆序 `dispose`（扩展先、宿主适配器最后），某个失败只记 warning                                                                                             |
 
 没有扩展时，系统提示与工具表与以前逐字节相同。Hook 公共字段里的 `host` 仍是宿主适配器的 id，扩展不改它。
 
@@ -63,7 +63,7 @@ export function create(api) {
 
 `api.runners.provide(runner)` 在宿主适配器与扩展之间共用一张表，`task(agent=<id>)`、`/agents` 与 RPC `get_agents` 都读它：
 
-- 同 id 先到先得，后来者抛 `runner_exists`；注销或模块被撤回后 id 可再提供。
+- 模块之间同 id 先到先得，后来者抛 `runner_exists`；同一模块再次提供同 id 替换自己的；注销或模块被撤回后 id 可再提供。
 - 没有宿主适配器时扩展的 runner 同样生效，与宿主注入的同等优先（同 id 会替换内置的外部 runner，如 `claude`）；“有宿主适配器时 ama 不自起外部 CLI”的判定仍只看宿主适配器，扩展不改变它。
 - `api.runners.onDone(handler)` 只回调本模块自己提供的 runner。
 

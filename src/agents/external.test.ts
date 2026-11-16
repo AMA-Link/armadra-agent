@@ -494,24 +494,20 @@ describe("宿主注入的 ama runner", () => {
 });
 
 describe("HostRunnerRegistry", () => {
-  it("provide / 注销触发 onChange；同 id 先到先得（runner_exists），注销后可再提供", () => {
+  it("provide / 注销触发 onChange；同一提供方同名替换，旧注销函数不删新 runner", () => {
     const registry = new HostRunnerRegistry();
     let changes = 0;
     const off = registry.onChange(() => changes++);
     const a = { id: "n", description: "a", start: () => Promise.reject(new Error("x")) };
     const b = { ...a, description: "b" };
     const dropA = registry.provide(a);
-    expect(() => registry.provide(b)).toThrow(expect.objectContaining({ code: "runner_exists" }));
-    expect(registry.get("n")?.description).toBe("a");
-    dropA();
-    expect(registry.get("n")).toBeUndefined();
     registry.provide(b);
+    dropA();
     expect(registry.get("n")?.description).toBe("b");
-    expect(changes).toBe(3);
+    expect(changes).toBe(2);
     off();
-    dropA(); // 旧注销函数不删新 runner
-    expect(registry.get("n")?.description).toBe("b");
-    expect(changes).toBe(3);
+    registry.provide(a);
+    expect(changes).toBe(2);
     expect(() => registry.provide({ id: "", description: "", start: a.start })).toThrow(
       /runners.provide/,
     );
@@ -542,6 +538,24 @@ describe("HostApi.runners（W5-EG）", () => {
     expect(registry!.list()).toEqual([]);
     expect(() => binding.api.runners!.provide({ id: "x" } as never)).toThrow(/runners.provide/);
     expect(Object.isFrozen(binding.api.runners)).toBe(true);
+  });
+});
+
+describe("HostRunnerRegistry 跨提供方（#306）", () => {
+  it("不同 owner 同 id：后来者 runner_exists；先来者注销后可再提供", () => {
+    const registry = new HostRunnerRegistry();
+    const a = { id: "n", description: "a", start: () => Promise.reject(new Error("x")) };
+    const b = { ...a, description: "b" };
+    const host = Symbol("host");
+    const ext = Symbol("ext");
+    const dropA = registry.provide(a, host);
+    expect(() => registry.provide(b, ext)).toThrow(
+      expect.objectContaining({ code: "runner_exists" }),
+    );
+    expect(registry.get("n")?.description).toBe("a");
+    dropA();
+    registry.provide(b, ext);
+    expect(registry.get("n")?.description).toBe("b");
   });
 });
 

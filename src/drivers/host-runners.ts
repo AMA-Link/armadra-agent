@@ -2,7 +2,7 @@
  * 宿主注入的 runner（`HostApi.runners.provide` 的底座，docs/history/wave5-plan.md §5.5，D17）。[W5-E → W5-EG]
  *
  * [#306] 一个 HostContext 一份（宿主适配器与本地扩展共用，经 {@link ExternalAgents} 的 `hostRunners`
- * 选项交给每个主会话）：模块可以在 `create()` 里或之后任何时候 `provide`，同 id 先到先得（后来者
+ * 选项交给每个主会话）：模块可以在 `create()` 里或之后任何时候 `provide`，跨模块同 id 先到先得（后来者
  * `runner_exists`）；返回的函数注销。`onDone` 带 {@link RunnerScope} 时只回调该模块提供的 runner。
  * `onChange` 供 `/agents` / RPC `get_agents` 的缓存刷新。
  *
@@ -67,11 +67,14 @@ export class HostRunnerRegistry {
     this.log = options.log ?? (() => undefined);
   }
 
-  /** [#306] 同 id 先到先得，后来者抛 `runner_exists`；`owner` 供 onDone 按模块过滤。 */
+  /**
+   * [#306] 跨模块同 id 先到先得，后来者抛 `runner_exists`；同一模块再次提供同 id 照旧替换（旧的注销函数
+   * 随之失效）。`owner` 供 onDone 按模块过滤。
+   */
   provide(runner: HostRunner, owner?: symbol): () => void {
     if (typeof runner?.id !== "string" || runner.id === "" || typeof runner.start !== "function")
       throw new AmaError("invalid_arguments", msg().drivers.host.runnerNeedsIdStart);
-    if (this.runners.has(runner.id))
+    if (this.runners.has(runner.id) && this.owners.get(runner.id) !== owner)
       throw new AmaError("runner_exists", msg().drivers.host.runnerExists(runner.id));
     this.runners.set(runner.id, runner);
     this.owners.set(runner.id, owner);
