@@ -373,6 +373,8 @@ export interface ProfileFile {
   promptDirs?: string[];
   /** [W5-C0] 子 Agent 定义目录（发现顺序在 `--agent-dir` 之后、用户级之前，W5-G）。 */
   agentDirs?: string[];
+  /** [#301] 本地扩展文件（绝对路径），排在用户级 `extensions/` 之后。 */
+  extensions?: string[];
   hooksFile?: string;
   authFile?: string;
   /** false：key 只来自 authFile，不读环境变量（§11.2）。 */

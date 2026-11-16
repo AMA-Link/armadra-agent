@@ -19,13 +19,21 @@ import { decideTrust } from "../config/trust.js";
 import { AmaError, StartupError, isAmaError } from "../errors.js";
 import { loadHookConfigs } from "../hooks/config.js";
 import { HookDispatcher } from "../hooks/dispatcher.js";
-import { AgentEventBus, createHostApi } from "../host/api-impl.js";
+import {
+  AgentEventBus,
+  createHostApi,
+  createHostContext,
+  mergedHostStatus,
+  type HostApiDeps,
+} from "../host/api-impl.js";
+import { disposeExtensions } from "../host/extensions.js";
 import { activateHost, disposeHost } from "../host/loader.js";
 import { HostResourceRegistry } from "../host/resources.js";
 import { normalizeResourceRef } from "../tools/resource-ref.js";
 import type { ApprovalBroker, HostAdapterHandle } from "../host/types.js";
 import { helpText, parseArgs, UsageError, type ParsedArgs } from "./args.js";
 import { hostSessionStart } from "./compose-events.js";
+import { loadExtensions } from "./compose-extensions-load.js";
 import { applyFromOption } from "./from-prompt.js";
 import type { CliIo, RuntimeDeps, SessionAssembly } from "./deps.js";
 import { ExitCode } from "./exit-codes.js";
@@ -246,7 +254,8 @@ export async function bootstrap(
     if (level === "warn" || level === "error")
       warn(m().eventWarning(message, detail instanceof Error ? detail.message : undefined));
   });
-  const binding = createHostApi({
+  const hostContext = createHostContext();
+  const hostDeps: HostApiDeps = {
     mode,
     env: io.env as NodeJS.ProcessEnv,
     session: {
@@ -263,7 +272,8 @@ export async function bootstrap(
     },
     stderr: io.stderr,
     resources: hostResources,
-  });
+  };
+  const binding = createHostApi(hostDeps, hostContext);
   let uiBroker: ApprovalBroker | undefined;
   const hostSpec = args.host;
   let host: HostAdapterHandle | undefined;
@@ -272,7 +282,22 @@ export async function bootstrap(
       activateHost({ module: hostSpec, binding, cwd: io.cwd }),
     );
   }
+  // [#301] 本地扩展：宿主适配器之后、组装会话之前；失败只 warning
+  const extensions = await loadExtensions({
+    configDir: paths.configDir,
+    profileExtensions: profile?.extensions ?? [],
+    deps: hostDeps,
+    context: hostContext,
+    warn,
+  });
   hostResources.freeze();
+  // 扩展按加载逆序先 dispose，宿主适配器最后（各自失败只 warning）
+  const disposeAll = async (): Promise<void> => {
+    await disposeExtensions(extensions, (h, e) =>
+      warn(m().extensionDisposeFailed(h.source, String(e))),
+    );
+    await disposeHost(host, (e) => warn(m().hostDisposeFailed(String(e))));
+  };
   let shutdown: ((reason: "exit" | "new" | "switch") => Promise<void>) | undefined;
   try {
     applyToolFilters(args, tools);
@@ -336,7 +361,8 @@ export async function bootstrap(
       host: {
         handle: host,
         broker: binding.broker,
-        instructions: binding.instructions,
+        instructions: hostContext.instructions,
+        extensions,
         warmingDecider: binding.warmingDecider,
         resources: hostResources.list(),
       },
@@ -370,7 +396,7 @@ export async function bootstrap(
       disposed ??= (async () => {
         await events.emit("session_shutdown", {});
         await hooks.run("SessionEnd", { reason }).catch(() => undefined);
-        await disposeHost(host, (e) => warn(m().hostDisposeFailed(String(e))));
+        await disposeAll();
         // 会话被替换过时 dispose 当前那个（旧会话由替换方负责）
         await session?.dispose();
       })();
@@ -412,6 +438,8 @@ export async function bootstrap(
       },
       hooks,
       host,
+      extensions,
+      hostStatus: () => mergedHostStatus(hostContext),
       permission,
       tools,
       approvals: {
@@ -425,7 +453,7 @@ export async function bootstrap(
     };
   } catch (error) {
     if (shutdown !== undefined) await shutdown("exit").catch(() => undefined);
-    else await disposeHost(host);
+    else await disposeAll();
     throw toStartupError(error, ExitCode.RuntimeError, m().steps.startup);
   }
 }

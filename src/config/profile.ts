@@ -23,6 +23,8 @@ export interface ProfileOptions {
   promptDirs: string[];
   /** [W5-C0] 子 Agent 定义目录（W5-G 接入发现）。 */
   agentDirs?: string[];
+  /** [#301] 本地扩展文件（绝对路径）。 */
+  extensions?: string[];
   hooksFile?: string;
   authFile?: string;
   /** false：key 只来自 authFile。 */
@@ -81,6 +83,7 @@ function profileToOptions(path: string, profile: ProfileFile, warnings: string[]
     instructions: [...(profile.instructions ?? [])],
     skillDirs: [...(profile.skillDirs ?? [])],
     promptDirs: [...(profile.promptDirs ?? [])],
+    extensions: [...(profile.extensions ?? [])],
     authEnv: profile.authEnv !== false,
     trustProject: profile.trustProject === true,
     warnings: [...warnings],

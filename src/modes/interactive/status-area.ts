@@ -91,7 +91,7 @@ export class StatusArea {
     const source: StatusBarSource = {
       session: () => deps.session(),
       preset: () => runtime.config.tools?.preset ?? "default",
-      hostStatus: () => runtime.host?.status(),
+      hostStatus: () => runtime.hostStatus?.() ?? runtime.host?.status(),
       codemode: () => {
         const mode = effectiveCodemodeMode(runtime.config);
         const active = deps

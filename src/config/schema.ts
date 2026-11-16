@@ -498,6 +498,7 @@ export const PROFILE_PATH_LIST_FIELDS = [
   "skillDirs",
   "promptDirs",
   "agentDirs",
+  "extensions",
 ] as const;
 
 export function validateProfile(value: unknown): Diagnostic[] {

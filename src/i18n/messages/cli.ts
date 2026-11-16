@@ -60,6 +60,10 @@ export const en = {
       detail === undefined ? message : `${message}: ${detail}`,
     sessionNotReady: "Session is not ready yet",
     hostDisposeFailed: (error: string) => `Host adapter dispose failed: ${error}`,
+    extensionSkipped: (path: string, reason: string) => `Extension skipped: ${path}: ${reason}`,
+    extensionNotActivated: "create() returned no adapter",
+    extensionDisposeFailed: (path: string, error: string) =>
+      `Extension dispose failed: ${path}: ${error}`,
     sessionStartBlocked: (reason?: string) =>
       `SessionStart hook blocked startup: ${reason ?? "(no reason given)"}`,
     subcommandNotDispatched: "Subcommands should be dispatched by main",
@@ -244,6 +248,9 @@ export const zh = {
     eventWarning: (message, detail) => (detail === undefined ? message : `${message}：${detail}`),
     sessionNotReady: "会话尚未就绪",
     hostDisposeFailed: (error) => `宿主适配器 dispose 失败：${error}`,
+    extensionSkipped: (path, reason) => `已跳过扩展：${path}：${reason}`,
+    extensionNotActivated: "create() 没有返回适配器",
+    extensionDisposeFailed: (path, error) => `扩展 dispose 失败：${path}：${error}`,
     sessionStartBlocked: (reason) => `SessionStart Hook 阻止启动：${reason ?? "（无原因）"}`,
     subcommandNotDispatched: "子命令应由 main 分派",
     runtimeNotAssembled: "ama: 运行时尚未装配（集成批次通过 registerRuntimeDeps 注入实现）\n",

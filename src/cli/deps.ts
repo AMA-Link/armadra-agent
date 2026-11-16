@@ -94,6 +94,8 @@ export interface SessionAssembly {
   events: AgentEventBus;
   host: {
     handle: HostAdapterHandle | undefined;
+    /** [#301] 已激活的本地扩展（加载顺序）；没有时为空表。 */
+    extensions?: readonly HostAdapterHandle[];
     /** 宿主 broker（链首）；undefined 交给 UI / 无人值守。 */
     broker(): ApprovalBroker | undefined;
     /** 系统提示 host 节。 */

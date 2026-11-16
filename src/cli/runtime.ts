@@ -83,6 +83,10 @@ export interface Runtime {
   readonly hooks: HookDispatcherApi;
   /** 未激活宿主适配器时为 undefined。 */
   readonly host: HostAdapterHandle | undefined;
+  /** [#301] 已激活的本地扩展（加载顺序，来源路径与 id）；没有时为空表。 */
+  readonly extensions?: readonly HostAdapterHandle[];
+  /** [#301] 宿主适配器与全部扩展 `ui.setStatus` 合并后的状态表（状态栏）。 */
+  hostStatus?(): ReadonlyMap<string, string>;
   readonly permission: PermissionPipelineApi;
   readonly tools: ToolRegistryApi;
   readonly approvals: RuntimeApprovals;
