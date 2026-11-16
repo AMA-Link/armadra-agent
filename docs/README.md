@@ -31,6 +31,7 @@
 | [codemode](guides/codemode.md)            | 模型写脚本批量调用工具，子进程与权限                                        |
 | [操作系统级沙箱](guides/sandbox.md)       | macOS `sandbox-exec` 与 Linux bubblewrap，codemode 与 bash 接入             |
 | [界面语言](guides/i18n.md)                | 中英双语的选择规则与开发约定                                                |
+| [本地扩展](guides/extensions.md)          | 用户自装的多个宿主适配器：加载、共存规则、斜杠命令、哈希信任、`ama doctor`  |
 
 ## reference/ 协议与格式
 
@@ -48,7 +49,6 @@
 | [总体设计](design/design.md)             | 架构、工程约定、缓存保证与决定表；硬约束仍以此为准，细节现状见 `guides/`   |
 | [终端界面视觉规范](design/tui-design.md) | 主题、逐屏样稿与交互细节；已按此实现，作为界面改动的规范                   |
 | [检索与网络搜索](design/search-plan.md)  | 只实施了本地检索增强；`web_fetch`、`web_search` 与引用呈现保留为将来的设计 |
-| [本地扩展](design/extensions.md)         | 设计草案，尚未实现                                                         |
 
 ## history/ 已完成的计划与审计
 
