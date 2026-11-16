@@ -60,6 +60,26 @@ describe("print 模式：扩展斜杠命令", () => {
     });
   });
 
+  it("有管道 stdin：不分派，整段（含命令行文本）照常发给模型", async () => {
+    h = composeHarness([{ text: "model said" }], {
+      readStdin: async () => "piped body",
+      stdinKind: () => "file",
+    });
+    const base = ["--host", commandHost(h.home), "--model", "fake/echo"];
+    expect(await h.run(["-p", "/standup monday", ...base])).toBe(0);
+    expect(h.fake.calls).toHaveLength(1);
+    const sent = JSON.stringify(h.fake.calls[0]?.context.messages.at(-1));
+    expect(sent).toContain("/standup monday");
+    expect(sent).toContain("piped body");
+    expect(h.stdout()).toBe("model said\n");
+  });
+
+  it("handled 不读图片：--image 指向不存在的文件也照常输出", async () => {
+    const base = boot();
+    expect(await h.run(["-p", "/standup z", "--image", "missing.png", ...base])).toBe(0);
+    expect(h.stdout()).toBe("standup:z\n");
+  });
+
   it("未命中：字面文本照常发给模型", async () => {
     const base = boot();
     expect(await h.run(["-p", "/nothing here", ...base])).toBe(0);

@@ -11,7 +11,7 @@
  */
 
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { StartupError } from "../errors.js";
 import { msg } from "../i18n/index.js";
 import type { HostApiBinding } from "./api-impl.js";
@@ -74,7 +74,7 @@ export function discoverExtensions(
   const result: string[] = [];
   for (const path of [
     ...discoverExtensionDir(configDir),
-    ...profileExtensions.map((p) => (isAbsolute(p) ? p : resolve(p))),
+    ...profileExtensions.map((p) => resolve(p)),
   ]) {
     if (seen.has(path)) continue;
     seen.add(path);

@@ -1,7 +1,7 @@
 /** 目录扩展（#305）：发现、整树信任、子文件变化重新询问、上限、doctor 列出。 */
 
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { harness, type Harness } from "../../test/helpers/bootstrap-harness.js";
 import { setupExtensionTrust } from "../../test/helpers/extension-trust.js";
@@ -73,6 +73,10 @@ describe("发现", () => {
     const other = join(home.root, "elsewhere");
     put(join(other, "index.mjs"), "export {};");
     expect(discoverExtensions(home.configDir, [dir, other])).toEqual([dir, other]);
+    // 带尾部分隔符或 ./.. 的写法规整后去重
+    expect(
+      discoverExtensions(home.configDir, [`${dir}${sep}`, join(other, "..", "elsewhere"), other]),
+    ).toEqual([dir, other]);
   });
 
   it.skipIf(process.platform === "win32")("指向目录的符号链接按目录扩展发现", () => {

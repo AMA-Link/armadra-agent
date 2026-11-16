@@ -134,9 +134,10 @@ export async function runPrintMode(runtime: Runtime, context: ModeContext): Prom
     return ExitCode.Usage;
   }
   const session = currentSession(runtime);
-  // [#303] `/<名> 参数` 命中扩展命令：handled 直接输出 message、不调模型；prompt 改发其文本
+  // [#303] `/<名> 参数` 命中扩展命令：handled 直接输出 message、不调模型；prompt 改发其文本。
+  // 只认命令行给的提示：有管道 stdin 时整段原样发给模型（免得文件首行恰好像命令就被执行）
   let handledText: string | undefined;
-  const slash = parseSlash(prompt);
+  const slash = piped === "" ? parseSlash(prompt) : undefined;
   if (slash !== undefined) {
     try {
       const hosted = await runHostSlash(slash.name, slash.args, runtime, session);
@@ -147,16 +148,18 @@ export async function runPrintMode(runtime: Runtime, context: ModeContext): Prom
       return ExitCode.RuntimeError;
     }
   }
-  let images: ImageBlock[];
+  let images: ImageBlock[] = [];
   const resize = runtime.config.images?.resize;
   try {
-    images = await promptImages(
-      prompt,
-      context.args.images,
-      io.cwd,
-      sessionModel(runtime.providers, session),
-      resize === undefined ? {} : { resize },
-    );
+    // handled 不调模型，也就不读图片（读图失败不该让命令失败）
+    if (handledText === undefined)
+      images = await promptImages(
+        prompt,
+        context.args.images,
+        io.cwd,
+        sessionModel(runtime.providers, session),
+        resize === undefined ? {} : { resize },
+      );
   } catch (error) {
     io.stderr(`ama: ${errorText(error)}\n`);
     return ExitCode.Usage;

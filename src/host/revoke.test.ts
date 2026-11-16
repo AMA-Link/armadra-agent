@@ -210,4 +210,59 @@ describe("扩展激活失败时撤回（#304）", () => {
     expect(s.tools.isDisabled("ls")).toBe(true);
     expect(s.tools.isDisabled("glob")).toBe(false);
   });
+
+  it("两个模块禁用同一工具：撤回一个仍禁用，全部撤回才解除", () => {
+    const s = setup();
+    const a = createHostApi(s.deps, s.context);
+    const b = createHostApi(s.deps, s.context);
+    a.api.tools.disable("ls");
+    b.api.tools.disable("ls");
+    a.revoke();
+    expect(s.tools.isDisabled("ls")).toBe(true);
+    b.revoke();
+    expect(s.tools.isDisabled("ls")).toBe(false);
+  });
+
+  it("伴随工具逐个判断：配置先禁用的伴随工具不被撤回放开", () => {
+    const s = setup();
+    s.tools.disable("task_ctl");
+    const a = createHostApi(s.deps, s.context);
+    a.api.tools.disable("task");
+    a.revoke();
+    expect(s.tools.isDisabled("task")).toBe(false);
+    expect(s.tools.isDisabled("report")).toBe(false);
+    expect(s.tools.isDisabled("task_ctl")).toBe(true);
+  });
+
+  it("撤回时同名状态键按其它模块的剩余值重新通知", () => {
+    const s = setup();
+    const a = createHostApi(s.deps, s.context);
+    const b = createHostApi(s.deps, s.context);
+    a.api.ui.setStatus("k", "A");
+    b.api.ui.setStatus("k", "B");
+    b.api.ui.setStatus("only-b", "x");
+    s.statusCalls.length = 0;
+    b.revoke();
+    expect(s.statusCalls).toEqual([
+      ["k", "A"],
+      ["only-b", undefined],
+    ]);
+    expect(mergedHostStatus(s.context).get("k")).toBe("A");
+  });
+
+  it("撤回后 messages.sendUser 与 ui.notify 被忽略并 warning", async () => {
+    const s = setup();
+    const sent: string[] = [];
+    s.deps.sendUser = async (text) => {
+      sent.push(text);
+      return "started";
+    };
+    const a = createHostApi(s.deps, s.context);
+    a.revoke();
+    await a.api.messages.sendUser("late");
+    a.api.ui.notify("late");
+    expect(sent).toEqual([]);
+    expect(s.warnings.join("")).toContain("messages.sendUser");
+    expect(s.warnings.join("")).toContain("ui.notify");
+  });
 });

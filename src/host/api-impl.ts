@@ -140,6 +140,8 @@ export interface HostContext {
   readonly commands: HostCommandRegistry;
   /** [#306] 全部模块经 `runners.provide` 注入的 runner（同 id 先到先得）。 */
   readonly runners: HostRunnerRegistry;
+  /** [#304] 由模块禁用的工具名 → 持有它的模块；最后一个持有者撤回时才解除禁用。 */
+  readonly disabledBy: Map<string, Set<symbol>>;
 }
 
 export interface HostContextOptions {
@@ -157,6 +159,7 @@ export function createHostContext(options: HostContextOptions = {}): HostContext
     notify: options.notify,
     commands: new HostCommandRegistry(options.reservedCommand),
     runners: new HostRunnerRegistry(),
+    disabledBy: new Map(),
   };
 }
 
@@ -279,8 +282,26 @@ export function createHostApi(
       },
       disable(name: string): void {
         if (ignored("tools.disable")) return;
-        if (!deps.tools.isDisabled(name)) {
-          undo.push(() => deps.tools.enable(name));
+        // 按名记持有者：只有由模块禁用（禁用前是启用的）的名字才记；全部持有者撤回后才解除。
+        // 配置或启动前就禁用的名字不记，永远不会被扩展的撤回放开（伴随工具同理逐个判断）。
+        const targets = deps.tools.disableTargets?.(name) ?? [name];
+        const held: string[] = [];
+        for (const target of targets) {
+          const holders = context.disabledBy.get(target);
+          if (holders !== undefined) holders.add(token);
+          else if (!deps.tools.isDisabled(target)) context.disabledBy.set(target, new Set([token]));
+          else continue;
+          held.push(target);
+        }
+        if (held.length > 0) {
+          undo.push(() => {
+            for (const target of held) {
+              const holders = context.disabledBy.get(target);
+              if (holders === undefined || !holders.delete(token) || holders.size > 0) continue;
+              context.disabledBy.delete(target);
+              deps.tools.enable(target);
+            }
+          });
         }
         deps.tools.disable(name);
         if (!disabledTools.includes(name)) disabledTools.push(name);
@@ -324,10 +345,15 @@ export function createHostApi(
       },
     }),
     messages: Object.freeze({
-      sendUser: (text: string, origin?: string) => deps.sendUser(text, origin ?? "host"),
+      // [#304] 撤回后忽略（只记 warning）；不 reject，免得没 await 的扩展触发未处理的拒绝
+      sendUser: (text: string, origin?: string) =>
+        ignored("messages.sendUser")
+          ? Promise.resolve("queued" as const)
+          : deps.sendUser(text, origin ?? "host"),
     }),
     ui: Object.freeze({
       notify(message: string, level: "info" | "warn" | "error" = "info"): void {
+        if (ignored("ui.notify")) return;
         // 交互 / line 由 UI 显示；rpc 由模式转成事件；print（或未注入）写 stderr。
         if (context.notify !== undefined && deps.mode !== "print") {
           context.notify(message, level);
@@ -416,7 +442,9 @@ export function createHostApi(
     const keys = [...status.keys()];
     status.clear();
     context.statuses.delete(status);
-    for (const key of keys) deps.onStatus?.(key, undefined);
+    // 其它模块可能也设了同名键：按合并后的剩余值重新通知，而不是一律清掉
+    const merged = mergedHostStatus(context);
+    for (const key of keys) deps.onStatus?.(key, merged.get(key));
   };
 
   return {

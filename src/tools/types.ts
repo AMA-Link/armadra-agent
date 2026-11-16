@@ -338,7 +338,9 @@ export interface ToolRegistryApi {
   /** 同名已存在则抛 AmaError{code:"tool_exists"}。 */
   register(tool: ToolDefinition, source: ToolSource): void;
   disable(name: string): void;
-  /** [#304] 撤销 `disable`（含伴随工具）；扩展激活失败撤回时用。 */
+  /** [#304] `disable(name)` 会禁用的全部名字（本名 + 伴随工具）；缺省视为只有本名。 */
+  disableTargets?(name: string): readonly string[];
+  /** [#304] 只解除这一个名字的禁用（不含伴随工具）；扩展激活失败撤回时用。 */
   enable(name: string): void;
   isDisabled(name: string): boolean;
   /** [#304] 移除已注册的工具（含活动集）；不存在返回 false。 */

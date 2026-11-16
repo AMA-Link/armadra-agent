@@ -110,9 +110,14 @@ export class ToolRegistry implements ToolRegistryApi {
     return this.entries.delete(name);
   }
 
-  /** [#304] 撤销 {@link disable}（含伴随工具）。 */
+  /** [#304] `disable(name)` 会禁用的全部名字（本名 + 伴随工具）。 */
+  disableTargets(name: string): readonly string[] {
+    return [name, ...(TOOL_COMPANIONS[name] ?? [])];
+  }
+
+  /** [#304] 只解除这一个名字的禁用（伴随工具各自按名解除，撤回方逐个决定）。 */
   enable(name: string): void {
-    for (const target of [name, ...(TOOL_COMPANIONS[name] ?? [])]) this.disabled.delete(target);
+    this.disabled.delete(name);
   }
 
   isDisabled(name: string): boolean {
