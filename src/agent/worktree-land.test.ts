@@ -10,6 +10,10 @@ import {
   type TaskControl,
 } from "../agents/task-control.js";
 import { createTaskLandTool, refuseTaskLand } from "../tools/task-land.js";
+import type { ToolResultMessage } from "../ai/types.js";
+import type { ToolDefinition } from "../tools/types.js";
+import { isChild, lastIsToolResult, subagentHarness } from "./testing/subagent-harness.js";
+import { stubTool } from "./testing/stubs.js";
 import { createWorktree } from "./worktree.js";
 import { landWorktree } from "./worktree-land.js";
 
@@ -131,6 +135,59 @@ describe.skipIf(!hasGit)("[#313] landWorktree", () => {
     const result = await landWorktree(tree, "m");
     expect(result).toMatchObject({ status: "blocked" });
     expect(git(root, "rev-parse", "CHERRY_PICK_HEAD")).toBe(pick);
+  });
+});
+
+describe.skipIf(!hasGit)("[#313] 会话链路", () => {
+  it("父派 worktree 子任务 → 子任务改文件 → 父 task_land 落到当前分支", async () => {
+    const root = repo();
+    writeFileSync(join(root, "a.txt"), "parent dirty\n");
+    const edit = stubTool({
+      name: "edit_b",
+      run: (_input, ctx) => {
+        expect(readFileSync(join(ctx.cwd, "a.txt"), "utf8")).toBe("parent dirty\n");
+        writeFileSync(join(ctx.cwd, "b.txt"), "from child\n");
+        return { content: "edited" };
+      },
+    }) as ToolDefinition;
+    let parentStep = 0;
+    const h = subagentHarness({
+      cwd: root,
+      extraTools: [edit, createTaskLandTool() as ToolDefinition],
+      script: (call) => {
+        if (isChild(call))
+          return lastIsToolResult(call)
+            ? { text: "child done" }
+            : { toolCalls: [{ name: "edit_b", args: {} }] };
+        parentStep++;
+        if (parentStep === 1)
+          return {
+            toolCalls: [
+              {
+                name: "task",
+                args: {
+                  prompt: "change",
+                  description: "edit b",
+                  isolation: "worktree",
+                  background: false,
+                },
+              },
+            ],
+          };
+        if (parentStep === 2) return { toolCalls: [{ name: "task_land", args: { taskId: "t1" } }] };
+        return { text: "parent done" };
+      },
+    });
+    await h.session.prompt("go");
+    const results = h.session.messages.filter(
+      (m): m is ToolResultMessage => m.role === "toolResult",
+    );
+    expect(JSON.stringify(results.at(-1)?.content)).toContain("Landed task t1: 1 commit(s)");
+    expect(git(root, "log", "-1", "--format=%s")).toBe("task t1: edit b");
+    expect(readFileSync(join(root, "b.txt"), "utf8")).toBe("from child\n");
+    expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("parent dirty\n");
+    expect(git(root, "status", "--porcelain")).toBe("M a.txt");
+    expect(git(root, "worktree", "list").split("\n")).toHaveLength(1);
   });
 });
 
