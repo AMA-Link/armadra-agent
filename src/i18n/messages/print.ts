@@ -35,6 +35,9 @@ export const en = {
     denied: (count: number, tools: readonly string[], reason: string) =>
       `ama: ${plural(count, "tool call")} denied: ${tools.join(", ")}${reason !== "" ? ` (${reason})` : ""}; ` +
       "-p has no one to approve; to allow them use --permission-mode auto-edit|auto or --allow <rule>",
+    deniedClassifier: (count: number, tools: readonly string[]) =>
+      `ama: ${plural(count, "tool call")} denied: ${tools.join(", ")} (the auto-mode classifier is unavailable); ` +
+      "check the key and model it uses (permission.autoModel, see the warning above), or allow them with --allow <rule>",
     searchToolsMissing: (preset: string, missing: readonly string[]) =>
       `ama: the ${preset} preset has no ${missing.join(" / ")}; add ${missing.length === 1 ? "it" : "them"} with ` +
       `tools.default: [${missing.map((name) => `"+${name}"`).join(",")}]`,
@@ -72,6 +75,9 @@ export const zh = {
     denied: (count, tools, reason) =>
       `ama: ${count} 次工具调用被拒：${tools.join("、")}${reason !== "" ? `（${reason}）` : ""}；` +
       "-p 没有人审批，需要放行时用 --permission-mode auto-edit|auto 或 --allow <规则>",
+    deniedClassifier: (count, tools) =>
+      `ama: ${count} 次工具调用被拒：${tools.join("、")}（auto 模式的分类器不可用）；` +
+      "请检查它使用的 key 与模型（permission.autoModel，见上方警告），或用 --allow <规则> 放行",
     searchToolsMissing: (preset, missing) =>
       `ama: ${preset} 预设没有 ${missing.join(" / ")}，可用 ` +
       `tools.default: [${missing.map((name) => `"+${name}"`).join(",")}] 加上`,

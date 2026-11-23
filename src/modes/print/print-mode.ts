@@ -47,6 +47,7 @@ import type { AgentSession, SessionStats } from "../../agent/types.js";
 import { registryOf } from "../../agent/subagent-registry.js";
 import { promptImages, sessionModel } from "../image-input.js";
 import { msg } from "../../i18n/index.js";
+import { CLASSIFIER_UNAVAILABLE_MESSAGE } from "../../permissions/pipeline.js";
 import { searchToolsHint } from "./search-hint.js";
 
 export function joinPrompt(argument: string | undefined, piped: string): string {
@@ -369,6 +370,8 @@ export function describeDenied(denied: readonly DeniedTool[]): string {
   const counts = new Map<string, number>();
   for (const item of denied) counts.set(item.toolName, (counts.get(item.toolName) ?? 0) + 1);
   const tools = [...counts].map(([name, n]) => `${name} ×${n}`);
+  if (denied.some((item) => item.reason === CLASSIFIER_UNAVAILABLE_MESSAGE))
+    return msg().print.print.deniedClassifier(denied.length, tools);
   return msg().print.print.denied(denied.length, tools, denied[0]?.reason ?? "");
 }
 
