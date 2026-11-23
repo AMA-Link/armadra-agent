@@ -9,7 +9,7 @@
         "input": 0.14,
         "output": 0.28
       },
-      "family": "mimo",
+      "family": "mimo-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -36,7 +36,7 @@
         "input": 0.435,
         "output": 0.87
       },
-      "family": "mimo",
+      "family": "mimo-pro",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -63,7 +63,7 @@
         "input": 4.35,
         "output": 8.7
       },
-      "family": "mimo",
+      "family": "mimo-pro",
       "interleaved": {
         "field": "reasoning_content"
       },

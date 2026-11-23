@@ -9,7 +9,7 @@
         "input": 0.9711,
         "output": 4.0337
       },
-      "family": "kimi-k2",
+      "family": "kimi",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -36,7 +36,7 @@
         "input": 0.9711,
         "output": 4.0337
       },
-      "family": "kimi-k2",
+      "family": "kimi-code",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -63,7 +63,7 @@
         "input": 1.9421,
         "output": 8.0673
       },
-      "family": "kimi-k2",
+      "family": "kimi-code",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -91,7 +91,7 @@
         "input": 2.9879,
         "output": 14.9395
       },
-      "family": "kimi-k3",
+      "family": "kimi",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -118,7 +118,7 @@
         "input": 1.9437,
         "output": 10.1671
       },
-      "family": "kimi-k3",
+      "family": "kimi-pro",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -145,7 +145,7 @@
         "input": 3.8874,
         "output": 20.3342
       },
-      "family": "kimi-k3",
+      "family": "kimi-pro",
       "interleaved": {
         "field": "reasoning_content"
       },

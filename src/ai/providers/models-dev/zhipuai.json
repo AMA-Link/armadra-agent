@@ -112,7 +112,7 @@
           }
         ]
       },
-      "family": "glm",
+      "family": "glmv",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -178,7 +178,7 @@
           }
         ]
       },
-      "family": "glm",
+      "family": "glmv",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -206,7 +206,7 @@
         "input": 0,
         "output": 0
       },
-      "family": "glm-flash",
+      "family": "glmv-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -515,7 +515,7 @@
           }
         ]
       },
-      "family": "glm",
+      "family": "glmv-turbo",
       "interleaved": {
         "field": "reasoning_content"
       },

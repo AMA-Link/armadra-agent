@@ -88,7 +88,7 @@
         "input": 0.6,
         "output": 1.8
       },
-      "family": "glm",
+      "family": "glmv",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -142,7 +142,7 @@
         "input": 0.3,
         "output": 0.9
       },
-      "family": "glm",
+      "family": "glmv",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -170,7 +170,7 @@
         "input": 0,
         "output": 0
       },
-      "family": "glm-flash",
+      "family": "glmv-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -300,7 +300,7 @@
         "input": 1.2,
         "output": 4
       },
-      "family": "glm",
+      "family": "glm-turbo",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -456,7 +456,7 @@
         "input": 1.2,
         "output": 4
       },
-      "family": "glm",
+      "family": "glmv-turbo",
       "interleaved": {
         "field": "reasoning_content"
       },

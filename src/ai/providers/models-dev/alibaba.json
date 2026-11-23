@@ -59,7 +59,7 @@
         "input": 3,
         "output": 15
       },
-      "family": "kimi-k3",
+      "family": "kimi",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -102,7 +102,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-flash",
       "knowledge": "2024-04",
       "limit": {
         "context": 1000000,
@@ -122,7 +122,7 @@
         "input": 1.6,
         "output": 6.4
       },
-      "family": "qwen",
+      "family": "qwen-max",
       "knowledge": "2024-04",
       "limit": {
         "context": 32768,
@@ -162,7 +162,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-plus",
       "knowledge": "2024-04",
       "limit": {
         "context": 1000000,
@@ -216,7 +216,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-coder-flash",
       "knowledge": "2025-04",
       "limit": {
         "context": 1000000,
@@ -236,7 +236,7 @@
         "input": 0.43,
         "output": 1.66
       },
-      "family": "qwen",
+      "family": "qwen-omni-flash",
       "knowledge": "2024-04",
       "limit": {
         "context": 65536,
@@ -259,7 +259,7 @@
         "input": 0.2,
         "output": 0.8
       },
-      "family": "qwen",
+      "family": "qwen-vl",
       "knowledge": "2025-04",
       "limit": {
         "context": 131072,
@@ -304,7 +304,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-vl-plus",
       "knowledge": "2025-04",
       "limit": {
         "context": 262144,
@@ -313,7 +313,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "video"
         ]
       },
       "name": "Qwen3-VL Plus",
@@ -412,7 +413,7 @@
         "input": 0.1,
         "output": 0.4
       },
-      "family": "qwen",
+      "family": "qwen-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -450,7 +451,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-plus",
       "knowledge": "2025-04",
       "limit": {
         "context": 1000000,
@@ -534,7 +535,7 @@
           }
         ]
       },
-      "family": "qwen3.6",
+      "family": "qwen-flash",
       "limit": {
         "context": 1000000,
         "output": 65536
@@ -575,7 +576,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-plus",
       "knowledge": "2025-04",
       "limit": {
         "context": 1000000,
@@ -622,7 +623,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -649,7 +650,7 @@
         "input": 2.5,
         "output": 7.5
       },
-      "family": "qwen",
+      "family": "qwen-max",
       "limit": {
         "context": 1000000,
         "output": 131072
@@ -688,7 +689,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-plus",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -716,7 +717,7 @@
         "input": 0.15,
         "output": 0.47
       },
-      "family": "qwen",
+      "family": "qwen-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -743,7 +744,7 @@
         "input": 2,
         "output": 6
       },
-      "family": "qwen",
+      "family": "qwen-max",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -770,7 +771,7 @@
         "input": 0.15,
         "output": 0.47
       },
-      "family": "qwen",
+      "family": "qwen-omni-flash",
       "interleaved": {
         "field": "reasoning_content"
       },

@@ -24,7 +24,7 @@
           }
         ]
       },
-      "family": "minimax",
+      "family": "minimax-m",
       "limit": {
         "context": 1000000,
         "output": 524288
@@ -47,7 +47,7 @@
         "input": 0.15,
         "output": 0.6
       },
-      "family": "minimax",
+      "family": "minimax-m-flash",
       "limit": {
         "context": 1000000,
         "output": 524288

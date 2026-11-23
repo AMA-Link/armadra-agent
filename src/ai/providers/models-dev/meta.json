@@ -25,7 +25,7 @@
           }
         ]
       },
-      "family": "muse",
+      "family": "muse-ember",
       "limit": {
         "context": 1048576,
         "output": 524288
@@ -50,7 +50,7 @@
         "input": 1.25,
         "output": 4.25
       },
-      "family": "muse",
+      "family": "muse-spark",
       "limit": {
         "context": 1048576,
         "output": 131072
@@ -74,7 +74,7 @@
         "input": 1.25,
         "output": 4.25
       },
-      "family": "muse",
+      "family": "muse-spark",
       "limit": {
         "context": 1048576,
         "output": 131072
@@ -99,7 +99,7 @@
         "input": 0.1,
         "output": 0.2
       },
-      "family": "muse",
+      "family": "muse-spark",
       "limit": {
         "context": 1048576,
         "output": 131072
@@ -124,7 +124,7 @@
         "input": 1.25,
         "output": 4.25
       },
-      "family": "muse",
+      "family": "muse-spark",
       "limit": {
         "context": 1048576,
         "output": 131072
@@ -149,7 +149,7 @@
         "input": 0.1,
         "output": 0.2
       },
-      "family": "muse",
+      "family": "muse-spark",
       "limit": {
         "context": 1048576,
         "output": 131072
@@ -174,7 +174,7 @@
         "input": 4,
         "output": 20
       },
-      "family": "muse",
+      "family": "muse-wonder",
       "limit": {
         "context": 1048576,
         "output": 131072

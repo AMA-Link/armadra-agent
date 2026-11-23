@@ -24,7 +24,7 @@
           }
         ]
       },
-      "family": "gemini-pro",
+      "family": "gemini-deep-research-max",
       "knowledge": "2025-01",
       "limit": {
         "context": 1048576,
@@ -66,7 +66,7 @@
           }
         ]
       },
-      "family": "gemini-pro",
+      "family": "gemini-deep-research",
       "knowledge": "2025-01",
       "limit": {
         "context": 1048576,
@@ -91,7 +91,7 @@
         "input": 1.25,
         "output": 10
       },
-      "family": "gemini-pro",
+      "family": "gemini-computer-use",
       "knowledge": "2025-01",
       "limit": {
         "context": 128000,
@@ -254,9 +254,9 @@
       "canonical_model_id": "google/gemini-3.1-flash-lite-image",
       "cost": {
         "input": 0.25,
-        "output": 30
+        "output": 1.5
       },
-      "family": "gemini-flash-lite",
+      "family": "nano-banana-lite",
       "knowledge": "2025-01",
       "limit": {
         "context": 65536,
@@ -278,7 +278,7 @@
         "input": 0.75,
         "output": 4.5
       },
-      "family": "gemini-flash",
+      "family": "gemini-live",
       "knowledge": "2025-01",
       "limit": {
         "context": 131072,
@@ -583,6 +583,32 @@
       "name": "Gemini 4 Hydrogen",
       "reasoning": true,
       "release_date": "2026-11-12"
+    },
+    "gemini-4-neon": {
+      "canonical_model_id": "google/gemini-4-neon",
+      "cost": {
+        "cache_read": 0.15,
+        "input": 3,
+        "output": 15
+      },
+      "family": "gemini",
+      "knowledge": "2026-03",
+      "limit": {
+        "context": 1048576,
+        "output": 65536
+      },
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ]
+      },
+      "name": "Gemini 4 Neon",
+      "reasoning": true,
+      "release_date": "2026-11-18"
     },
     "gemini-flash-latest": {
       "cost": {

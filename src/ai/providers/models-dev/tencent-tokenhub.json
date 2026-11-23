@@ -10,7 +10,7 @@
         "input": 0,
         "output": 0
       },
-      "family": "Hy",
+      "family": "hy",
       "limit": {
         "context": 256000,
         "input": 192000,
@@ -33,7 +33,7 @@
         "input": 0,
         "output": 0
       },
-      "family": "Hy",
+      "family": "hy",
       "limit": {
         "context": 256000,
         "output": 64000
@@ -54,7 +54,7 @@
         "input": 0.834,
         "output": 2.501
       },
-      "family": "Hy",
+      "family": "hy",
       "limit": {
         "context": 1048576,
         "input": 983010,
@@ -77,7 +77,7 @@
         "input": 0.834,
         "output": 2.501
       },
-      "family": "Hy",
+      "family": "hy",
       "limit": {
         "context": 1024000,
         "output": 64000

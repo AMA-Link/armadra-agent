@@ -233,44 +233,6 @@
       "name": "Grok 4.7",
       "reasoning": true,
       "release_date": "2026-09-21"
-    },
-    "grok-build-0.1": {
-      "cost": {
-        "cache_read": 0.2,
-        "context_over_200k": {
-          "cache_read": 0.4,
-          "input": 2,
-          "output": 4
-        },
-        "input": 1,
-        "output": 2,
-        "tiers": [
-          {
-            "cache_read": 0.4,
-            "input": 2,
-            "output": 4,
-            "tier": {
-              "size": 200000,
-              "type": "context"
-            }
-          }
-        ]
-      },
-      "family": "grok-build",
-      "limit": {
-        "context": 256000,
-        "output": 256000
-      },
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ]
-      },
-      "name": "Grok Build 0.1",
-      "reasoning": true,
-      "release_date": "2026-04-16"
     }
   },
   "name": "xAI"

@@ -52,7 +52,7 @@
         "input": 0.075,
         "output": 0.3
       },
-      "family": "gpt-oss",
+      "family": "gpt-oss-safeguard",
       "limit": {
         "context": 131072,
         "output": 65536

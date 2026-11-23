@@ -7,7 +7,7 @@
         "input": 0.3,
         "output": 1.2
       },
-      "family": "minimax",
+      "family": "minimax-m",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -31,7 +31,7 @@
         "input": 0.3,
         "output": 1.2
       },
-      "family": "minimax",
+      "family": "minimax-m",
       "limit": {
         "context": 204800,
         "output": 131072
@@ -51,7 +51,7 @@
         "input": 1.65,
         "output": 3.301
       },
-      "family": "deepseek-thinking",
+      "family": "deepseek-pro",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -220,7 +220,7 @@
         "input": 0.574,
         "output": 3.011
       },
-      "family": "kimi-k2",
+      "family": "kimi",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -247,7 +247,7 @@
         "input": 0.929,
         "output": 3.858
       },
-      "family": "kimi-k2",
+      "family": "kimi",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -274,7 +274,7 @@
         "input": 2.827,
         "output": 14.133
       },
-      "family": "kimi-k3",
+      "family": "kimi",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -298,7 +298,7 @@
         "input": 0.6,
         "output": 3
       },
-      "family": "kimi-k2",
+      "family": "kimi",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -323,7 +323,7 @@
         "input": 7.742,
         "output": 23.367
       },
-      "family": "qwen",
+      "family": "qwen-plus",
       "knowledge": "2024-04",
       "limit": {
         "context": 1000000,
@@ -343,7 +343,7 @@
         "input": 0.087,
         "output": 0.144
       },
-      "family": "qwen",
+      "family": "qwen-turbo",
       "knowledge": "2024-04",
       "limit": {
         "context": 131072,
@@ -387,7 +387,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-flash",
       "knowledge": "2024-04",
       "limit": {
         "context": 1000000,
@@ -407,7 +407,7 @@
         "input": 0.345,
         "output": 1.377
       },
-      "family": "qwen",
+      "family": "qwen-max",
       "knowledge": "2024-04",
       "limit": {
         "context": 131072,
@@ -451,7 +451,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-plus",
       "knowledge": "2024-04",
       "limit": {
         "context": 1000000,
@@ -505,7 +505,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-coder-flash",
       "knowledge": "2025-04",
       "limit": {
         "context": 1000000,
@@ -525,7 +525,7 @@
         "input": 0.258,
         "output": 0.989
       },
-      "family": "qwen",
+      "family": "qwen-omni-flash",
       "knowledge": "2024-04",
       "limit": {
         "context": 65536,
@@ -572,7 +572,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-vl-plus",
       "knowledge": "2025-04",
       "limit": {
         "context": 262144,
@@ -581,7 +581,8 @@
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "video"
         ]
       },
       "name": "Qwen3-VL Plus",
@@ -643,7 +644,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -686,7 +687,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-plus",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -732,7 +733,7 @@
           }
         ]
       },
-      "family": "qwen3.6",
+      "family": "qwen-flash",
       "limit": {
         "context": 1000000,
         "output": 65536
@@ -773,7 +774,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-plus",
       "knowledge": "2025-04",
       "limit": {
         "context": 1000000,
@@ -820,7 +821,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-flash",
       "limit": {
         "context": 1000000,
         "input": 991808,
@@ -845,7 +846,7 @@
         "input": 1.65,
         "output": 4.951
       },
-      "family": "qwen",
+      "family": "qwen-max",
       "limit": {
         "context": 1000000,
         "output": 131072
@@ -885,7 +886,7 @@
           }
         ]
       },
-      "family": "qwen",
+      "family": "qwen-plus",
       "knowledge": "2025-04",
       "limit": {
         "context": 1000000,
@@ -910,7 +911,7 @@
         "input": 0.11875,
         "output": 0.40073
       },
-      "family": "qwen",
+      "family": "qwen-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -937,7 +938,7 @@
         "input": 1.77744,
         "output": 5.33231
       },
-      "family": "qwen",
+      "family": "qwen-max",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -964,7 +965,7 @@
         "input": 0.113,
         "output": 0.382
       },
-      "family": "qwen",
+      "family": "qwen-omni-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -989,7 +990,7 @@
         "input": 0.5,
         "output": 2.18
       },
-      "family": "deepseek-thinking",
+      "family": "deepseek-r",
       "limit": {
         "context": 163840,
         "output": 32768

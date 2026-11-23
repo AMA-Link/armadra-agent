@@ -101,7 +101,7 @@
       "family": "ministral",
       "limit": {
         "context": 131072,
-        "output": 262144
+        "output": 131072
       },
       "modalities": {
         "input": [
@@ -374,7 +374,7 @@
         "input": 0.1,
         "output": 0.4
       },
-      "family": "voxtral",
+      "family": "voxtral-small",
       "limit": {
         "context": 32768,
         "output": 32000
@@ -395,7 +395,7 @@
         "input": 0.1,
         "output": 0.4
       },
-      "family": "voxtral",
+      "family": "voxtral-small",
       "limit": {
         "context": 32768,
         "output": 32000

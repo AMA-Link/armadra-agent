@@ -9,7 +9,7 @@
         "input": 0.10461,
         "output": 0.31384
       },
-      "family": "step",
+      "family": "step-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -35,7 +35,7 @@
         "input": 0.10461,
         "output": 0.31384
       },
-      "family": "step",
+      "family": "step-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -61,6 +61,7 @@
         "input": 0.20175,
         "output": 1.21052
       },
+      "family": "step-flash",
       "interleaved": {
         "field": "reasoning_content"
       },
@@ -88,6 +89,7 @@
         "input": 1.04613,
         "output": 2.98895
       },
+      "family": "step",
       "interleaved": {
         "field": "reasoning_content"
       },
