@@ -5,6 +5,21 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Added
+
+- **`task_land`**: lands a worktree task's commits on the current branch through the permission pipeline. On conflict, or when parent uncommitted work would be overwritten, the parent is restored and the worktree is kept.
+- **`subagents.worktreeSetup`**: a user-level command run once in each new task worktree, for example to link dependencies.
+
+### Changed
+
+- **Worktree tasks now see uncommitted work**: they start from a snapshot of staged, unstaged and untracked changes. The parent index and working tree are not touched, and inherited changes are not reported or landed.
+
+### Fixed
+
+- **`-p` denial hint**: when the auto-mode classifier is unavailable, the summary states that cause instead of suggesting the mode already in use.
+
 ## 0.21.0 (2026-11-19)
 
 ### Maintenance
