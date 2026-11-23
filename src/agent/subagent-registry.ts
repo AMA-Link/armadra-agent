@@ -55,6 +55,7 @@ import type { AgentDefinition, AgentInfo } from "../agents/types.js";
 import type { SessionCore } from "./session-core.js";
 import type { SessionTaskStats } from "./types.js";
 import { createWorktree, finishWorktree } from "./worktree.js";
+import { landTask } from "./subagent-land.js";
 import { appendTraceEntry } from "./session-trace-writer.js";
 import { directMessage, drainDirect, liveOf, type DirectReply } from "./subagent-direct.js";
 import {
@@ -188,6 +189,10 @@ export class SubagentRegistry implements TaskControl {
   }
 
   /** [#267] 到点被停止、尚未经提醒通道通知的任务。 */
+  land(taskId: string) {
+    return landTask(this.tasks.get(taskId), (record) => this.persist(record));
+  }
+
   takeExpired(): ExpiredTask[] {
     return takeExpiredTasks(this.tasks.values());
   }

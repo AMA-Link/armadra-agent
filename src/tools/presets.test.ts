@@ -155,7 +155,7 @@ describe("工具预设", () => {
       available: available(),
     });
     // [W5-C0] task_ctl 随 task 进出；[#269] report 同
-    expect(r.builtin).toEqual(["edit", "read", "report", "task", "task_ctl", "write"]);
+    expect(r.builtin).toEqual(["edit", "read", "report", "task", "task_ctl", "task_land", "write"]);
     expect(r.warnings.map((w) => msg().session.codemode.presetWarning(w))).toEqual([
       "tools.default：未知工具 nope，已忽略",
     ]);

@@ -66,7 +66,7 @@ import type { SessionEvent, SessionStats } from "./types.js";
 export { DEFAULT_SUBAGENT_CONCURRENCY, SubagentPool, TASK_CUSTOM_TYPE };
 export const DEFAULT_SUBAGENT_MAX_TURNS = 30;
 /** 子会话里保留在工具表、运行时拒绝的名字（深度 ≤ 1）。 */
-export const PARENT_ONLY_TOOLS: readonly string[] = ["task", "task_ctl"];
+export const PARENT_ONLY_TOOLS: readonly string[] = ["task", "task_ctl", "task_land"];
 /** [#269] 子会话总是可用的工具（类型白名单 / 黑名单不能去掉；父会话里它运行时被拒）。 */
 export const CHILD_ONLY_TOOLS: readonly string[] = [REPORT_TOOL];
 

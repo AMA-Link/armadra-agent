@@ -9,7 +9,10 @@ import {
   toolDeclaration,
 } from "./declarations.js";
 
-const builtins = () => builtinTools().map((tool) => ({ tool }));
+const builtins = () =>
+  builtinTools()
+    .filter((tool) => tool.name !== "task_land") // [#313] 不进 codemode 清单
+    .map((tool) => ({ tool }));
 
 describe("schemaToType", () => {
   it("基本类型、数组、enum、嵌套对象、空对象", () => {

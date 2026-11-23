@@ -93,6 +93,7 @@ describe("createRuntimeDeps + bootstrap", () => {
       "report",
       "task",
       "task_ctl",
+      "task_land",
       "write",
     ]);
   });
