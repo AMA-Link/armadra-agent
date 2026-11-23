@@ -33,6 +33,8 @@ export function decorateTaskText(
   text = withReportLines(text, report);
   if (outcome?.changed === true)
     text += `\n\n[worktree kept: branch ${outcome.branch} at ${outcome.path ?? "?"}]\n${outcome.diffStat ?? ""}`;
+  if (outcome?.snapshotError !== undefined)
+    text += `\n\n[worktree started from HEAD: uncommitted parent changes were not included (${outcome.snapshotError})]`;
   return text;
 }
 
