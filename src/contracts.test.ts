@@ -302,7 +302,7 @@ describe("宿主契约", () => {
 
   it("HostApiBinding.setNotify（契约 A8）", () => {
     expectTypeOf<Parameters<HostApiBinding["setNotify"]>>().toEqualTypeOf<
-      [fn?: (message: string, level: "info" | "warn" | "error") => void]
+      [fn?: ((message: string, level: "info" | "warn" | "error") => void) | undefined]
     >();
   });
 
@@ -479,10 +479,10 @@ describe("循环、SDK、RPC、Runtime 契约", () => {
     expectTypeOf<PromptOptions["origin"]>().toEqualTypeOf<MessageOrigin | undefined>();
     expectTypeOf<EnqueueOptions["origin"]>().toEqualTypeOf<MessageOrigin | undefined>();
     expectTypeOf<Parameters<AgentSession["steer"]>>().toEqualTypeOf<
-      [text: string, options?: EnqueueOptions]
+      [text: string, options?: EnqueueOptions | undefined]
     >();
     expectTypeOf<Parameters<AgentSession["followUp"]>>().toEqualTypeOf<
-      [text: string, options?: EnqueueOptions]
+      [text: string, options?: EnqueueOptions | undefined]
     >();
     expectTypeOf<Extract<SessionEvent, { type: "agent_end" }>>().toEqualTypeOf<{
       type: "agent_end";
@@ -590,7 +590,7 @@ describe("循环、SDK、RPC、Runtime 契约", () => {
       [broker: ApprovalBroker | undefined]
     >();
     expectTypeOf<Parameters<Runtime["notifier"]["set"]>>().toEqualTypeOf<
-      [fn?: (message: string, level: "info" | "warn" | "error") => void]
+      [fn?: ((message: string, level: "info" | "warn" | "error") => void) | undefined]
     >();
   });
 });

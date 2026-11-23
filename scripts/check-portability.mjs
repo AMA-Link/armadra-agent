@@ -26,7 +26,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
-const ts = createRequire(join(ROOT, "package.json"))("typescript");
+// TypeScript 7 起 `typescript` 包不再提供 JS 编译器 API，这里的 AST 检查用官方兼容包 6.x
+const ts = createRequire(join(ROOT, "package.json"))("@typescript/typescript6");
 
 export const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
 const ALLOW = /portability-ok:/;
