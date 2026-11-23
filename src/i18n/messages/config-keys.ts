@@ -23,6 +23,7 @@ const dynamicDefaultsEn = {
   "plan.thinkingLevel": "unset: keep the current thinking level",
   "agents.sessionBudgetUsd": "unset: unlimited",
   "subagents.defaultModel": "unset: inherit the parent session model",
+  "subagents.worktreeSetup": "unset: no setup command",
   "models.aliases.fast": "unset: fast is treated as inherit",
   "models.aliases.strong": "unset: strong is treated as inherit",
   "models.enabled": "unset: /model shows every model of configured providers",
@@ -51,6 +52,7 @@ const dynamicDefaultsZh = {
   "plan.thinkingLevel": "不设：沿用当前思考强度",
   "agents.sessionBudgetUsd": "不设：不限",
   "subagents.defaultModel": "不设：继承父会话模型",
+  "subagents.worktreeSetup": "不设：不运行初始化命令",
   "models.aliases.fast": "不设：fast 按 inherit 处理",
   "models.aliases.strong": "不设：strong 按 inherit 处理",
   "models.enabled": "不设：/model 显示已配置供应商的全部模型",
@@ -238,6 +240,8 @@ const keysEn = {
   "subagents.retainSessions":
     "Finished sub-sessions kept in memory (least recently used first out); others reopen from their session file when continued",
   "subagents.defaultModel": "Default sub-session model provider/model[@channel]",
+  "subagents.worktreeSetup":
+    "Command run once in the root of each new task worktree (for example to install or link dependencies); AMA_WORKTREE_PARENT is the parent repository; failure fails the task; user level only",
   "subagents.forkMaxContextRatio":
     "Fork sub-agents fall back to fresh when the parent's last request used more than this share of (window − compaction.reserveTokens); 0.05–0.95, default 0.5",
   "subagents.background":
@@ -420,6 +424,8 @@ const keysZh = {
   "subagents.retainSessions":
     "内存中保留的已结束子会话数（最久未用的先释放），其余续聊时从会话文件重开",
   "subagents.defaultModel": "子会话缺省模型 provider/model[@channel]",
+  "subagents.worktreeSetup":
+    "每个新建的任务 worktree 在其根目录运行一次的命令（如安装或链接依赖）；AMA_WORKTREE_PARENT 指向父仓库；失败则任务失败；只认用户级",
   "subagents.forkMaxContextRatio":
     "fork 子 Agent 的回落比例：父上一次请求超过（窗口 − compaction.reserveTokens）的这一比例时改为 fresh；0.05–0.95，缺省 0.5",
   "subagents.background":

@@ -16,7 +16,7 @@ export const AGENT_LIST_BUDGET_CHARS = 1600;
 
 export interface AgentModelConfig {
   agents?: AgentsConfig;
-  subagents?: { defaultModel?: string; forkMaxContextRatio?: number };
+  subagents?: { defaultModel?: string; forkMaxContextRatio?: number; worktreeSetup?: string };
   models?: ModelsConfig;
 }
 

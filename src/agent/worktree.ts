@@ -40,6 +40,8 @@ export interface Worktree {
   repo: string;
   /** [#313] 快照失败、回落到 HEAD 时的原因。 */
   snapshotError?: string;
+  /** [#313] 这次调用新建的（重开已有的不带），初始化命令只跑一次。 */
+  created?: true;
 }
 
 export interface WorktreeOutcome {
@@ -218,7 +220,8 @@ export async function createWorktree(
   const ref = worktreeBaseRef(branch);
   let base = head;
   let snapshotError: string | undefined;
-  if (existsSync(path)) {
+  const created = !existsSync(path);
+  if (!created) {
     // 重开保留的 worktree：起点取创建时记下的，不重新快照
     const saved = await git(["rev-parse", "--verify", "--quiet", ref], repo).catch(() => "");
     if (saved.trim() !== "") base = saved.trim();
@@ -236,6 +239,7 @@ export async function createWorktree(
   mkdirSync(childCwd, { recursive: true });
   const tree: Worktree = { path, cwd: childCwd, branch, base, repo };
   if (snapshotError !== undefined) tree.snapshotError = snapshotError;
+  if (created) tree.created = true;
   return tree;
 }
 

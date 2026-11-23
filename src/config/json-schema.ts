@@ -202,6 +202,7 @@ function w5Sections(): Record<string, Schema> {
       backgroundMaxMs: num(0, MAX_TIMER_MS),
       retainSessions: num(0),
       forkMaxContextRatio: num(0.05, 0.95),
+      worktreeSetup: str(),
     }),
     models: object({ aliases: object({ fast: str(), strong: str() }), enabled: strings }),
     fallbackModel: str(),

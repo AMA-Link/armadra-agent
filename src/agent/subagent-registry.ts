@@ -54,7 +54,8 @@ import type { TimeoutTimers } from "../tools/timers.js";
 import type { AgentDefinition, AgentInfo } from "../agents/types.js";
 import type { SessionCore } from "./session-core.js";
 import type { SessionTaskStats } from "./types.js";
-import { createWorktree, finishWorktree } from "./worktree.js";
+import { finishWorktree } from "./worktree.js";
+import { prepareTaskWorktree } from "./worktree-setup.js";
 import { landTask } from "./subagent-land.js";
 import { appendTraceEntry } from "./session-trace-writer.js";
 import { directMessage, drainDirect, liveOf, type DirectReply } from "./subagent-direct.js";
@@ -422,12 +423,8 @@ export class SubagentRegistry implements TaskControl {
     }
     delete record.queued;
     try {
-      if (record.isolation === "worktree" && record.worktree === undefined) {
-        // 名字带会话 id 前缀：不同会话的 t1 不会撞到同一个 worktree / 分支
-        const name = `${this.host.manager.id.slice(0, 8)}-${record.info.taskId}`;
-        record.worktree = await createWorktree(this.host.cwd, name);
-        record.cwd = record.worktree.cwd;
-      }
+      const setup = this.env.modelConfig?.subagents?.worktreeSetup;
+      await prepareTaskWorktree(record, this.host.cwd, this.host.manager.id, setup, signal);
       const handle = await this.handleFor(record, request, ama, signal);
       const onAbort = (): void => void handle.stop().catch(() => undefined);
       if (signal.aborted) onAbort();
