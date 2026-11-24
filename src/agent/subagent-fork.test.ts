@@ -307,17 +307,6 @@ describe("#191 子会话里 task 被拒的文案", () => {
 });
 
 describe("[ME-A] 回落为 fresh", () => {
-  it("指定与父不同的思考级别 → fresh（有 role 节、自己的 cache key），details.context = fresh", async () => {
-    const h = subagentHarness({
-      dir: dir(),
-      script: forkScript({ context: "fork", thinkingLevel: "high" }),
-    });
-    const { parentLast, child } = await runParent(h, 1);
-    expect(isChild(child[0]!)).toBe(true);
-    expect(child[0]!.options.sessionId).not.toBe(parentLast.options.sessionId);
-    expect(toolResults(h).at(-1)?.details).toMatchObject({ context: "fresh" });
-  });
-
   it("父上一次请求超过窗口一半 → fresh", async () => {
     const window = 200_000;
     const h = subagentHarness({

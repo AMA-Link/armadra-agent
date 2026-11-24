@@ -33,8 +33,13 @@ import {
   MEMORY_SUBAGENT_MODES,
   MIN_CONTEXT_BUDGET,
 } from "./types.js";
+import { TIER_LADDER } from "../agents/tier-ladder.js";
 import { AGENT_ID_PATTERN } from "./schema-w5.js";
-import { AGENTS_RESERVED_KEYS, SUBAGENT_BACKGROUND_MODES } from "./types-w5.js";
+import {
+  AGENTS_RESERVED_KEYS,
+  SUBAGENT_BACKGROUND_MODES,
+  WORKFLOW_UNATTENDED_GATES,
+} from "./types-w5.js";
 
 type Schema = Record<string, unknown>;
 
@@ -174,6 +179,16 @@ const agentEntry: Schema = object({
   env: object({ passthrough: strings }),
 });
 
+const tierEntry = (): Schema =>
+  object(
+    {
+      model: str(),
+      agent: { type: "string", pattern: AGENT_ID_PATTERN.source },
+      thinkingLevel: oneOf(THINKING_LEVELS),
+    },
+    { anyOf: [{ required: ["model"] }, { required: ["agent"] }] },
+  );
+
 function w5Sections(): Record<string, Schema> {
   return {
     images: object({ resize: oneOf(IMAGE_RESIZE_MODES) }),
@@ -196,7 +211,7 @@ function w5Sections(): Record<string, Schema> {
     subagents: object({
       maxConcurrent: num(1, 64),
       maxPending: num(0, 1024),
-      defaultModel: str(),
+      maxDepth: num(1, 3),
       background: oneOf(SUBAGENT_BACKGROUND_MODES),
       autoBackgroundAfterMs: num(0),
       backgroundMaxMs: num(0, MAX_TIMER_MS),
@@ -204,7 +219,10 @@ function w5Sections(): Record<string, Schema> {
       forkMaxContextRatio: num(0.05, 0.95),
       worktreeSetup: str(),
     }),
-    models: object({ aliases: object({ fast: str(), strong: str() }), enabled: strings }),
+    models: object({
+      tiers: object(Object.fromEntries(TIER_LADDER.map((t) => [t, tierEntry()]))),
+      enabled: strings,
+    }),
     fallbackModel: str(),
     limits: object({ maxTurns: num(1), maxCostUsd: num(0) }),
     reminders: object({
@@ -214,6 +232,7 @@ function w5Sections(): Record<string, Schema> {
       budget: bool(),
     }),
     todo: object({ reminder: num(0) }),
+    workflows: object({ dirs: strings, unattendedGate: oneOf(WORKFLOW_UNATTENDED_GATES) }),
   };
 }
 

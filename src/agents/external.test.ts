@@ -393,28 +393,6 @@ describe("父会话模式 → 外部 Agent 的权限（联调层真值表）", (
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("plan");
     await handle.stop();
   });
-
-  it("ama 的缺省子会话模型（subagents.defaultModel）不传给外部 CLI；agents.<id>.model 照传", async () => {
-    const rec = spawnRecorder(() => {
-      const peer = replayPeer(readRecording("claude/turn-basic.jsonl"));
-      return memoryTransport((i, o) => peer.serve(i, o));
-    });
-    externalTesting.driverDeps = {
-      spawn: rec.spawn,
-      probe: fakeProbe(["claude"], "2.1.287"),
-      cancelGraceMs: 20,
-    };
-    const { core } = fakeCore({ mode: "full-auto" });
-    const ext = new SessionExternalAgents(
-      core,
-      wiring({ defaultModel: "anthropic/claude-x" }),
-      new AgentCatalog(),
-    );
-    const runner = ext.runner(externalDefinition("claude"))!;
-    const handle = await runner.start(request("default", { model: "anthropic/claude-x" }));
-    expect(rec.specs[0]!.args).not.toContain("--model");
-    await handle.stop();
-  });
 });
 
 describe("宿主注入的 ama runner", () => {

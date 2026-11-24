@@ -231,7 +231,7 @@ There is also the non-session event `{"type":"notification","level":"info"|"warn
 
 `parentToolCallId` appears only on inner calls made through `tools.*` inside codemode scripts; its value is the id of the outer `codemode` call, which clients use to fold the display. Inner calls do not enter the transcript.
 
-Assistant messages in `message_end`, `turn_end`, `done` / `error` and in replays (`get_messages`, `get_entries`) may carry two optional fields (model efficiency batch, docs/history/model-efficiency-plan.md §1.10, Chinese): `retryAfterMs` on failed messages (`Retry-After`, in ms) and `rawArguments` on tool-call blocks (the raw argument string the model produced). `subagent_*` events are unchanged; `TaskInfo` from `get_tasks` may carry `context?: "fork" | "fresh"` (the sub-session's actual context mode). All are new optional fields, `RPC_PROTOCOL_VERSION` is unchanged, and clients can ignore fields they do not know.
+Assistant messages in `message_end`, `turn_end`, `done` / `error` and in replays (`get_messages`, `get_entries`) may carry two optional fields (model efficiency batch, docs/history/model-efficiency-plan.md §1.10, Chinese): `retryAfterMs` on failed messages (`Retry-After`, in ms) and `rawArguments` on tool-call blocks (the raw argument string the model produced). `subagent_*` events are unchanged; `TaskInfo` from `get_tasks` may carry `context?: "fork" | "fresh"` (the sub-session's actual context mode), `tier?` (the tier that was hit, #316) and, for nested tasks, `parentTaskId?` and `depth?` (#317); `subagent_start` may carry `tier`, `parentTaskId` and `depth` too. All are new optional fields, `RPC_PROTOCOL_VERSION` is unchanged, and clients can ignore fields they do not know.
 
 ### Compact events (`compact_events`)
 

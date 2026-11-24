@@ -9,7 +9,7 @@
  *   `compaction`、`tools.disabled`、`tools.preset`（只能更严）、`codemode.mode: "off"`、`ui`、
  *   `checkpoints.mode: "off"`、`checkpoints.maxFileBytes`（只能调小）、（W5-C0）`plan.bash`（只能更严）、
  *   `reminders`；`compaction.prune / pruneExclude` 与第五波其余段只认用户级；（W6-C0）`ui.language` /
- *   `ui.agentBar` 随 `ui` 段、`memory.enabled: false`；（W7-B2）`subagents.background / autoBackgroundAfterMs`；`ui.replyLanguage`、`memory` 其余键、`auth` 只认用户级；
+ *   `ui.agentBar` 随 `ui` 段、`memory.enabled: false`；（W7-B2）`subagents.background / autoBackgroundAfterMs`；（#317）`subagents.maxDepth`（只能调小）、（#318）`workflows.unattendedGate: "reject"`；`models`、`workflows.dirs` 只认用户级；`ui.replyLanguage`、`memory` 其余键、`auth` 只认用户级；
  *   其它字段与放宽项（含 `permission.builtinDeny / autoModel / autoSafeCommands`）被忽略并记 warning。
  * - 同时产出带来源的权限规则清单（`ruleSpecs`），交给权限管线（B3 的 rules.ts 解析）。
  */
@@ -36,6 +36,9 @@ import type { PermissionMode, RuleSource } from "../permissions/types.js";
 import { isAtLeastAsStrict } from "../permissions/rules.js";
 import { msg } from "../i18n/index.js";
 import type { ModelThinkingLevel } from "../ai/types.js";
+
+/** [#317] 子 Agent 嵌套层数缺省。 */
+export const DEFAULT_SUBAGENT_MAX_DEPTH = 2;
 
 export const DEFAULT_CONFIG: Readonly<AmaConfig> = Object.freeze({
   version: CONFIG_FILE_VERSION,
@@ -154,6 +157,7 @@ export function restrictProjectConfig(
   currentPreset: ToolsPresetInput = "default",
   currentMaxFileBytes: number = DEFAULT_CHECKPOINTS_CONFIG.maxFileBytes,
   currentPlanBash: PlanBashMode = "readonly",
+  currentMaxDepth: number = DEFAULT_SUBAGENT_MAX_DEPTH,
 ): RestrictResult {
   const warnings: string[] = [];
   const accepted: Partial<AmaConfig> = {};
@@ -179,12 +183,25 @@ export function restrictProjectConfig(
         const subagents = project.subagents ?? {};
         const result: SubagentsConfig = {};
         for (const sub of Object.keys(subagents)) {
-          if (sub !== "background" && sub !== "autoBackgroundAfterMs")
+          if (sub !== "background" && sub !== "autoBackgroundAfterMs" && sub !== "maxDepth")
             warnings.push(
               msg().config.merge.projectOnlyKeys(
                 label,
-                "subagents.background / subagents.autoBackgroundAfterMs",
+                "subagents.background / subagents.autoBackgroundAfterMs / subagents.maxDepth",
                 `subagents.${sub}`,
+              ),
+            );
+        }
+        // [#317] 嵌套层数只能调小（层数越多，派出的权限面越大）
+        if (subagents.maxDepth !== undefined) {
+          if (subagents.maxDepth <= currentMaxDepth) result.maxDepth = subagents.maxDepth;
+          else
+            warnings.push(
+              msg().config.merge.projectLowerOnly(
+                label,
+                "subagents.maxDepth",
+                subagents.maxDepth,
+                currentMaxDepth,
               ),
             );
         }
@@ -192,6 +209,25 @@ export function restrictProjectConfig(
         if (subagents.autoBackgroundAfterMs !== undefined)
           result.autoBackgroundAfterMs = subagents.autoBackgroundAfterMs;
         if (Object.keys(result).length > 0) accepted.subagents = result;
+        break;
+      }
+      case "workflows": {
+        // [#318] 目录只认用户级；无人值守的 gate 只能写 reject（approve 是放宽）
+        const workflows = project.workflows ?? {};
+        for (const [sub, v] of Object.entries(workflows)) {
+          if (sub === "unattendedGate" && v === "reject") continue;
+          const ignored = `workflows.${sub}${sub === "unattendedGate" ? ` ${String(v)}` : ""}`;
+          warnings.push(
+            msg().config.merge.projectOnlyValue(
+              label,
+              "workflows.unattendedGate",
+              "reject",
+              ignored,
+            ),
+          );
+        }
+        if (workflows.unattendedGate === "reject")
+          accepted.workflows = { unattendedGate: "reject" };
         break;
       }
       case "plan": {
@@ -481,6 +517,7 @@ export function mergeProjectAndCli(
       config.tools?.preset ?? "default",
       config.checkpoints?.maxFileBytes ?? DEFAULT_CHECKPOINTS_CONFIG.maxFileBytes,
       config.plan?.bash ?? "readonly",
+      config.subagents?.maxDepth ?? DEFAULT_SUBAGENT_MAX_DEPTH,
     );
     warnings.push(...restricted.warnings);
     config = mergeConfig(config, restricted.accepted);

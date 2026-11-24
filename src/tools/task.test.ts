@@ -3,7 +3,13 @@ import type { SubagentRequest, SubagentResult } from "./types.js";
 import { makeToolContext } from "../../test/helpers/tool-context.js";
 import { DEFAULT_SUBAGENT_CONCURRENCY, SubagentPool } from "../agent/session-subagent.js";
 import { AgentCatalog } from "../agents/catalog.js";
-import { bindTaskAgents, createTaskTool } from "./task.js";
+import {
+  BACKGROUND_DESCRIPTION,
+  FOREGROUND_DESCRIPTION,
+  TASK_TIER_GUIDE,
+  bindTaskAgents,
+  createTaskTool,
+} from "./task.js";
 
 const usage = { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 3 };
 
@@ -30,7 +36,13 @@ describe("task", () => {
     });
     const tool = createTaskTool();
     const r = await tool.execute(
-      { prompt: "do it", description: "d", tools: ["read", "task", "bash"], thinkingLevel: "low" },
+      {
+        prompt: "do it",
+        description: "d",
+        tools: ["read", "task", "bash"],
+        tier: "light",
+        model: "m1",
+      },
       ctx,
     );
     expect(r).toMatchObject({
@@ -42,7 +54,8 @@ describe("task", () => {
       prompt: "do it",
       description: "d",
       tools: ["read", "bash"],
-      thinkingLevel: "low",
+      tier: "light",
+      model: "m1",
       parentToolCallId: "call_1",
     });
     expect(requests[0]?.maxTurns).toBeUndefined(); // 缺省取类型的 max-turns（注册表）
@@ -50,16 +63,15 @@ describe("task", () => {
     expect(ctx.updates).toEqual(["working"]);
   });
 
-  it("深度 ≥ 1 或无 spawnSubagent → 错误", async () => {
+  it("无 spawnSubagent → 错误", async () => {
     const tool = createTaskTool();
-    const spawn = async () => result("x");
-    const deep = await tool.execute(
-      { prompt: "x" },
-      makeToolContext("/w", { depth: 1, spawnSubagent: spawn }),
-    );
-    expect(deep.isError).toBe(true);
     const none = await tool.execute({ prompt: "x" }, makeToolContext("/w"));
     expect(none.isError).toBe(true);
+  });
+
+  it("两种描述都含档位量表", () => {
+    expect(FOREGROUND_DESCRIPTION).toContain(TASK_TIER_GUIDE);
+    expect(BACKGROUND_DESCRIPTION).toContain(TASK_TIER_GUIDE);
   });
 
   it("参数校验", async () => {
@@ -67,9 +79,13 @@ describe("task", () => {
     const ctx = makeToolContext("/w", { spawnSubagent: async () => result("x") });
     expect((await tool.execute({ prompt: "" }, ctx)).isError).toBe(true);
     expect((await tool.execute({ prompt: "a", maxTurns: 0 }, ctx)).isError).toBe(true);
-    expect((await tool.execute({ prompt: "a", thinkingLevel: "max" as never }, ctx)).isError).toBe(
-      true,
-    );
+    const bad = await tool.execute({ prompt: "a", tier: "x" as never }, ctx);
+    expect(bad).toMatchObject({
+      isError: true,
+      content: "tier must be one of light, standard, strong, max",
+    });
+    const gone = await tool.execute({ prompt: "a", thinkingLevel: "low" } as never, ctx);
+    expect(gone.isError).toBe(true);
   });
 
   it("[ME-A] context：枚举校验、透传；details.context 回填实际模式", async () => {

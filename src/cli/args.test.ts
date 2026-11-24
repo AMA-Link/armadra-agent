@@ -293,3 +293,26 @@ describe("第五波参数（W5-C0：只解析与透传）", () => {
     expect(helpText()).toContain("8 -p 到达预算上限");
   });
 });
+
+describe("--tier（#316）", () => {
+  it("解析四档，非法值报用法错误", () => {
+    expect(run(["--tier", "strong"]).tier).toBe("strong");
+    expect(run(["--tier=light"]).tier).toBe("light");
+    expect(usage(["--tier", "huge"])).toMatch(/--tier .*light \| standard \| strong \| max/);
+  });
+  it("拆出的 --max-turns / --max-cost / --agent-dir 行为不变", () => {
+    const args = run([
+      "-p",
+      "--max-turns",
+      "3",
+      "--max-cost=1.5",
+      "--agent-dir",
+      "a",
+      "--agent-dir=b",
+    ]);
+    expect(args.maxTurns).toBe(3);
+    expect(args.maxCostUsd).toBe(1.5);
+    expect(args.agentDirs).toEqual(["a", "b"]);
+    expect(usage(["--max-cost", "0"])).toMatch(/正数/);
+  });
+});

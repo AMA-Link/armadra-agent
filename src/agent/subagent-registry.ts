@@ -13,8 +13,6 @@
  * `report` 事件即时进快照并发 `subagent_update`，结束时以结果为准加 `[report]` 行（agents/report.ts）。
  */
 
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { AmaError } from "../errors.js";
 import type {
   SubagentRequest,
@@ -25,7 +23,8 @@ import type {
   TaskRegistryView,
 } from "../tools/types.js";
 import { DEFAULT_AGENT } from "../agents/builtin.js";
-import { AgentCatalog, resolveAgentModel, type AgentModelConfig } from "../agents/catalog.js";
+import { AgentCatalog, type AgentModelConfig } from "../agents/catalog.js";
+import { resolveTaskModel } from "../agents/tiers.js";
 import { capTaskText, decorateTaskText, writeTaskOutput } from "../agents/result.js";
 import {
   SubagentPool,
@@ -35,7 +34,6 @@ import {
   flushText,
   newRecord,
   rebuildRecords,
-  recordData,
   taskStats,
   type AmaRunnerSpec,
   type ProgressSink,
@@ -70,6 +68,7 @@ import {
   waitForTask,
   type BackgroundReason,
 } from "./subagent-background.js";
+import { DEFAULT_RETAINED, SubagentStore } from "./subagent-store.js";
 import { startHandle } from "./subagent-handle.js";
 import {
   armLifetime,
@@ -81,7 +80,7 @@ import {
 
 export const DEFAULT_SUBAGENT_CONCURRENCY = 4;
 export const DEFAULT_MAX_PENDING = 16;
-export const DEFAULT_RETAINED = 4;
+export { DEFAULT_RETAINED };
 
 export { SubagentPool, TASK_CUSTOM_TYPE, type AmaRunnerSpec, type TaskHandle };
 export type { BackgroundReason };
@@ -93,6 +92,8 @@ export interface SubagentEnvironment {
   maxPending?: number;
   retain?: number;
   modelConfig?: AgentModelConfig;
+  /** [#317] 嵌套层数上限（`subagents.maxDepth`，缺省 2）。 */
+  maxDepth?: number;
   /** 外部 / 宿主 runner（W5-E `ProcessRunner`、HostApi.runners）；没有返回 undefined。 */
   runners?(agent: AgentDefinition): SubagentRunner | undefined;
   now?(): number;
@@ -149,7 +150,7 @@ export class SubagentRegistry implements TaskControl {
   readonly catalog: AgentCatalog;
   private readonly pool: SubagentPool;
   private readonly tasks: Map<string, TaskRecord>;
-  private readonly retained: string[] = [];
+  private readonly store: SubagentStore;
   private seq = 0;
   private disposed = false;
   private readonly notifier: TaskNotifier;
@@ -164,6 +165,12 @@ export class SubagentRegistry implements TaskControl {
     const rebuilt = rebuildRecords(host.manager.branch(), this.catalog, host.cwd);
     this.tasks = rebuilt.records;
     this.seq = rebuilt.seq;
+    this.store = new SubagentStore(
+      host,
+      this.tasks,
+      () => this.disposed,
+      () => this.env.retain,
+    );
     this.notifier = new TaskNotifier(host, () => this.disposed);
   }
 
@@ -191,7 +198,7 @@ export class SubagentRegistry implements TaskControl {
 
   /** [#267] 到点被停止、尚未经提醒通道通知的任务。 */
   land(taskId: string) {
-    return landTask(this.tasks.get(taskId), (record) => this.persist(record));
+    return landTask(this.tasks.get(taskId), (record) => this.store.persist(record));
   }
 
   takeExpired(): ExpiredTask[] {
@@ -252,10 +259,10 @@ export class SubagentRegistry implements TaskControl {
       taskId === undefined ? [...this.tasks.values()] : one === undefined ? [] : [one];
     const moved = backgroundRecords(records, reason, {
       emit: (event) => this.host.emit(event),
-      persist: (record) => this.persist(record),
+      persist: (record) => this.store.persist(record),
       notify: (record, result) => this.notifier.notify(record, result),
       afterMs: this.env.autoBackgroundAfterMs ?? 0,
-      outputFile: (id) => this.outputFileFor(id),
+      outputFile: (id) => this.store.outputFileFor(id),
     });
     // [#267] 转后台的任务从转换时刻起算寿命
     for (const id of moved) {
@@ -299,7 +306,7 @@ export class SubagentRegistry implements TaskControl {
     if (this.disposed) return failed("the session is closed");
     if (request.taskId !== undefined) return this.continueTask(request, ama);
     const name = request.agent ?? DEFAULT_AGENT;
-    const agent = this.catalog.get(name);
+    let agent = this.catalog.get(name);
     if (agent === undefined)
       return failed(`Unknown agent "${name}". Available: ${this.catalog.names().join(", ")}.`);
     if (agent.runner !== "ama" && this.env.runners?.(agent) === undefined)
@@ -309,8 +316,33 @@ export class SubagentRegistry implements TaskControl {
       return failed(
         `Too many sub-agent tasks are queued (${queued}). Do not retry; wait for running tasks first (task_ctl wait).`,
       );
-    const model = resolveAgentModel(agent, request.model, this.env.modelConfig ?? {});
+    const model = resolveTaskModel(
+      agent,
+      {
+        ...(request.model === undefined ? {} : { model: request.model }),
+        ...(request.tier === undefined ? {} : { tier: request.tier }),
+        ...(request.thinkingLevel === undefined ? {} : { thinkingLevel: request.thinkingLevel }),
+        agentNamed: request.agent !== undefined,
+      },
+      this.env.modelConfig ?? {},
+      {
+        available: (id) => {
+          const target = this.catalog.get(id);
+          return (
+            target !== undefined &&
+            target.runner !== "ama" &&
+            this.env.runners?.(target) !== undefined
+          );
+        },
+        // plan 模式不改派（P0-1）；带 tools 白名单的请求也不改派，外部 runner 不认白名单
+        allowRouting: this.host.options.permission?.mode !== "plan" && request.tools === undefined,
+      },
+    );
     if (model.warning !== undefined) this.host.log("warn", `agent ${name}: ${model.warning}`);
+    // 改派：换成档位指向的外部 Agent（resolveTaskModel 已确认它可运行）
+    if (model.agent !== undefined) agent = this.catalog.get(model.agent) ?? agent;
+    if (model.thinkingLevel !== undefined && model.thinkingLevel !== request.thinkingLevel)
+      request = { ...request, thinkingLevel: model.thinkingLevel };
     const background = request.background ?? agent.background ?? this.env.background ?? false;
     const taskId = `t${++this.seq}`;
     const record = newRecord(
@@ -329,6 +361,7 @@ export class SubagentRegistry implements TaskControl {
       request.isolation ?? agent.isolation,
     );
     if (model.ref !== undefined) record.modelRef = model.ref;
+    if (model.tier !== undefined) record.info.tier = model.tier;
     this.tasks.set(taskId, record);
     return this.launch(record, request, ama, background);
   }
@@ -375,7 +408,7 @@ export class SubagentRegistry implements TaskControl {
     const onParentAbort = (): void => controller.abort();
     if (parentSignal?.aborted) controller.abort();
     else parentSignal?.addEventListener("abort", onParentAbort, { once: true });
-    this.persist(record);
+    this.store.persist(record);
     let timer: NodeJS.Timeout | undefined;
     const running = this.execute(record, request, ama, controller.signal).finally(() => {
       clearTimeout(timer);
@@ -387,7 +420,7 @@ export class SubagentRegistry implements TaskControl {
       if (!this.disposed) drainDirect(record, this.host);
     });
     record.running = running;
-    const file = this.outputFileFor(record.info.taskId);
+    const file = this.store.outputFileFor(record.info.taskId);
     if (background) {
       this.armLifetime(record);
       void running.then((result) => this.notifier.notify(record, result));
@@ -451,7 +484,7 @@ export class SubagentRegistry implements TaskControl {
     return startHandle(record, request, ama, signal, {
       runners: (agent) => this.env.runners?.(agent),
       mode: this.host.options.permission?.mode ?? "default",
-      touch: (taskId) => this.touch(taskId),
+      touch: (taskId) => this.store.touch(taskId),
       emit: (event) => this.host.emit(event),
       sink: () => this.sink(),
     });
@@ -494,9 +527,13 @@ export class SubagentRegistry implements TaskControl {
     record.text = result.text;
     let outputFile: string | undefined;
     const full = result.text;
-    const capped = capTaskText(full, this.outputFileFor(info.taskId));
+    const capped = capTaskText(full, this.store.outputFileFor(info.taskId));
     if (capped.truncated || info.background) {
-      outputFile = writeTaskOutput(this.outputDirectory(), this.outputName(info.taskId), full);
+      outputFile = writeTaskOutput(
+        this.store.outputDirectory(),
+        this.store.outputName(info.taskId),
+        full,
+      );
       if (outputFile !== undefined) info.outputFile = outputFile;
     }
     // [#269] 结构化报告：runner 给的为准（这次运行折叠后的值）；没有就清掉运行中记下的
@@ -515,7 +552,7 @@ export class SubagentRegistry implements TaskControl {
     if (info.sessionRef !== undefined) final.sessionRef = info.sessionRef;
     if (report !== undefined) final.report = report;
     record.last = final;
-    this.persist(record);
+    this.store.persist(record);
     const end: Extract<Parameters<RegistryHost["emit"]>[0], { type: "subagent_end" }> = {
       type: "subagent_end",
       taskId: info.taskId,
@@ -527,58 +564,13 @@ export class SubagentRegistry implements TaskControl {
     if (outcome !== undefined) end.worktree = { branch: outcome.branch, changed: outcome.changed };
     if (report !== undefined) end.report = report;
     this.host.emit(end);
-    this.retain(info.taskId);
+    this.store.retain(info.taskId);
     return final;
   }
 
   // -------------------------------------------------------------------------
   // 落盘、保留与重建
   // -------------------------------------------------------------------------
-
-  private outputDirectory(): string {
-    return this.host.outputDir() ?? join(tmpdir(), "ama-outputs");
-  }
-
-  private outputName(taskId: string): string {
-    return `${this.host.manager.id}-${taskId}.md`;
-  }
-
-  private outputFileFor(taskId: string): string | undefined {
-    return join(this.outputDirectory(), this.outputName(taskId));
-  }
-
-  private persist(record: TaskRecord): void {
-    if (this.disposed) return;
-    try {
-      this.host.appendEntry({
-        type: "custom",
-        customType: TASK_CUSTOM_TYPE,
-        data: recordData(record),
-      });
-    } catch (error) {
-      this.host.log("warn", `could not record task ${record.info.taskId}: ${String(error)}`);
-    }
-  }
-
-  private touch(taskId: string): void {
-    const at = this.retained.indexOf(taskId);
-    if (at >= 0) this.retained.splice(at, 1);
-  }
-
-  /** 句柄 LRU：超出上限时释放最久未用、空闲的子会话（JSONL 仍在，续聊时重开）。 */
-  private retain(taskId: string): void {
-    this.touch(taskId);
-    if (this.tasks.get(taskId)?.handle === undefined) return;
-    this.retained.push(taskId);
-    const limit = this.env.retain ?? DEFAULT_RETAINED;
-    while (this.retained.length > limit) {
-      const evicted = this.tasks.get(this.retained.shift() as string);
-      const handle = evicted?.handle;
-      if (evicted === undefined || handle === undefined) continue;
-      delete evicted.handle;
-      void (handle.dispose?.() ?? handle.stop()).catch(() => undefined);
-    }
-  }
 
   /** 会话关闭：停止运行中的任务、释放保留的子会话。 */
   dispose(): void {

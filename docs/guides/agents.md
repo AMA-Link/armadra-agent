@@ -9,7 +9,7 @@
 
 `task` 与 `task_ctl` 同进退：`default` 预设下只在 codemode 脚本里可调用，`--tools …,task` 或 `tools.default: ["+task"]`
 时直接暴露；嵌入宿主时宿主可以禁用。子 Agent 运行在同一进程的新会话里（全新上下文，看不到父对话，`prompt` 要写全），
-有自己的 JSONL（与父会话同目录，头的 `parentSession` 指回父文件）。深度最多 1：子 Agent 里调用 `task` / `task_ctl` 会被拒绝。
+有自己的 JSONL（与父会话同目录，头的 `parentSession` 指回父文件）。子 Agent 里调用 `task` / `task_ctl` 仍会被拒绝（`subagents.maxDepth` 已作为配置键加入，嵌套派发随后续批次启用，见下表）。
 `report` 是第三个同进退的工具：子 Agent 用它向父会话报告结构化状态（见「结构化报告」），父会话里调用会被拒绝。
 
 ### 内置类型
@@ -35,7 +35,8 @@ name: reviewer # ^[a-z0-9-]{1,64}$，缺省取文件名
 description: 只读审查改动，按文件与行号报告问题。 # 必填，≤ 1024 字符，出现在 task 工具描述里
 tools: read, grep, glob, bash # 白名单；与 disallowed-tools 二选一
 permission-mode: plan # plan | inherit（缺省）；只能比父更严
-model: fast # inherit（缺省）| fast | strong（models.aliases）| provider/model
+model: inherit # inherit（缺省）| provider/model；写 fast / strong 的文件不再加载
+tier: standard # light | standard | strong | max，缺省不写；见「按档位选模型」
 thinking: low
 max-turns: 20 # 缺省 30
 isolation: none # none（缺省）| worktree
@@ -57,22 +58,50 @@ runner: ama # ama（缺省）| claude | codex | acp:<程序>
 不合格的文件不加载并给出提示（名字非法、缺 description、`tools` 与 `disallowed-tools` 同时给出、取值不认识等）。
 不支持的字段（`hooks`、`mcpServers`、`memory`、`color`、`initialPrompt`、`skills`）忽略；子会话本来就继承父的 Skill 索引。
 
-模型选择：调用参数 `model` > 定义的 `model`（非 inherit）> config `agents.<类型>.model` > `subagents.defaultModel` > 父当前模型。
-`fast` / `strong` 经 `models.aliases` 映射，没配置时用父模型并提示。
+模型选择（ama 子会话）：调用参数 `model` > 调用参数 `tier` > 定义的 `model`（非 inherit）> 定义的 `tier` > config `agents.<类型>.model` > 缺省档 `standard` > 父当前模型。
+档位的含义与回落见下面「按档位选模型」。**移除，不兼容**：定义文件里的 `model: fast` / `model: strong` 不再加载（给出提示，改写成 `tier: light` / `tier: strong`），
+`models.aliases` 与 `subagents.defaultModel` 也已删除，配置里留着会报未知键。
+
+### 按档位选模型
+
+`models.tiers` 把四个档位（`light` < `standard` < `strong` < `max`）各映射到一个模型、一个外部 Agent，或两者，并可带思考档（用户级配置，项目级不认）：
+
+```json
+{
+  "models": {
+    "tiers": {
+      "light": { "model": "<provider>/<cheap-model>", "thinkingLevel": "low" },
+      "strong": { "model": "<provider>/<big-model>", "thinkingLevel": "high" },
+      "max": { "agent": "claude", "model": "opus" }
+    }
+  }
+}
+```
+
+- 每档至少写 `model` 与 `agent` 之一；`thinkingLevel` 可选。`agent` 是外部 Agent 的 id（`claude`、`codex`、`acp:<程序>`），`model` 此时是交给该 CLI 的模型名。
+- 解析：`task` 的 `tier` 参数指到的档没配置时，按 同档 > 上一档 > 下一档 > 上两档 > 下两档 的顺序取最近的已配置档（四档整表都能回落）；定义文件的 `tier` 与缺省档只看相邻一档，找不到就继承父模型。命中的档记在任务的 `tier` 字段里（`/tasks`、RPC `TaskInfo`）。
+- 命中的档指向外部 Agent 且调用没有显式给 `agent` 时，任务改派给该 Agent（外部 Agent 不可用则继续往下找）；显式给了 `agent` 就不改派，只取同名档的 `model`。plan 模式的会话不做改派。
+- 档位同时给出思考档，所以 `task` 不再有单独的 `thinkingLevel` 参数。表为空时一切照旧继承父会话。内置 `explore` 带 `tier: light`。
+- 主会话：`ama --tier <档>` 按同一张表选模型与思考档（`--model` 优先、`--thinking` 优先）；该档及相邻档都没配置时不退出，往下走会话记录 / `defaultModel` / 选择器，并在 stderr 写一行提示。
+- `ama models tiers` 打印每档的目标（外部 Agent 标注 `external`）、思考档、每 1M 输入 / 输出价格与典型任务（输入 150K、输出 15K）的估算成本；价格未知或指向外部 Agent 的档显示未知，没配置的档显示 `inherit`。
 
 ### `task` 参数
 
-| 参数                                             | 说明                                                                                                                                                     |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `prompt`                                         | 必填，完整的任务说明                                                                                                                                     |
-| `agent`                                          | 类型名，缺省 `general`；也可以是外部 Agent（见「外部 Agent」节）                                                                                         |
-| `description`                                    | 显示用的短标签                                                                                                                                           |
-| `background`                                     | `true`：立即返回 `taskId`，完成后父会话收到通知；`false`：等结果。缺省取类型的 `background`，类型没写时按 `subagents.background`（见下文「前台与后台」） |
-| `taskId`                                         | 续聊：向已有任务的子会话追加一条消息（忽略 `agent` / `tools` / `model`）                                                                                 |
-| `isolation`                                      | `worktree`：在独立 git worktree 里运行                                                                                                                   |
-| `budgetUsd`                                      | 外部 Agent 的美元预算                                                                                                                                    |
-| `context`                                        | `fresh`（缺省）：子会话从空白开始；`fork`：继承本会话已完成的回合（同模型、同前缀），见「fork 模式」。缺省取类型的 `context`                             |
-| `tools` / `model` / `thinkingLevel` / `maxTurns` | 保留的高级参数（描述里不展开）                                                                                                                           |
+| 参数                           | 说明                                                                                                                                                     |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt`                       | 必填，完整的任务说明                                                                                                                                     |
+| `agent`                        | 类型名，缺省 `general`；也可以是外部 Agent（见「外部 Agent」节）                                                                                         |
+| `description`                  | 显示用的短标签                                                                                                                                           |
+| `background`                   | `true`：立即返回 `taskId`，完成后父会话收到通知；`false`：等结果。缺省取类型的 `background`，类型没写时按 `subagents.background`（见下文「前台与后台」） |
+| `taskId`                       | 续聊：向已有任务的子会话追加一条消息（忽略 `agent` / `tools` / `model`）                                                                                 |
+| `isolation`                    | `worktree`：在独立 git worktree 里运行                                                                                                                   |
+| `budgetUsd`                    | 外部 Agent 的美元预算                                                                                                                                    |
+| `context`                      | `fresh`（缺省）：子会话从空白开始；`fork`：继承本会话已完成的回合（同模型、同前缀），见「fork 模式」。缺省取类型的 `context`                             |
+| `tier`                         | `light` \| `standard`（缺省）\| `strong` \| `max`：按 `models.tiers` 选模型与思考档，见「按档位选模型」；`model` 优先                                    |
+| `tools` / `model` / `maxTurns` | 保留的高级参数（描述里不展开）                                                                                                                           |
+
+`task` 的描述末尾带一行量表：`tier: light (lookups, one-file edits) < standard (default) < strong (cross-module, design) < max; model overrides.`
+**移除，不兼容**：`thinkingLevel` 参数已删除，传了会被拒绝并提示改用 `tier`。
 
 同一条回复里的多个 `task` **并行**执行，由会话的任务池限流（`subagents.maxConcurrent`，缺省 4）；排队超过
 `subagents.maxPending`（缺省 16）直接报错，提示模型不要重试。并行且会写文件的任务请用 `isolation: "worktree"`。
@@ -271,7 +300,7 @@ RPC `get_tasks` / `get_agents` 返回任务快照与可用类型（来源、定�
 | `subagents.maxConcurrent`         | 同时运行的子 Agent，缺省 4                                                                           |
 | `subagents.maxPending`            | 排队上限，缺省 16                                                                                    |
 | `subagents.retainSessions`        | 保留在内存里的已结束子会话数（LRU），缺省 4，0 = 结束即释放；只认用户级                              |
-| `subagents.defaultModel`          | 子 Agent 缺省模型，不设继承父会话                                                                    |
+| `subagents.maxDepth`              | 子 Agent 可继续派发的嵌套层数，1–3，缺省 2；项目级只能调小                                           |
 | `subagents.forkMaxContextRatio`   | fork 回落比例（见「fork 模式」），0.05–0.95，缺省 0.5；只认用户级                                    |
 | `subagents.worktreeSetup`         | 新建任务 worktree 后运行一次的命令（见「worktree 隔离」）；只认用户级                                |
 | `subagents.background`            | `auto`（缺省）\| `always` \| `never`，见「前台与后台」；用户 / 项目 / 宿主级都认                     |
@@ -281,25 +310,40 @@ RPC `get_tasks` / `get_agents` 返回任务快照与可用类型（来源、定�
 | `tools.bashBackgroundMaxMs`       | 后台 `bash` 任务的寿命上限（毫秒），缺省 7 200 000（2 小时），0 不限；只认用户级                     |
 | `agents.dirs`                     | 追加的定义目录                                                                                       |
 | `agents.<类型>.model`             | 某个类型的模型（如让 `explore` 用便宜模型）                                                          |
-| `models.aliases.fast` / `.strong` | 定义文件里 `model: fast / strong` 的映射                                                             |
+| `models.tiers.<档>`               | `light` / `standard` / `strong` / `max` 各自的 `model`、`agent`、`thinkingLevel`；只认用户级         |
+| `workflows.dirs`                  | 追加的工作流目录（`*.md`），跨层累加；只认用户级                                                     |
+| `workflows.unattendedGate`        | 无人值守时工作流的审批点：`reject`（缺省）\| `approve`；项目级只能写 `reject`                        |
 
-按角色选模型只要三行配置（`config.json`）：别名 `fast` 指向便宜模型，`explore` 类型用它，外部 Agent `claude` 用它自己的模型名（原样交给该 CLI）：
+按角色选模型：优先配 `models.tiers`（见「按档位选模型」）；单个类型想固定模型时写 `agents.<类型>.model`，外部 Agent `claude` 用它自己的模型名（原样交给该 CLI）：
 
 ```json
 {
-  "models": { "aliases": { "fast": "<provider>/<cheap-model>" } },
+  "models": { "tiers": { "light": { "model": "<provider>/<cheap-model>" } } },
   "agents": {
-    "explore": { "model": "fast" },
+    "explore": { "model": "<provider>/<other-model>" },
     "claude": { "model": "sonnet" }
   }
 }
 ```
 
-内置类型不带缺省的便宜模型；不配置时按上面的顺序回落，最终继承父会话的模型。
+`workflows` 段目前只有上表两个键，供工作流发现与无人值守审批使用；工作流文件格式见下面「工作流文件」。不配置 `models.tiers` 时按上面的顺序回落，最终继承父会话的模型。
+
+### 工作流文件
+
+`@armadra/agent/workflow` 子路径导出工作流文档的类型与纯函数（零运行时依赖、不读写文件，可在浏览器与 Node 里用）：
+`validateWorkflow`、`resolveWorkflowParams`、`renderWorkflowPrompt`、`parseWorkflowFile`、`formatWorkflowFile`、`validateOwnsGlob`、`globsOverlap`、`workflowJsonSchema`。
+包还导出两份 JSON：`@armadra/agent/workflow.schema.json`（工作流文档的 JSON Schema）与 `@armadra/agent/workflow-glob-vectors.json`（`owns` glob 的判定向量，供另一实现对照）。
+解析再格式化不补缺省值、不改写 glob。本批只提供文件格式与校验，运行与 `/workflow` 命令在后续批次。
+
+### 任务树
+
+子任务带 `parentTaskId` 与 `depth`（直接子任务 = 1）时，`/tasks` 与 Agent 栏按树缩进显示，子任务排在父任务下面；
+父任务在跑、且有它的子任务还在跑时，父任务的状态写「等待子任务」。`task_ctl list` 同样按树序列出。
+RPC `subagent_start` 与 `TaskInfo`、ACP 的 `_meta.ama` 带这两个可选字段，嵌套任务的报告挂在根祖先的 `task` 调用上。
 
 ### 限制
 
-- 子 Agent 不能再委派（深度 1）；协调多个 Agent 的场景交给宿主（如 Armadra 画布）。
+- 当前子 Agent 仍不能再委派（嵌套派发随后续批次启用，届时受 `subagents.maxDepth` 约束）；协调多个 Agent 的场景交给宿主（如 Armadra 画布）。
 - 只读类型的 bash 只放行 plan 模式认可的只读命令，识别不了的一律拒绝，宁可少用。
 - 不读取 `.claude/agents`。fork 模式只用父的模型与思考级别（不同则回落 fresh），外部 Agent 不支持 fork。
 
@@ -376,7 +420,7 @@ ama 改为直接驱动 `pi --mode rpc`，并以 `-e` 给这一次运行加载一
   追加一轮；空闲关闭或被停止过的，以外部会话 id `resume` 重开）；`task_ctl stop` 发协议级中断，挂起的审批回「已取消」。
 - **模型**：`agents.<id>.model` 或 `task` 的 `model` 参数原样交给外部 CLI（原生驱动用各自的 `--model` / `-m`；ACP Agent
   经 category `model` 的会话配置项设置，按值、名称或 `provider/model` 的模型部分匹配，没有匹配时提示并用它的缺省模型）；
-  `subagents.defaultModel`（ama 的模型）不传。
+  `models.tiers` 命中的档若带 `agent`，同名档的 `model` 才作为外部 Agent 的模型；ama 自己的档位模型不传。
 - `/agents` 与 RPC `get_agents` 列出类型目录与外部 Agent（`installed` / `version`，会话建立时异步探测并缓存）；`/tasks` 查看任务输出、
   停止任务。界面见 [tui.md](tui.md)「子 Agent」。
 - 外部 Agent 自己报告的提示（预算用尽、超时、模式降级、拒答提问等）在交互界面的消息区显示为一行 `[claude · t3] …`，

@@ -190,6 +190,8 @@ export class HostRunnerRegistry {
         durationMs: Math.max(0, endedAt - at),
       };
       if (request.taskId !== undefined) event.taskId = request.taskId;
+      if (request.parentTaskId !== undefined) event.parentTaskId = request.parentTaskId;
+      if (request.depth !== undefined) event.depth = request.depth;
       if (done.text !== undefined) event.text = done.text;
       if (done.error !== undefined) event.error = done.error;
       this.emitDone(event, owner);

@@ -14,6 +14,7 @@ import type { SessionEvent } from "../agent/types.js";
 import type { TraceExternalTurnData } from "../trace/types.js";
 import type { Worktree, WorktreeOutcome } from "../agent/worktree.js";
 import { AmaError } from "../errors.js";
+import type { PermissionMode } from "../permissions/types.js";
 import type { SessionEntry } from "../session/types.js";
 import type {
   RunnerHandle,
@@ -46,10 +47,12 @@ export function failedResult(text: string): SubagentResult {
   return { text, usage: { ...ZERO_USAGE }, stopReason: "error", isError: true, status: "failed" };
 }
 
-/** 计数信号量；`waiting` 供排队上限判断；排队中 abort → 抛 aborted 并让出位置。 */
+/** 计数信号量；`waiting` 供排队上限判断；排队中 abort → 抛 aborted 并让出位置；优先等待者排在普通等待者前。 */
 export class SubagentPool {
   private running = 0;
   private readonly waiters: (() => void)[] = [];
+  /** 排在 `waiters` 前部的优先等待者个数（FIFO 内再分两段）。 */
+  private priorityCount = 0;
 
   constructor(private readonly limit: number) {}
 
@@ -57,17 +60,22 @@ export class SubagentPool {
     return this.waiters.length;
   }
 
-  async acquire(signal: AbortSignal): Promise<void> {
+  async acquire(signal: AbortSignal, options?: { priority?: boolean }): Promise<void> {
+    const priority = options?.priority === true;
     while (this.running >= this.limit) {
       if (signal.aborted) throw new AmaError("aborted", "aborted");
       await new Promise<void>((resolve) => {
         const wake = (): void => {
           signal.removeEventListener("abort", wake);
           const at = this.waiters.indexOf(wake);
-          if (at >= 0) this.waiters.splice(at, 1);
+          if (at >= 0) {
+            this.waiters.splice(at, 1);
+            if (priority) this.priorityCount--;
+          }
           resolve();
         };
-        this.waiters.push(wake);
+        if (priority) this.waiters.splice(this.priorityCount++, 0, wake);
+        else this.waiters.push(wake);
         signal.addEventListener("abort", wake, { once: true });
       });
     }
@@ -80,6 +88,28 @@ export class SubagentPool {
     this.waiters[0]?.();
   }
 }
+
+/** 发起嵌套任务的子会话（M7b 的 nestedSpawner 构造）。 */
+export interface NestedSpawner {
+  readonly permissionMode: PermissionMode;
+  /** 把后代花费记进发起会话的预算（limits.chargeSpend）。 */
+  charge(usd: number): void;
+}
+
+/** 本次运行的预算口径（每次 launch 重写）。 */
+export interface TaskRunBudget {
+  startTurns: number;
+  startCostUsd: number;
+  maxTurns: number;
+  budgetUsd?: number;
+  /** 在跑子任务预留的美元。 */
+  reservedUsd: number;
+  /** 本次运行里已结束子树的花费。 */
+  childSpentUsd: number;
+}
+
+/** `firstPrompt` 的截断长度（供 `/workflow save`）。 */
+export const FIRST_PROMPT_MAX_CHARS = 2000;
 
 /** ama runner 的创建参数（registry → session-subagent.ts）。 */
 export interface AmaRunnerSpec {
@@ -251,6 +281,18 @@ export interface TaskRecord {
    * 报告，报告的是上一次运行）。重启时已取走的标记直接清掉。
    */
   expired?: { maxMs: number; taken: boolean; relaunched?: true };
+  /** [#317] 本次运行的预算口径（`beginRun` 每次 launch 重写）。 */
+  run: TaskRunBudget;
+  /** [#317] 持有并发池名额。 */
+  slot?: boolean;
+  /** [#317] 为让嵌套子任务有名额而暂时让出名额。 */
+  parked?: boolean;
+  /** [#317] 在跑的嵌套子任务数。 */
+  nestedActive?: number;
+  /** [#317] 嵌套记录的发起会话。 */
+  spawner?: NestedSpawner;
+  /** [#318] 首次 prompt（截到 {@link FIRST_PROMPT_MAX_CHARS}）。 */
+  firstPrompt?: string;
 }
 
 export function newRecord(
@@ -259,8 +301,46 @@ export function newRecord(
   parentToolCallId: string,
   cwd: string,
   isolation: "none" | "worktree" = "none",
+  extra?: { run?: Partial<TaskRunBudget>; firstPrompt?: string; spawner?: NestedSpawner },
 ): TaskRecord {
-  return { info, agent, parentToolCallId, isolation, cwd, text: "", pendingText: "", lastFlush: 0 };
+  const record: TaskRecord = {
+    info,
+    agent,
+    parentToolCallId,
+    isolation,
+    cwd,
+    text: "",
+    pendingText: "",
+    lastFlush: 0,
+    run: {
+      startTurns: 0,
+      startCostUsd: 0,
+      maxTurns: agent.maxTurns,
+      reservedUsd: 0,
+      childSpentUsd: 0,
+      ...extra?.run,
+    },
+  };
+  if (extra?.firstPrompt !== undefined)
+    record.firstPrompt = extra.firstPrompt.slice(0, FIRST_PROMPT_MAX_CHARS);
+  if (extra?.spawner !== undefined) record.spawner = extra.spawner;
+  return record;
+}
+
+/** 每次运行开始（首跑与续聊）：记下本次运行的起点与上限，预留与子树花费清零。 */
+export function beginRun(
+  record: TaskRecord,
+  limits: { maxTurns: number; budgetUsd?: number },
+): void {
+  const run: TaskRunBudget = {
+    startTurns: record.info.turns ?? 0,
+    startCostUsd: record.info.costUsd ?? 0,
+    maxTurns: limits.maxTurns,
+    reservedUsd: 0,
+    childSpentUsd: 0,
+  };
+  if (limits.budgetUsd !== undefined) run.budgetUsd = limits.budgetUsd;
+  record.run = run;
 }
 
 export interface ProgressSink {
@@ -419,7 +499,13 @@ export function startEvent(record: TaskRecord, handle: TaskHandle): SubagentStar
     cwd: record.cwd,
   };
   if (handle.model !== undefined) event.model = handle.model;
+  if (record.info.tier !== undefined) event.tier = record.info.tier;
   if (handle.sessionFile !== undefined) event.sessionFile = handle.sessionFile;
+  const { parentTaskId, depth, tier, workflow } = record.info;
+  if (parentTaskId !== undefined) event.parentTaskId = parentTaskId;
+  if (depth !== undefined) event.depth = depth;
+  if (tier !== undefined) event.tier = tier;
+  if (workflow !== undefined) event.workflow = workflow;
   return event;
 }
 
@@ -438,7 +524,12 @@ export function taskStats(records: Iterable<TaskRecord>): SessionTaskStats | und
 
 /** 父会话 `custom{ama.task}` 的 data：TaskInfo + 父 toolCallId + 运行目录（带 `status`）。 */
 export function recordData(record: TaskRecord): Record<string, unknown> {
-  return { ...record.info, parentToolCallId: record.parentToolCallId, cwd: record.cwd };
+  return {
+    ...record.info,
+    parentToolCallId: record.parentToolCallId,
+    cwd: record.cwd,
+    ...(record.firstPrompt === undefined ? {} : { firstPrompt: record.firstPrompt }),
+  };
 }
 
 /** 从父会话分支重建（同一 taskId 取最后一条；未结束的标 interrupted）；返回最大序号。 */
@@ -452,16 +543,24 @@ export function rebuildRecords(
   for (const entry of branch) {
     if (entry.type !== "custom" || entry.customType !== TASK_CUSTOM_TYPE) continue;
     // 子会话自己的首条 ama.task 没有 status，跳过
-    const data = entry.data as Partial<TaskInfo & { parentToolCallId: string; cwd: string }>;
+    const data = entry.data as Partial<
+      TaskInfo & { parentToolCallId: string; cwd: string; firstPrompt: string }
+    >;
     if (typeof data.taskId !== "string" || data.status === undefined) continue;
-    const { parentToolCallId = "", cwd: runCwd = cwd, ...rest } = data;
+    const { parentToolCallId = "", cwd: runCwd = cwd, firstPrompt, ...rest } = data;
     const info = { ...rest } as TaskInfo;
+    info.depth ??= 1;
     if (info.status === "running") info.status = "interrupted";
     const agent = catalog.get(info.agent) ?? {
       ...(catalog.get(DEFAULT_AGENT) as AgentDefinition),
       name: info.agent,
     };
-    records.set(info.taskId, newRecord(info, agent, parentToolCallId, runCwd));
+    records.set(
+      info.taskId,
+      newRecord(info, agent, parentToolCallId, runCwd, "none", {
+        ...(typeof firstPrompt === "string" ? { firstPrompt } : {}),
+      }),
+    );
     const n = /^t(\d+)$/.exec(info.taskId);
     if (n !== null) seq = Math.max(seq, Number(n[1]));
   }

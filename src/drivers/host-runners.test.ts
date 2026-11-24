@@ -283,6 +283,30 @@ describe("HostRunnerRegistry.onDone（#226）", () => {
   });
 });
 
+describe("onDone 的树字段（#317）", () => {
+  it("请求带 parentTaskId / depth 时事件抄上；缺省时不带", async () => {
+    const a = scripted();
+    const s1 = setup(a.handle);
+    const w1 = await s1.registry
+      .resolve("claude")!
+      .start(request({ parentTaskId: "t0", depth: 2 }));
+    const p1 = w1.wait();
+    a.rounds[0]!.resolve(result("ok"));
+    await p1;
+    await flush();
+    expect(s1.events[0]).toMatchObject({ parentTaskId: "t0", depth: 2 });
+    const b = scripted();
+    const s2 = setup(b.handle);
+    const w2 = await s2.registry.resolve("claude")!.start(request());
+    const p2 = w2.wait();
+    b.rounds[0]!.resolve(result("ok"));
+    await p2;
+    await flush();
+    expect(s2.events[0]).not.toHaveProperty("parentTaskId");
+    expect(s2.events[0]).not.toHaveProperty("depth");
+  });
+});
+
 describe("HostApi：host-api 1.1（#226）", () => {
   it("主版本不变，minor 与 runners.onDone 可用；处理器异常走适配器日志", async () => {
     const logs: [string, string][] = [];

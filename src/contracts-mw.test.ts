@@ -7,8 +7,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { AmaError } from "./errors.js";
 import type { TierName } from "./agents/tier-ladder.js";
-import { tierCostRows, TYPICAL_TASK_TOKENS } from "./agents/tier-cost.js";
-import { nearestTier, resolveTaskModel } from "./agents/tiers.js";
+import { TYPICAL_TASK_TOKENS } from "./agents/tier-cost.js";
 import type {
   SubagentRequest,
   SubagentRunRequest,
@@ -33,17 +32,6 @@ import {
   WORKFLOW_ERROR_CODES,
   type WorkflowUpdate,
 } from "./workflows/run-types.js";
-import { validateWorkflow } from "./workflows/validate.js";
-import {
-  checkRenderedPrompts,
-  normalizeWorkflow,
-  promptLimitOf,
-  renderWorkflowPrompt,
-  resolveWorkflowParams,
-} from "./workflows/render.js";
-import { workflowJsonSchema } from "./workflows/json-schema.js";
-import { formatWorkflowFile, parseWorkflowFile } from "./workflows/file.js";
-import { globsOverlap, validateOwnsGlob } from "./workflows/glob.js";
 import {
   discoverWorkflows,
   userWorkflowDir,
@@ -102,23 +90,6 @@ describe("契约：类型与常量", () => {
 
 describe("契约：桩抛 not_implemented", () => {
   const calls: [string, () => unknown][] = [
-    ["nearestTier", () => nearestTier(undefined, "light")],
-    [
-      "resolveTaskModel",
-      () => resolveTaskModel(undefined as never, { agentNamed: false }, {}, undefined as never),
-    ],
-    ["tierCostRows", () => tierCostRows(undefined, () => undefined)],
-    ["validateWorkflow", () => validateWorkflow({})],
-    ["normalizeWorkflow", () => normalizeWorkflow(undefined as never)],
-    ["resolveWorkflowParams", () => resolveWorkflowParams(undefined as never, {})],
-    ["renderWorkflowPrompt", () => renderWorkflowPrompt("", {})],
-    ["promptLimitOf", () => promptLimitOf(undefined as never, undefined as never)],
-    ["checkRenderedPrompts", () => checkRenderedPrompts(undefined as never, {})],
-    ["workflowJsonSchema", () => workflowJsonSchema()],
-    ["parseWorkflowFile", () => parseWorkflowFile("")],
-    ["formatWorkflowFile", () => formatWorkflowFile(undefined as never)],
-    ["validateOwnsGlob", () => validateOwnsGlob("")],
-    ["globsOverlap", () => globsOverlap("", "")],
     ["userWorkflowDir", () => userWorkflowDir("")],
     ["workflowSources", () => workflowSources({ cwd: "", configDir: "" })],
     ["discoverWorkflows", () => discoverWorkflows([], { trusted: true })],

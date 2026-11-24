@@ -18,7 +18,9 @@ import type { ModelThinkingLevel } from "../ai/types.js";
 import { PERMISSION_MODES_STRICT_FIRST, type PermissionMode } from "../permissions/types.js";
 import { canonicalPreset, type CodemodeMode, type ToolsPreset } from "../config/types.js";
 import { CODEMODE_MODES } from "../config/types.js";
+import type { TierName } from "../agents/tier-ladder.js";
 import { LOCALES, msg, type Locale } from "../i18n/index.js";
+import { applyRunValue, isRunValueOption, type RunValueOption } from "./args-run.js";
 
 export const SUBCOMMANDS = [
   "auth",
@@ -86,6 +88,8 @@ export interface ParsedArgs {
   maxCostUsd?: number;
   /** [W5-C0] `--agent-dir <目录>`（可重复）：子 Agent 定义目录（W5-G 实现前只透传）。 */
   agentDirs?: string[];
+  /** [#316] `--tier <档>`：主会话按档位选模型（`--model` 优先）。 */
+  tier?: TierName;
   /** 位置参数 `-`（只用于 -p）：一直等 stdin 到 EOF，不设首字节超时。 */
   stdin: boolean;
   /** `--no-stdin`（只用于 -p）：不读 stdin。 */
@@ -157,9 +161,6 @@ type ValueOption =
   | "tools-preset"
   | "codemode"
   | "image"
-  | "max-turns"
-  | "max-cost"
-  | "agent-dir"
   | "system-prompt"
   | "system-prompt-mode"
   | "from"
@@ -190,9 +191,6 @@ const VALUE_OPTIONS: ReadonlySet<string> = new Set<ValueOption>([
   "tools-preset",
   "codemode",
   "image",
-  "max-turns",
-  "max-cost",
-  "agent-dir",
   "system-prompt",
   "system-prompt-mode",
   "from",
@@ -239,8 +237,9 @@ export function emptyArgs(): ParsedArgs {
   };
 }
 
-function applyValue(args: ParsedArgs, option: ValueOption, value: string): void {
+function applyValue(args: ParsedArgs, option: ValueOption | RunValueOption, value: string): void {
   if (value === "") throw new UsageError(msg().cli.args.emptyValue(option));
+  if (isRunValueOption(option)) return applyRunValue(args, option, value);
   switch (option) {
     case "profile":
       args.profile = value;
@@ -320,23 +319,6 @@ function applyValue(args: ParsedArgs, option: ValueOption, value: string): void 
       break;
     case "system-prompt-mode":
       args.systemPromptMode = choice(option, value, ["append", "replace"] as const);
-      break;
-    case "max-turns": {
-      const turns = Number(value);
-      if (!Number.isInteger(turns) || turns < 1)
-        throw new UsageError(msg().cli.args.maxTurnsPositive(value));
-      args.maxTurns = turns;
-      break;
-    }
-    case "max-cost": {
-      const usd = Number(value);
-      if (!Number.isFinite(usd) || usd <= 0)
-        throw new UsageError(msg().cli.args.maxCostPositive(value));
-      args.maxCostUsd = usd;
-      break;
-    }
-    case "agent-dir":
-      (args.agentDirs ??= []).push(value);
       break;
     case "from":
       args.from = value;
@@ -518,14 +500,14 @@ export function parseArgs(argv: readonly string[]): ParseResult {
       }
       continue;
     }
-    if (VALUE_OPTIONS.has(name)) {
+    if (VALUE_OPTIONS.has(name) || isRunValueOption(name)) {
       let value = inline;
       if (value === undefined) {
         value = argv[i + 1];
         if (value === undefined) throw new UsageError(msg().cli.args.needsValue(name));
         i++;
       }
-      applyValue(args, name as ValueOption, value);
+      applyValue(args, name as ValueOption | RunValueOption, value);
       continue;
     }
     if (inline !== undefined) throw new UsageError(msg().cli.args.noValue(name));

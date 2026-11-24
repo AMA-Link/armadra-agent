@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assembleSections, definedSections } from "../agent/system-prompt.js";
 import { BUILTIN_AGENTS, SUBAGENT_ROLE_PREAMBLE, agentRole } from "./builtin.js";
-import { AgentCatalog, resolveAgentModel } from "./catalog.js";
+import { AgentCatalog } from "./catalog.js";
 import type { AgentDefinition } from "./types.js";
 
 const custom = (name: string, extra: Partial<AgentDefinition> = {}): AgentDefinition => ({
@@ -45,24 +45,8 @@ describe("内置类型与目录", () => {
     expect(text.startsWith("general, explore, plan, a0")).toBe(true);
   });
 
-  it("模型：参数 > 定义 > agents.<name>.model > subagents.defaultModel > 继承；别名", () => {
-    const general = BUILTIN_AGENTS[0]!;
-    const config = {
-      agents: { general: { model: "p/cfg" } },
-      subagents: { defaultModel: "p/default" },
-      models: { aliases: { fast: "p/cheap" } },
-    };
-    expect(resolveAgentModel(general, "p/arg", config).ref).toBe("p/arg");
-    expect(resolveAgentModel(custom("x", { model: "p/own" }), undefined, config).ref).toBe("p/own");
-    expect(resolveAgentModel(general, undefined, config).ref).toBe("p/cfg");
-    expect(resolveAgentModel(custom("y"), undefined, config).ref).toBe("p/default");
-    expect(resolveAgentModel(custom("y"), undefined, {}).ref).toBeUndefined();
-    expect(resolveAgentModel(custom("z", { model: "fast" }), undefined, config).ref).toBe(
-      "p/cheap",
-    );
-    const missing = resolveAgentModel(custom("z", { model: "strong" }), undefined, config);
-    expect(missing.ref).toBeUndefined();
-    expect(missing.warning).toMatch(/models.aliases.strong/);
+  it("explore 自带 light 档，general / plan 不设", () => {
+    expect(BUILTIN_AGENTS.map((agent) => agent.tier)).toEqual([undefined, "light", undefined]);
   });
 });
 

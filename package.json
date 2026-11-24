@@ -53,11 +53,18 @@
       "types": "./dist/acp.d.ts",
       "import": "./dist/acp.js"
     },
+    "./workflow": {
+      "types": "./dist/workflow.d.ts",
+      "import": "./dist/workflow.js"
+    },
+    "./workflow.schema.json": "./schema/workflow.schema.json",
+    "./workflow-glob-vectors.json": "./schema/workflow-glob-vectors.json",
     "./bundle": "./dist/bundle/ama.cjs",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "schema/*.json",
     "docs/README.md",
     "docs/guides/*.md",
     "docs/reference/*.md",

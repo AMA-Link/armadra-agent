@@ -7,6 +7,7 @@
  */
 
 import type { ModelThinkingLevel } from "../ai/types.js";
+import type { TierName } from "./tier-ladder.js";
 
 /** `ama`（缺省）| `claude` | `codex` | `acp:<program>`。 */
 export type AgentRunnerSpec = "ama" | "claude" | "codex" | `acp:${string}`;
@@ -23,8 +24,10 @@ export interface AgentDefinition {
   disallowedTools?: string[];
   /** `plan` 强制只读；`inherit` = 父当前模式（只能更严）。 */
   permissionMode: "plan" | "inherit";
-  /** `inherit` | `fast` | `strong`（`models.aliases`）| `provider/model[@channel]`。 */
+  /** `inherit` | `provider/model[@channel]`。 */
   model: string;
+  /** [#316] 定义自带的档位；只在没有 `model` 时按相邻一档解析。 */
+  tier?: TierName;
   thinking?: ModelThinkingLevel;
   /** 缺省 30。 */
   maxTurns: number;

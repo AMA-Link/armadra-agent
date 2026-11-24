@@ -10,6 +10,7 @@
 import { basename } from "node:path";
 import type { ModelThinkingLevel } from "../ai/types.js";
 import { parseFrontmatter, type FrontmatterValue } from "../skills/frontmatter.js";
+import { isTierName } from "./tier-ladder.js";
 import type { AgentDefinition, AgentRunnerSpec, AgentSource } from "./types.js";
 
 export const AGENT_NAME_RE = /^[a-z0-9-]{1,64}$/;
@@ -88,6 +89,11 @@ export function parseAgentDefinition(
     );
   const model = data["model"] === undefined || data["model"] === null ? "inherit" : data["model"];
   if (typeof model !== "string" || model.trim() === "") return fail("model must be a string");
+  if (model.trim() === "fast" || model.trim() === "strong")
+    return fail("model: fast is no longer supported; use tier: light | standard | strong | max");
+  const tier = data["tier"];
+  if (tier !== undefined && tier !== null && !isTierName(tier))
+    return fail("tier must be light, standard, strong or max");
   const thinking = data["thinking"];
   if (
     thinking !== undefined &&
@@ -132,6 +138,7 @@ export function parseAgentDefinition(
   if (background !== undefined) agent.background = background;
   if (tools !== undefined) agent.tools = tools;
   if (disallowedTools !== undefined) agent.disallowedTools = disallowedTools;
+  if (isTierName(tier)) agent.tier = tier;
   if (typeof thinking === "string") agent.thinking = thinking as ModelThinkingLevel;
   if (context === "fork" || context === "fresh") agent.context = context;
   return { agent, warnings };

@@ -172,6 +172,33 @@ describe("AcpEventMapper", () => {
     expectValid(out);
   });
 
+  it("[#317] 嵌套任务的报告挂在根祖先的 task 调用上，_meta.ama 带 parentTaskId / depth；过 schema", () => {
+    const { m, out } = mapper();
+    m.onEvent(toolcallEnd("c1", "task", { prompt: "x" }));
+    m.onEvent(start("c1", "task", { prompt: "x" }));
+    const base = { runner: "ama", description: "", background: true, cwd: CWD, agent: "general" };
+    m.onEvent({ type: "subagent_start", taskId: "t1", parentToolCallId: "c1", ...base });
+    m.onEvent({
+      type: "subagent_start",
+      taskId: "t2",
+      parentToolCallId: "c-inner",
+      parentTaskId: "t1",
+      depth: 2,
+      ...base,
+    });
+    const report = { state: "ready" as const, summary: "ok" };
+    m.onEvent({ type: "subagent_update", taskId: "t2", kind: "report", turn: 1, report });
+    const metas = out.filter((u) => u.sessionUpdate === "tool_call_update" && "_meta" in u);
+    expect(metas).toEqual([
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "c1",
+        _meta: { ama: { taskId: "t2", report, parentTaskId: "t1", depth: 2 } },
+      },
+    ]);
+    expectValid(out);
+  });
+
   it("回放：重复的工具调用 id 同样分开（客户端按 id 合并条目）", () => {
     const { m, out } = mapper();
     const call = (id: string, name: string) =>

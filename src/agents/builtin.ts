@@ -20,8 +20,10 @@ function builtin(
   description: string,
   prompt: string,
   permissionMode: "plan" | "inherit",
+  tier?: AgentDefinition["tier"],
 ): AgentDefinition {
   return {
+    ...(tier === undefined ? {} : { tier }),
     name,
     description,
     permissionMode,
@@ -48,6 +50,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = Object.freeze([
       "where. State the search scope you covered. You cannot modify files; bash runs read-only " +
       "commands only.",
     "plan",
+    "light",
   ),
   builtin(
     "plan",

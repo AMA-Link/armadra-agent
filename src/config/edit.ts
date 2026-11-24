@@ -20,6 +20,7 @@ import { minimalConfig } from "./init.js";
 import { DISPLAY_DEFAULTS } from "./key-docs.js";
 import { loadConfigFile, parseJsonText } from "./load.js";
 import {
+  DEFAULT_SUBAGENT_MAX_DEPTH,
   PROFILE_DEFAULTS,
   cliOverridesToConfig,
   mergeBaseLayers,
@@ -209,6 +210,7 @@ function restrictAgainst(project: AmaConfig, base: AmaConfig): Partial<AmaConfig
     base.tools?.preset ?? "default",
     base.checkpoints?.maxFileBytes ?? DEFAULT_CHECKPOINTS_CONFIG.maxFileBytes,
     base.plan?.bash ?? "readonly",
+    base.subagents?.maxDepth ?? DEFAULT_SUBAGENT_MAX_DEPTH,
   ).accepted;
 }
 

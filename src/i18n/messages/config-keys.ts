@@ -21,11 +21,23 @@ const dynamicDefaultsEn = {
   "plan.directory": "<data dir>/plans",
   "plan.model": "unset: keep the current model",
   "plan.thinkingLevel": "unset: keep the current thinking level",
+  "models.tiers.light.model":
+    "unset: use the next nearest tier or inherit the parent session model",
+  "models.tiers.light.agent": "unset: run on a model, not an external agent",
+  "models.tiers.light.thinkingLevel": "unset: keep the model default thinking level",
+  "models.tiers.standard.model":
+    "unset: use the next nearest tier or inherit the parent session model",
+  "models.tiers.standard.agent": "unset: run on a model, not an external agent",
+  "models.tiers.standard.thinkingLevel": "unset: keep the model default thinking level",
+  "models.tiers.strong.model":
+    "unset: use the next nearest tier or inherit the parent session model",
+  "models.tiers.strong.agent": "unset: run on a model, not an external agent",
+  "models.tiers.strong.thinkingLevel": "unset: keep the model default thinking level",
+  "models.tiers.max.model": "unset: use the next nearest tier or inherit the parent session model",
+  "models.tiers.max.agent": "unset: run on a model, not an external agent",
+  "models.tiers.max.thinkingLevel": "unset: keep the model default thinking level",
   "agents.sessionBudgetUsd": "unset: unlimited",
-  "subagents.defaultModel": "unset: inherit the parent session model",
   "subagents.worktreeSetup": "unset: no setup command",
-  "models.aliases.fast": "unset: fast is treated as inherit",
-  "models.aliases.strong": "unset: strong is treated as inherit",
   "models.enabled": "unset: /model shows every model of configured providers",
   fallbackModel: "unset: no fallback",
   "limits.maxTurns": "unset: unlimited",
@@ -50,11 +62,20 @@ const dynamicDefaultsZh = {
   "plan.directory": "<数据目录>/plans",
   "plan.model": "不设：沿用当前模型",
   "plan.thinkingLevel": "不设：沿用当前思考强度",
+  "models.tiers.light.model": "不设：回落到相邻档位，或继承父会话模型",
+  "models.tiers.light.agent": "不设：用模型而不是外部 Agent",
+  "models.tiers.light.thinkingLevel": "不设：沿用模型缺省思考强度",
+  "models.tiers.standard.model": "不设：回落到相邻档位，或继承父会话模型",
+  "models.tiers.standard.agent": "不设：用模型而不是外部 Agent",
+  "models.tiers.standard.thinkingLevel": "不设：沿用模型缺省思考强度",
+  "models.tiers.strong.model": "不设：回落到相邻档位，或继承父会话模型",
+  "models.tiers.strong.agent": "不设：用模型而不是外部 Agent",
+  "models.tiers.strong.thinkingLevel": "不设：沿用模型缺省思考强度",
+  "models.tiers.max.model": "不设：回落到相邻档位，或继承父会话模型",
+  "models.tiers.max.agent": "不设：用模型而不是外部 Agent",
+  "models.tiers.max.thinkingLevel": "不设：沿用模型缺省思考强度",
   "agents.sessionBudgetUsd": "不设：不限",
-  "subagents.defaultModel": "不设：继承父会话模型",
   "subagents.worktreeSetup": "不设：不运行初始化命令",
-  "models.aliases.fast": "不设：fast 按 inherit 处理",
-  "models.aliases.strong": "不设：strong 按 inherit 处理",
   "models.enabled": "不设：/model 显示已配置供应商的全部模型",
   fallbackModel: "不设：不回退",
   "limits.maxTurns": "不设：不限",
@@ -239,7 +260,6 @@ const keysEn = {
   "subagents.maxPending": "Queue limit; task fails beyond it",
   "subagents.retainSessions":
     "Finished sub-sessions kept in memory (least recently used first out); others reopen from their session file when continued",
-  "subagents.defaultModel": "Default sub-session model provider/model[@channel]",
   "subagents.worktreeSetup":
     "Command run once in the root of each new task worktree (for example to install or link dependencies); AMA_WORKTREE_PARENT is the parent repository; failure fails the task; user level only",
   "subagents.forkMaxContextRatio":
@@ -250,10 +270,34 @@ const keysEn = {
     "Move a foreground task to the background after it has run this many milliseconds; 0 disables; user and project level",
   "subagents.backgroundMaxMs":
     "Lifetime cap for background sub-agent tasks (ms): stopped when reached and the model is told; a task moved from the foreground counts from the move; 0 = unlimited; one extension via task_ctl extend; user level only",
-  models: "Model aliases and the model picker list; user level only (effective from wave 5 W5-G)",
-  "models.aliases": "Models that model: fast / strong in sub-agent definitions point to",
-  "models.aliases.fast": "Model for the fast alias provider/model[@channel]",
-  "models.aliases.strong": "Model for the strong alias provider/model[@channel]",
+  models:
+    "Model tiers (light < standard < strong < max) and the model picker list; user level only",
+  "models.tiers":
+    "Model tiers: each maps to a model, an external agent, or both; sub-agent tasks and --tier pick by tier",
+  "models.tiers.light": "The light tier; needs at least one of model and agent",
+  "models.tiers.light.model":
+    "Model for the light tier provider/model[@channel]; with agent set, the model name passed to that external agent",
+  "models.tiers.light.agent":
+    "External agent for the light tier (claude, codex, acp:<program> or a host runner id)",
+  "models.tiers.light.thinkingLevel": "Thinking level for the light tier",
+  "models.tiers.standard": "The standard tier; needs at least one of model and agent",
+  "models.tiers.standard.model":
+    "Model for the standard tier provider/model[@channel]; with agent set, the model name passed to that external agent",
+  "models.tiers.standard.agent":
+    "External agent for the standard tier (claude, codex, acp:<program> or a host runner id)",
+  "models.tiers.standard.thinkingLevel": "Thinking level for the standard tier",
+  "models.tiers.strong": "The strong tier; needs at least one of model and agent",
+  "models.tiers.strong.model":
+    "Model for the strong tier provider/model[@channel]; with agent set, the model name passed to that external agent",
+  "models.tiers.strong.agent":
+    "External agent for the strong tier (claude, codex, acp:<program> or a host runner id)",
+  "models.tiers.strong.thinkingLevel": "Thinking level for the strong tier",
+  "models.tiers.max": "The max tier; needs at least one of model and agent",
+  "models.tiers.max.model":
+    "Model for the max tier provider/model[@channel]; with agent set, the model name passed to that external agent",
+  "models.tiers.max.agent":
+    "External agent for the max tier (claude, codex, acp:<program> or a host runner id)",
+  "models.tiers.max.thinkingLevel": "Thinking level for the max tier",
   "models.enabled":
     "Models shown by /model (provider/model[@channel], provider/* for a whole provider); unset: every model of providers with a key, a sign-in or a local server",
   fallbackModel:
@@ -272,6 +316,12 @@ const keysEn = {
   todo: "todo tool; user level only (effective from wave 5 W5-F / W5-H2)",
   "todo.reminder":
     "Remind to restate after N consecutive turns without an update while items are open; 0 disables",
+  workflows: "Multi-agent workflows; user level only except unattendedGate (reject)",
+  "workflows.dirs": "Extra workflow directories (*.md); accumulated across levels; user level only",
+  "workflows.unattendedGate":
+    "What an unattended run does at a gate: reject (default) or approve; project level can only write reject",
+  "subagents.maxDepth":
+    "How many levels of sub-agents may delegate further (1-3, default 2); project level can only lower it",
 };
 
 const keysZh = {
@@ -423,7 +473,6 @@ const keysZh = {
   "subagents.maxPending": "排队上限，超出时 task 报错",
   "subagents.retainSessions":
     "内存中保留的已结束子会话数（最久未用的先释放），其余续聊时从会话文件重开",
-  "subagents.defaultModel": "子会话缺省模型 provider/model[@channel]",
   "subagents.worktreeSetup":
     "每个新建的任务 worktree 在其根目录运行一次的命令（如安装或链接依赖）；AMA_WORKTREE_PARENT 指向父仓库；失败则任务失败；只认用户级",
   "subagents.forkMaxContextRatio":
@@ -433,10 +482,29 @@ const keysZh = {
   "subagents.autoBackgroundAfterMs": "前台任务运行超过该毫秒数自动转后台；0 关闭；用户、项目级都认",
   "subagents.backgroundMaxMs":
     "后台子 Agent 任务的寿命上限（毫秒）：到点停止并告诉模型；从前台转来的从转换时刻起算；0 不限；可用 task_ctl extend 续命一次；只认用户级",
-  models: "模型别名与模型选择器清单；只认用户级（第五波 W5-G 起生效）",
-  "models.aliases": "子 Agent 定义里 model: fast / strong 指向的模型",
-  "models.aliases.fast": "fast 别名的模型 provider/model[@channel]",
-  "models.aliases.strong": "strong 别名的模型 provider/model[@channel]",
+  models: "模型档位（light < standard < strong < max）与模型选择器清单；只认用户级",
+  "models.tiers":
+    "模型档位：每档对应一个模型、一个外部 Agent，或两者；子 Agent 任务与 --tier 按档位选择",
+  "models.tiers.light": "轻档；model 与 agent 至少要有一个",
+  "models.tiers.light.model":
+    "轻档的模型 provider/model[@channel]；设了 agent 时是传给该外部 Agent 的模型名",
+  "models.tiers.light.agent": "轻档的外部 Agent（claude、codex、acp:<程序> 或宿主 runner id）",
+  "models.tiers.light.thinkingLevel": "轻档的思考强度",
+  "models.tiers.standard": "标准档；model 与 agent 至少要有一个",
+  "models.tiers.standard.model":
+    "标准档的模型 provider/model[@channel]；设了 agent 时是传给该外部 Agent 的模型名",
+  "models.tiers.standard.agent": "标准档的外部 Agent（claude、codex、acp:<程序> 或宿主 runner id）",
+  "models.tiers.standard.thinkingLevel": "标准档的思考强度",
+  "models.tiers.strong": "强档；model 与 agent 至少要有一个",
+  "models.tiers.strong.model":
+    "强档的模型 provider/model[@channel]；设了 agent 时是传给该外部 Agent 的模型名",
+  "models.tiers.strong.agent": "强档的外部 Agent（claude、codex、acp:<程序> 或宿主 runner id）",
+  "models.tiers.strong.thinkingLevel": "强档的思考强度",
+  "models.tiers.max": "最强档；model 与 agent 至少要有一个",
+  "models.tiers.max.model":
+    "最强档的模型 provider/model[@channel]；设了 agent 时是传给该外部 Agent 的模型名",
+  "models.tiers.max.agent": "最强档的外部 Agent（claude、codex、acp:<程序> 或宿主 runner id）",
+  "models.tiers.max.thinkingLevel": "最强档的思考强度",
   "models.enabled":
     "/model 显示的模型（provider/model[@channel]，provider/* 表示整个供应商）；不设：已配置 key、已登录或本地可达的供应商的全部模型",
   fallbackModel:
@@ -452,6 +520,11 @@ const keysZh = {
   "reminders.budget": "预算剩余不足 20% 时提醒",
   todo: "todo 工具；只认用户级（第五波 W5-F / W5-H2 起生效）",
   "todo.reminder": "连续 N 回合未更新且有未完成项时提醒复述；0 关闭",
+  workflows: "多 Agent 工作流；除 unattendedGate（reject）外只认用户级",
+  "workflows.dirs": "追加的工作流目录（*.md）；跨层累加；只认用户级",
+  "workflows.unattendedGate":
+    "无人值守时遇到 gate 的处理：reject（缺省）或 approve；项目级只能写 reject",
+  "subagents.maxDepth": "子 Agent 可继续派发的嵌套层数（1–3，缺省 2）；项目级只能调小",
 } satisfies Messages<typeof keysEn>;
 
 export const en = { keys: keysEn, dynamicDefaults: dynamicDefaultsEn };

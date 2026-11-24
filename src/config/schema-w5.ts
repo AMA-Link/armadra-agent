@@ -17,7 +17,9 @@ import {
   PLAN_UNATTENDED_MODES,
   STATUS_LINE_MODES,
   SUBAGENT_BACKGROUND_MODES,
+  WORKFLOW_UNATTENDED_GATES,
 } from "./types-w5.js";
+import { TIER_LADDER } from "../agents/tier-ladder.js";
 
 /** 第五波新增的顶层键（schema.ts 的 CONFIG_KEYS 并入）。 */
 export const W5_CONFIG_KEYS = [
@@ -30,6 +32,7 @@ export const W5_CONFIG_KEYS = [
   "limits",
   "reminders",
   "todo",
+  "workflows",
 ] as const;
 
 /** 已有段新增的键。 */
@@ -111,7 +114,7 @@ export function validateConfigW5(c: Checker, config: Obj): void {
     [
       "maxConcurrent",
       "maxPending",
-      "defaultModel",
+      "maxDepth",
       "background",
       "autoBackgroundAfterMs",
       "backgroundMaxMs",
@@ -122,7 +125,7 @@ export function validateConfigW5(c: Checker, config: Obj): void {
     (s, p) => {
       c.number(s, "maxConcurrent", p, 1, 64);
       c.number(s, "maxPending", p, 0, 1024);
-      c.string(s, "defaultModel", p);
+      c.number(s, "maxDepth", p, 1, 3);
       c.oneOf(s, "background", p, SUBAGENT_BACKGROUND_MODES);
       c.number(s, "autoBackgroundAfterMs", p, 0);
       c.number(s, "backgroundMaxMs", p, 0, MAX_TIMER_MS);
@@ -131,7 +134,8 @@ export function validateConfigW5(c: Checker, config: Obj): void {
       c.string(s, "worktreeSetup", p);
     },
   );
-  checkSection(c, config, "models", ["aliases", "enabled"], (s, p) => {
+  checkSection(c, config, "models", ["tiers", "enabled"], (s, p) => {
+    checkTiers(c, s["tiers"], join(p, "tiers"));
     c.stringArray(s, "enabled", p);
     const enabled = s["enabled"];
     if (Array.isArray(enabled))
@@ -139,12 +143,6 @@ export function validateConfigW5(c: Checker, config: Obj): void {
         if (typeof ref === "string" && !MODELS_ENABLED_REF.test(ref))
           c.error(join(join(p, "enabled"), i), msg().config.schema.modelsEnabled);
       });
-    const aliases = s["aliases"];
-    const ap = join(p, "aliases");
-    if (aliases === undefined || !c.object(aliases, ap)) return;
-    c.keys(aliases, ap, ["fast", "strong"]);
-    c.string(aliases, "fast", ap);
-    c.string(aliases, "strong", ap);
   });
   c.string(config, "fallbackModel", "");
   checkSection(c, config, "limits", ["maxTurns", "maxCostUsd"], (s, p) => {
@@ -161,4 +159,29 @@ export function validateConfigW5(c: Checker, config: Obj): void {
     },
   );
   checkSection(c, config, "todo", ["reminder"], (s, p) => c.number(s, "reminder", p, 0));
+  checkSection(c, config, "workflows", ["dirs", "unattendedGate"], (s, p) => {
+    c.stringArray(s, "dirs", p);
+    c.oneOf(s, "unattendedGate", p, WORKFLOW_UNATTENDED_GATES);
+  });
+}
+
+/** [#316] `models.tiers.<档>`：model 与 agent 至少一个；agent 须匹配 AGENT_ID_PATTERN。 */
+function checkTiers(c: Checker, tiers: unknown, path: string): void {
+  if (tiers === undefined || !c.object(tiers, path)) return;
+  c.keys(tiers, path, TIER_LADDER);
+  for (const tier of TIER_LADDER) {
+    const entry = tiers[tier];
+    if (entry === undefined) continue;
+    const p = join(path, tier);
+    if (!c.object(entry, p)) continue;
+    c.keys(entry, p, ["model", "agent", "thinkingLevel"]);
+    c.string(entry, "model", p);
+    c.string(entry, "agent", p);
+    c.oneOf(entry, "thinkingLevel", p, THINKING_LEVELS);
+    const agent = entry["agent"];
+    if (typeof agent === "string" && !AGENT_ID_PATTERN.test(agent))
+      c.error(join(p, "agent"), msg().config.schema.agentId);
+    if (entry["model"] === undefined && entry["agent"] === undefined)
+      c.error(p, msg().config.schema.tierNeedsTarget);
+  }
 }

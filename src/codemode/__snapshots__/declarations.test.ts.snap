@@ -71,7 +71,7 @@ declare const tools: {
     humanAction?: unknown;
   }): Promise<string>;
   /**
-   * Delegate to a sub-agent (fresh context: give full instructions; context fork: inherits this conversation). Returns its final report. Parallel in one reply; writers use isolation worktree. background: returns a taskId (see task_ctl); taskId: continue it.
+   * Delegate to a sub-agent (fresh context: give instructions; context fork: inherits this conversation). Returns its final report. Parallel in one reply; writers use isolation worktree. background: returns a taskId; taskId: continue it. tier: light (lookups, one-file edits) < standard (default) < strong (cross-module, design) < max; model overrides.
    * Agents:
    * - general: General-purpose sub-agent (default): researches and changes code like you do.
    * - explore: Read-only search: locates files, symbols and code paths; returns paths with line numbers.
@@ -86,8 +86,8 @@ declare const tools: {
     isolation?: "none" | "worktree";
     budgetUsd?: number;
     tools?: string[];
+    tier?: "light" | "standard" | "strong" | "max";
     model?: string;
-    thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
     maxTurns?: number;
     context?: "fork" | "fresh";
   }): Promise<string>;

@@ -1,0 +1,333 @@
+{
+  "overlap": [
+    {
+      "a": "src/a/",
+      "b": "src/a/**",
+      "overlap": true
+    },
+    {
+      "a": "src/a/",
+      "b": "src/a",
+      "overlap": true
+    },
+    {
+      "a": "src/a/",
+      "b": "src/b/",
+      "overlap": false
+    },
+    {
+      "a": "src/**",
+      "b": "src/web/x.ts",
+      "overlap": true
+    },
+    {
+      "a": "**",
+      "b": "anything/at/all",
+      "overlap": true
+    },
+    {
+      "a": "**/x.ts",
+      "b": "src/deep/x.ts",
+      "overlap": true
+    },
+    {
+      "a": "**/x.ts",
+      "b": "**/y.ts",
+      "overlap": false
+    },
+    {
+      "a": "src/**/x.ts",
+      "b": "src/a/**",
+      "overlap": true
+    },
+    {
+      "a": "src/**/x.ts",
+      "b": "lib/**",
+      "overlap": false
+    },
+    {
+      "a": "src/*/x.ts",
+      "b": "src/a/b/x.ts",
+      "overlap": false
+    },
+    {
+      "a": "src/*/x.ts",
+      "b": "src/a/x.ts",
+      "overlap": true
+    },
+    {
+      "a": "src/*",
+      "b": "src/a/b",
+      "overlap": false
+    },
+    {
+      "a": "src/*",
+      "b": "src/a",
+      "overlap": true
+    },
+    {
+      "a": "src/?.ts",
+      "b": "src/a.ts",
+      "overlap": true
+    },
+    {
+      "a": "src/?.ts",
+      "b": "src/ab.ts",
+      "overlap": false
+    },
+    {
+      "a": "src/a?.ts",
+      "b": "src/?b.ts",
+      "overlap": true
+    },
+    {
+      "a": "src/*.ts",
+      "b": "src/*.js",
+      "overlap": false
+    },
+    {
+      "a": "src/*.ts",
+      "b": "src/a*",
+      "overlap": true
+    },
+    {
+      "a": "src/*.ts",
+      "b": "src/a.*",
+      "overlap": true
+    },
+    {
+      "a": "src/a*b",
+      "b": "src/ab*",
+      "overlap": true
+    },
+    {
+      "a": "src/a*b",
+      "b": "src/c*",
+      "overlap": false
+    },
+    {
+      "a": "a/b/c",
+      "b": "a/b/c",
+      "overlap": true
+    },
+    {
+      "a": "a/b/c",
+      "b": "a/b/d",
+      "overlap": false
+    },
+    {
+      "a": "a/b",
+      "b": "a/b/c",
+      "overlap": false
+    },
+    {
+      "a": "a/b/",
+      "b": "a/b/c",
+      "overlap": true
+    },
+    {
+      "a": "a/",
+      "b": "b/",
+      "overlap": false
+    },
+    {
+      "a": "a/**/c",
+      "b": "a/c",
+      "overlap": true
+    },
+    {
+      "a": "a/**/c",
+      "b": "a/x/y/c",
+      "overlap": true
+    },
+    {
+      "a": "a/**/c/**",
+      "b": "a/c/d",
+      "overlap": true
+    },
+    {
+      "a": "**/a/**",
+      "b": "b/a/c",
+      "overlap": true
+    },
+    {
+      "a": "**/a/**",
+      "b": "b/c",
+      "overlap": false
+    },
+    {
+      "a": "**",
+      "b": "**",
+      "overlap": true
+    },
+    {
+      "a": "**/",
+      "b": "x",
+      "overlap": true
+    },
+    {
+      "a": "a/**/b/**/c",
+      "b": "a/b/c",
+      "overlap": true
+    },
+    {
+      "a": "a/**/b",
+      "b": "a/**/c",
+      "overlap": false
+    },
+    {
+      "a": "a/**/b",
+      "b": "c/**/b",
+      "overlap": false
+    },
+    {
+      "a": "src/web/**",
+      "b": "src/server/",
+      "overlap": false
+    },
+    {
+      "a": "*",
+      "b": "a",
+      "overlap": true
+    },
+    {
+      "a": "*",
+      "b": "a/b",
+      "overlap": false
+    },
+    {
+      "a": "?",
+      "b": "ab",
+      "overlap": false
+    },
+    {
+      "a": "*.ts",
+      "b": "*.ts",
+      "overlap": true
+    },
+    {
+      "a": "*.ts",
+      "b": "a/b.ts",
+      "overlap": false
+    },
+    {
+      "a": "**/*.ts",
+      "b": "a/b.ts",
+      "overlap": true
+    },
+    {
+      "a": "**/*.ts",
+      "b": "a/b.js",
+      "overlap": false
+    },
+    {
+      "a": "docs/",
+      "b": "docs/a.md",
+      "overlap": true
+    },
+    {
+      "a": "docs/*.md",
+      "b": "docs/**/*.md",
+      "overlap": true
+    },
+    {
+      "a": "a/**/",
+      "b": "a/b/c.ts",
+      "overlap": true
+    }
+  ],
+  "valid": [
+    {
+      "glob": "src/",
+      "valid": true
+    },
+    {
+      "glob": "src/**",
+      "valid": true
+    },
+    {
+      "glob": "**",
+      "valid": true
+    },
+    {
+      "glob": "*.ts",
+      "valid": true
+    },
+    {
+      "glob": "a/b?/c*",
+      "valid": true
+    },
+    {
+      "glob": "a/b/",
+      "valid": true
+    },
+    {
+      "glob": "",
+      "valid": false
+    },
+    {
+      "glob": "/abs",
+      "valid": false
+    },
+    {
+      "glob": "../x",
+      "valid": false
+    },
+    {
+      "glob": "a/../b",
+      "valid": false
+    },
+    {
+      "glob": "a/..",
+      "valid": false
+    },
+    {
+      "glob": "a//b",
+      "valid": false
+    },
+    {
+      "glob": "//",
+      "valid": false
+    },
+    {
+      "glob": "/",
+      "valid": false
+    },
+    {
+      "glob": "src/{a,b}",
+      "valid": false
+    },
+    {
+      "glob": "src/[ab]",
+      "valid": false
+    },
+    {
+      "glob": "!src/a",
+      "valid": false
+    },
+    {
+      "glob": "a\\b",
+      "valid": false
+    },
+    {
+      "glob": "a/./b",
+      "valid": true
+    },
+    {
+      "glob": "a b/c",
+      "valid": true
+    },
+    {
+      "glob": "**/",
+      "valid": true
+    },
+    {
+      "glob": "src/.hidden",
+      "valid": true
+    },
+    {
+      "glob": "..a",
+      "valid": true
+    }
+  ]
+}

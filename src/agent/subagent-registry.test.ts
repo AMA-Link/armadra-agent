@@ -388,3 +388,86 @@ describe("外部 runner（统一入口）", () => {
     );
   });
 });
+
+describe("[#316] 档位解析", () => {
+  const stub = (log: SubagentRunRequest[]): SubagentRunner => ({
+    id: "claude",
+    async start(request) {
+      log.push(request);
+      return {
+        id: "ext-1",
+        send: async () => undefined,
+        wait: async () => ({
+          text: "ok",
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+          stopReason: "stop",
+          isError: false,
+        }),
+        stop: async () => undefined,
+      };
+    },
+  });
+  const tiers = { standard: { model: "fake/echo" }, strong: { agent: "claude", model: "opus" } };
+  const build = (mode?: "plan") => {
+    const log: SubagentRunRequest[] = [];
+    const h = subagentHarness({
+      ...(mode === undefined ? {} : { mode }),
+      env: {
+        catalog: new AgentCatalog([agentDef("claude", { runner: "claude", source: "host" })]),
+        runners: (agent) => (agent.runner === "claude" ? stub(log) : undefined),
+        modelConfig: { models: { tiers } },
+      },
+      script: () => ({ text: "x" }),
+    });
+    const run = (extra: Record<string, unknown>) =>
+      registryOf(h.manager.id)!.run(
+        { prompt: "go", parentToolCallId: "c1", signal: new AbortController().signal, ...extra },
+        () => {
+          throw new Error("no ama runner");
+        },
+      );
+    return { h, log, run };
+  };
+
+  it("显式 tier 命中外部 Agent 条目：改派，模型名与请求的档传给 runner，TaskInfo.tier 是命中档", async () => {
+    const { h, log, run } = build();
+    await run({ tier: "strong" });
+    expect(log[0]).toMatchObject({ model: "opus", tier: "strong" });
+    expect(registryOf(h.manager.id)?.get("t1")).toMatchObject({
+      agent: "claude",
+      runner: "claude",
+      tier: "strong",
+    });
+    expect(of(h.events, "subagent_start")[0]).toMatchObject({ agent: "claude", tier: "strong" });
+  });
+
+  it("显式 agent 不改派", async () => {
+    const { h, log, run } = build();
+    await run({ tier: "strong", agent: "general" });
+    expect(log).toEqual([]);
+    expect(registryOf(h.manager.id)?.get("t1")).toMatchObject({
+      agent: "general",
+      tier: "standard",
+    });
+  });
+
+  it("带 tools 白名单的请求不改派（外部 runner 不认白名单）", async () => {
+    const { h, log, run } = build();
+    await run({ tier: "strong", tools: ["read"] });
+    expect(log).toEqual([]);
+    expect(registryOf(h.manager.id)?.get("t1")).toMatchObject({
+      agent: "general",
+      tier: "standard",
+    });
+  });
+
+  it("plan 模式会话不改派", async () => {
+    const { h, log, run } = build("plan");
+    await run({ tier: "strong" });
+    expect(log).toEqual([]);
+    expect(registryOf(h.manager.id)?.get("t1")).toMatchObject({
+      agent: "general",
+      tier: "standard",
+    });
+  });
+});
