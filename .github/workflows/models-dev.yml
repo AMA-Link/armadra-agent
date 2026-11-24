@@ -25,16 +25,13 @@ jobs:
     env:
       HAS_PR_TOKEN: ${{ secrets.MODELS_DEV_PR_TOKEN != '' }}
     steps:
+      # update-models-dev.mjs 零第三方依赖：先浅克隆 + Node 24 直接拉取并比对，无变化时立即结束，不装 pnpm 与 node_modules
       - uses: actions/checkout@v4
         with:
-          # pnpm run ci 里的 release:check 与上一个 v* tag 比较，需要完整历史与 tag
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v4
+          fetch-depth: 1
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
 
       # 退出码 3 = 删除比例 > 30%（文件照写，PR 加 needs-review）；其它非 0 = 失败，不开 PR
       - name: update snapshot
@@ -50,16 +47,35 @@ jobs:
           elif [ "$code" -ne 0 ]; then
             exit "$code"
           fi
+          if [ -n "$(git status --porcelain -- src/ai/providers)" ]; then
+            echo "snapshot_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "快照没有变化，跳过依赖安装与 PR"
+          fi
+
+      # 有变化才补齐完整历史与 tag（供 release:check 与 create-pull-request 使用）并安装依赖
+      - name: fetch history and tags
+        if: steps.update.outputs.snapshot_changed == 'true'
+        run: git fetch --unshallow --tags origin || git fetch --tags origin
+
+      - uses: pnpm/action-setup@v4
+        if: steps.update.outputs.snapshot_changed == 'true'
+
+      - name: install dependencies
+        if: steps.update.outputs.snapshot_changed == 'true'
+        run: pnpm install --frozen-lockfile
 
       # 快照变了，目录里与新快照相同的覆盖项变成冗余：自动删掉（目录条目若在快照里消失、
       # 缺了必填字段，这一步不修，交给下面的 CI 报出来）
       - name: prune catalog overrides
+        if: steps.update.outputs.snapshot_changed == 'true'
         run: |
           UPDATE_CATALOG=1 pnpm exec vitest run src/ai/providers/catalog.test.ts || true
           pnpm exec prettier --write src/ai/providers/catalog src/ai/providers/catalog-data.ts
 
       - name: detect changes
         id: diff
+        if: steps.update.outputs.snapshot_changed == 'true'
         run: |
           if [ -n "$(git status --porcelain -- src/ai/providers)" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"

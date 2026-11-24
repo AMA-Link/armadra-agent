@@ -51,8 +51,12 @@ describe("pre-push：工作区", () => {
     });
   });
 
-  it("子进程环境去掉全部 GIT_*", () => {
-    expect(cleanEnv({ GIT_DIR: "/x", HOME: "/h" })).toEqual({ HOME: "/h" });
+  it("子进程环境去掉全部 GIT_* 与非交互钩子注入的 TERM=dumb，保留正常 TERM", () => {
+    expect(cleanEnv({ GIT_DIR: "/x", TERM: "dumb", HOME: "/h" })).toEqual({ HOME: "/h" });
+    expect(cleanEnv({ TERM: "xterm-256color", HOME: "/h" })).toEqual({
+      TERM: "xterm-256color",
+      HOME: "/h",
+    });
   });
 });
 
@@ -67,6 +71,16 @@ describe("pre-push：挑检查", () => {
     expect(isDocsOnly(["THIRD_PARTY_NOTICES.md"])).toBe(false);
     const plan = planChecks(["docs/guides/a.md"], { base: SHA });
     expect(plan.statics.map((step) => step.id)).toEqual(["format", "check:docs"]);
+    expect(plan.statics[0]?.args).toEqual([
+      "exec",
+      "prettier",
+      "--check",
+      "--ignore-unknown",
+      "--cache",
+      "--cache-location",
+      "node_modules/.cache/prettier/.prettier-cache",
+      "docs/guides/a.md",
+    ]);
     expect(plan.after).toEqual([]);
   });
 

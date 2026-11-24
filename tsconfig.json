@@ -16,6 +16,8 @@
     "isolatedModules": true,
     "resolveJsonModule": false,
     "skipLibCheck": true,
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsc/typecheck.tsbuildinfo",
     "noEmit": true
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
