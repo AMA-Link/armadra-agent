@@ -8,3 +8,5 @@ docs/design.md
 # 生成文件：scripts/update-models-dev.mjs 的输出本身就是规范格式（字节稳定），不交给 prettier
 src/ai/providers/models-dev/
 src/ai/providers/models-dev-data.ts
+# 生成文件：workflowJsonSchema() 的输出，需逐字节一致
+schema/workflow.schema.json
