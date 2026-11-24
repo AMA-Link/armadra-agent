@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
       - id: diff
         shell: bash
         env:
@@ -32,6 +32,11 @@ jobs:
         run: |
           set -euo pipefail
           code=false
+          if [ "$GITHUB_REF_TYPE" != tag ] && [ -n "${BASE:-}" ] && ! [[ "$BASE" =~ ^0+$ ]]; then
+            if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow origin 2>/dev/null || true
+            fi
+          fi
           if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null || [ "$GITHUB_REF_TYPE" = tag ]; then
             code=true
           else
@@ -56,12 +61,22 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION || 24 }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: cache prettier
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache
+          key: tool-cache-Linux-node24-${{ hashFiles('pnpm-lock.yaml', 'tsconfig*.json', '.prettierrc*') }}-${{ github.sha }}
+          restore-keys: |
+            tool-cache-Linux-node24-${{ hashFiles('pnpm-lock.yaml', 'tsconfig*.json', '.prettierrc*') }}-
+            tool-cache-Linux-node24-
       - run: pnpm fmt:check
       - run: pnpm check:docs
 
@@ -72,39 +87,56 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # PR 与 main 跑 4 行（Linux 覆盖 Node 22/24，macOS 与 Windows 跑 Node 24）；v* 发版 tag 跑全 6 行
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: [22, 24]
+        exclude: ${{ fromJSON(startsWith(github.ref, 'refs/tags/') && '[]' || '[{"os":"macos-latest","node":22},{"os":"windows-latest","node":22}]') }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # release:check 与上一个 v* tag 比较，需要完整历史与 tag
-          fetch-depth: 0
+          # 主行（Linux + Node 24）与发版 tag 拉完整历史与 tag 供 release:check 比较；其余行用浅克隆只查形状与文档
+          fetch-depth: ${{ !(matrix.os == 'ubuntu-latest' && matrix.node == 24 || startsWith(github.ref, 'refs/tags/')) && 1 || 0 }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # pnpm 10+ 的 `pnpm ci` 是内置的 clean install，脚本必须写成 `pnpm run ci`
-      - run: pnpm run ci
-      # bundle 级 e2e（fake 供应商，不花钱）：bundle 已由 ci 构建。环境变量写在步骤上，
-      # 不用 `AMA_E2E=1 pnpm …` 的前缀写法（Windows 的 cmd 不认）。
-      - name: e2e
-        env:
-          AMA_E2E: "1"
-        run: pnpm exec vitest run test/e2e
+      - name: cache tsc + prettier
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache
+          key: tool-cache-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml', 'tsconfig*.json', '.prettierrc*') }}-${{ github.sha }}
+          restore-keys: |
+            tool-cache-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml', 'tsconfig*.json', '.prettierrc*') }}-
+            tool-cache-${{ runner.os }}-node${{ matrix.node }}-
+      # 单一入口：并行跑静态检查与构建 → bundle 冒烟 → 同一 Vitest 进程池一次跑完单测与 bundle 级 e2e。
+      # 与平台 / Node 版本无关的全仓静态检查（prettier、deps、i18n、docs）只在 Linux + Node 24 主行跑一次。
+      - name: ci + e2e
+        run: node scripts/ci-run.mjs --with-e2e ${{ !(matrix.os == 'ubuntu-latest' && matrix.node == 24) && '--skip-repo-statics' || '' }}
+      - name: cache actionlint
+        if: ${{ runner.os == 'Linux' && matrix.node == 24 && !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/actionlint/1.7.7
+          key: actionlint-linux-amd64-1.7.7
       # models-dev.yml 只在定时 / 手动时跑，平时没人发现它坏了：每个 PR 在一台机器上校验 workflow
       # （actionlint，二进制按 sha256 固定，只查语法与表达式、不跑 shellcheck 风格项）并以 fixture 跑一遍
       # 刷新脚本的 --dry-run（不联网、不写文件；输出目录指到临时目录，与空目录比较）。tag 构建跳过，不影响 release job。
       - name: models-dev workflow check
         if: ${{ runner.os == 'Linux' && matrix.node == 24 && !startsWith(github.ref, 'refs/tags/') }}
         run: |
-          # actionlint 从 GitHub Release 下载并按 sha256 校验（不走 Docker Hub：匿名拉取在共享 runner 上常被限流）
-          curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
-            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
-          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+          mkdir -p "$HOME/.cache/actionlint/1.7.7"
+          tgz="$HOME/.cache/actionlint/1.7.7/actionlint.tgz"
+          expected="023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+          # actionlint 从 GitHub Release 下载并缓存，每次执行前仍按固定 sha256 校验
+          if [ ! -f "$tgz" ] || ! echo "$expected  $tgz" | sha256sum -c - >/dev/null 2>&1; then
+            curl -fsSL -o "$tgz" \
+              https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          fi
+          echo "$expected  $tgz" | sha256sum -c -
+          tar -xzf "$tgz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" -shellcheck= .github/workflows/models-dev.yml .github/workflows/ci.yml
           node scripts/update-models-dev.mjs --dry-run --min-providers 1 \
             --out "$RUNNER_TEMP/models-dev" --data-out "$RUNNER_TEMP/models-dev-data.ts" \
@@ -170,11 +202,16 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" $assets --title "$GITHUB_REF_NAME" --generate-notes
           fi
-      # npm 可信发布（trusted publishing）需要 npm ≥ 11.5.1；这里显式装上，不依赖 Node 自带的版本。
+      # npm 可信发布（trusted publishing）需要 npm ≥ 11.5.1；自带版本不够时再全局安装。
       - name: npm (trusted publishing)
         run: |
-          npm install -g npm@^11.5.1
-          npm --version
+          current=$(npm --version)
+          if node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)' "$current"; then
+            echo "npm $current 已满足 >= 11.5.1，跳过全局安装"
+          else
+            npm install -g npm@^11.5.1
+            npm --version
+          fi
       # 发布到 npm：版本已由 release:check 对齐 tag；同一版本已在 npm 上（重跑 job）时跳过。
       # 认证顺序由 npm 决定：先用 OIDC（job 有 id-token: write，且 npmjs.com 上为本仓库的 ci.yml
       # 配了 Trusted Publisher），换不到令牌时回退到 NODE_AUTH_TOKEN（NPM_TOKEN secret，可不配）。
