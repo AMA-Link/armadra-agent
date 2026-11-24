@@ -32,7 +32,7 @@ When a translation and the Chinese version differ, the Chinese version is author
 
 - Guides: [plan mode](../guides/plan.md), [sub-agents and external agents](../guides/agents.md) (with the
   capability matrix), [memory](../guides/memory.md), [command hooks](../guides/hooks.md),
-  [codemode](../guides/codemode.md), [OS sandbox](../guides/sandbox.md), [interface language](../guides/i18n.md).
+  [multi-agent workflows](../guides/workflows.md), [codemode](../guides/codemode.md), [OS sandbox](../guides/sandbox.md), [interface language](../guides/i18n.md).
 - Reference: [session file format](../reference/session-format.md).
 - Design: [overall design](../design/design.md), [terminal UI visual spec](../design/tui-design.md),
   [search and web access](../design/search-plan.md) (only local search is implemented).

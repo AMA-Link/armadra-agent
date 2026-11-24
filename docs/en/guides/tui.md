@@ -233,6 +233,7 @@ Design in [rewind-plan.md](../../history/rewind-plan.md) (Chinese). Every user m
 - `/session`, `/cache`: session usage and cache stats panels (see "Cache and context" above); `/permissions` is a panel too, with allow in green, deny in red and the decision order wrapped and aligned. With sub-agent tasks `/session` gains a "Sub-agents" line (task count and states), and after using external agents an "External agents" section (runs and usage per agent, USD / tokens / requests each in its own unit, never converted).
 - `/plan`: the current plan panel (see "Plan approval" below); `/plan <goal>` enters Plan mode and sends the goal; `/plan approve [mode|fresh]` and `/plan reject` approve / discard directly without a dialog.
 - `/tasks`: focus the agent bar, `/tasks <id>` opens the sub-agent view; `/agents`: the available sub-agent types (see "Sub-agents" below).
+- `/workflow`: multi-agent workflows (see [workflows.md](../../guides/workflows.md), Chinese). `/workflow list` lists them, `/workflow show <id>` shows details, `/workflow run <id> [name=value …]` runs one after a preview and confirmation (step progress is shown line by line; gates and verification escalations open a confirmation dialog, a choice prompt in line mode), `/workflow save [id] [--user]` saves this session's sub-tasks as a workflow, `/workflow cancel` cancels the run. In line mode `/workflow cancel` typed while a run is going is taken as a steer; use `Ctrl+C`.
 - `/paste`: same as `Ctrl+V`.
 - `/context`: a per-category breakdown of the context (see the next section).
 

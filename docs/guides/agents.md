@@ -366,7 +366,7 @@ RPC `get_tasks` / `get_agents` 返回任务快照与可用类型（来源、定�
 - 运行预算：运行的总花费或总回合达到上限时，下一次向任务发消息前以 `limit_reached` 失败。
 - 每次状态变化发 `workflow_update` 事件，并以 `custom ama.workflow` 记整条快照；resume 时未结束的运行记为 `interrupted`。
 
-入口命令（`/workflow`、`-p --workflow`、SDK 与 RPC 命令）在后续版本提供，当前版本只有上面的能力层。
+入口：交互界面的 `/workflow`、`ama -p --workflow`、SDK 的 `listWorkflows` / `runWorkflow` 与 RPC 命令，用法见 [workflows.md](workflows.md)。
 
 `workflow_save` 工具把工作流 JSON 校验后存成 `<cwd>/.ama/workflows/<id>.md`（`scope: "user"` 存 `<configDir>/workflows`），
 不覆盖已有文件，除非 `overwrite: true`。它不在任何工具预设里，要 `tools.default: ["+workflow_save"]` 或 `--tools` 才暴露；

@@ -1,5 +1,5 @@
 /**
- * RPC 命令分派表（设计 §13.2、src/rpc.ts 的命令表，现 44 条）。[B6]
+ * RPC 命令分派表（设计 §13.2、src/rpc.ts 的命令表，现 48 条）。[B6]
  *
  * - 提示类（prompt / steer / follow_up）不等运行结束：会话开始运行（`before_agent_start` /
  *   `agent_start`）、入队或被处理后立刻应答 `{ disposition }`；运行中的进展走事件。
@@ -12,6 +12,8 @@
  *   `plan.unattended`；`approve_fresh` 在这里新建会话并以计划全文开新回合。`get_tasks / get_agents`
  *   读 `RpcContext.tasks / agents`（W5-G 的注册表与发现结果；未装配时回空表）。
  * - [W7-B2] `background_task { taskId? }` → `{ backgrounded }`（`session.backgroundTask`，B1）。
+ * - [#318] 工作流：`get_workflows / run_workflow / respond_workflow_gate / cancel_workflow`（rpc-workflows.ts）；声明
+ *   `workflow_gates` 能力后 gate 与验证升级交客户端，未声明按 `workflows.unattendedGate` / 一律失败。
  * - 打断并发送：`prompt / steer` 的 `interrupt: true` → `session.prompt(message, { interrupt })`（中止当前回合、
  *   立刻以「排队的 steer + 本条」开新回合），应答 `started`。
  */
@@ -41,6 +43,7 @@ import type {
 import { availableCommands, parseSlash, runHostSlash } from "../commands-core.js";
 import { msg } from "../../i18n/index.js";
 import { sessionTrace } from "../../trace/query-session.js";
+import { workflowHandlers, type RpcWorkflows } from "./rpc-workflows.js";
 
 /** 暂存的提前回答与记住的已结算 id 的上限（都按先进先出淘汰）。 */
 export const RPC_APPROVALS_EARLY_LIMIT = 100;
@@ -118,6 +121,8 @@ export interface RpcContext {
   tasks?(): TaskRegistryView | undefined;
   /** [W5-F] `get_agents`：可用的子 Agent 类型与外部 Agent（W5-G / W5-E 装配；缺省回空表）。 */
   agents?(): readonly AgentInfo[];
+  /** [#318] 本连接上的工作流运行表（`run_workflow` 起跑时建立）。 */
+  workflows?: RpcWorkflows;
 }
 
 export type RpcHandlers = {
@@ -429,6 +434,8 @@ export const handlers: RpcHandlers = {
       throw new AmaError("invalid_arguments", msg().print.rpc.badTaskId);
     return { backgrounded: ctx.session().backgroundTask(taskId) };
   },
+  // [#318] 多 Agent 工作流：运行与 gate 的进展走 `workflow_update` 事件
+  ...workflowHandlers,
 };
 
 export const RPC_COMMAND_TYPES = Object.keys(handlers) as RpcCommandType[];

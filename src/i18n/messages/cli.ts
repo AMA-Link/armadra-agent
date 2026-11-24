@@ -29,6 +29,8 @@ export const en = {
     toolDenied: "-p: a tool call was denied during the run (no one to approve)",
     limitReached: "-p reached a budget limit (--max-turns / --max-cost / limits)",
     planPending: "-p saved a plan that awaits approval (not executed)",
+    workflowStopped:
+      "-p --workflow stopped at a gate nobody could answer, or the host asked for confirmation",
     hostVersion: "HOST_API_VERSION mismatch",
     sigint: "Exited on SIGINT (Ctrl+C twice)",
     sigterm: "SIGTERM",
@@ -229,6 +231,7 @@ export const zh = {
     toolDenied: "-p 运行中有工具调用被拒（没有人审批）",
     limitReached: "-p 到达预算上限（--max-turns / --max-cost / limits）",
     planPending: "-p 产出的计划已落盘、待审批（未执行）",
+    workflowStopped: "-p --workflow 停在无人可答的 gate，或宿主要求人工确认",
     hostVersion: "HOST_API_VERSION 不匹配",
     sigint: "SIGINT 退出（两次 Ctrl+C）",
     sigterm: "SIGTERM",

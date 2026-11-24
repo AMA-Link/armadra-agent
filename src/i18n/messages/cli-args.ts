@@ -32,6 +32,11 @@ export const en = {
   emptyResumeId: "--resume= needs a non-empty id",
   needsValue: (option: string) => `--${option} needs a value`,
   noValue: (option: string) => `--${option} does not take a value`,
+  paramFormat: (got: string) => `--param must look like name=value (got ${got})`,
+  paramDuplicate: (name: string) => `--param ${name} was given more than once`,
+  paramNeedsWorkflow: "--param requires --workflow",
+  workflowNoPrompt:
+    "--workflow runs a workflow and takes no prompt (no positional argument, no - and no piped prompt)",
 };
 
 export const zh = {
@@ -58,4 +63,8 @@ export const zh = {
   emptyResumeId: "--resume= 的 id 不能为空",
   needsValue: (option) => `--${option} 需要一个值`,
   noValue: (option) => `--${option} 不接受值`,
+  paramFormat: (got) => `--param 应写成 name=value（收到 ${got}）`,
+  paramDuplicate: (name) => `--param ${name} 给了不止一次`,
+  paramNeedsWorkflow: "--param 需要同时给出 --workflow",
+  workflowNoPrompt: "--workflow 运行工作流，不接受提示（不能有位置参数、- 或管道里的提示）",
 } satisfies Messages<typeof en>;

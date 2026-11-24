@@ -31,6 +31,8 @@ export const ExitCode = {
    * 计划还没执行。不复用 7（7 已发布为「工具调用被拒」）。
    */
   PlanPending: 9,
+  /** [#318] `-p --workflow`：gate 被拒 / 无人值守停在 gate，或交给宿主后宿主要求人工确认。 */
+  WorkflowStopped: 10,
   /** HOST_API_VERSION 不匹配。 */
   HostVersion: 78,
   /** SIGINT 退出（两次 Ctrl+C）。 */

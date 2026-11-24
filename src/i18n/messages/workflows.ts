@@ -80,6 +80,8 @@ export const en = {
     fail: "Mark failed",
   },
   save: {
+    save: "Save",
+    needsUi: "Saving a workflow needs an interactive session to confirm.",
     confirm: (path: string) => `Save workflow to ${path}?`,
     saved: (path: string) => `Saved ${path}`,
     nothing: "No sub-agent tasks in this session to turn into a workflow.",
@@ -161,6 +163,8 @@ export const zh = {
     fail: "记为失败",
   },
   save: {
+    save: "保存",
+    needsUi: "保存工作流需要在交互界面里确认。",
     confirm: (path: string) => `保存工作流到 ${path}？`,
     saved: (path: string) => `已保存 ${path}`,
     nothing: "本会话没有可整理成工作流的子任务。",

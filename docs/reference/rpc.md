@@ -13,7 +13,7 @@
 启动后先发 `hello`，再发当前会话的 `session_start`：
 
 ```json
-{"type":"hello","protocolVersion":1,"agent":"ama","version":"0.1.0","capabilities":["approvals","images","hooks","plans","compact_events"]}
+{"type":"hello","protocolVersion":1,"agent":"ama","version":"0.1.0","capabilities":["approvals","images","hooks","plans","compact_events","workflow_gates"]}
 {"type":"session_start","sessionId":"…","cwd":"/work","reason":"startup"}
 ```
 
@@ -112,10 +112,10 @@
 
 ### 审批
 
-| 命令                      | 参数                                                                                  | `data`                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `set_client_capabilities` | `capabilities: ("approvals" \| "images" \| "hooks" \| "plans" \| "compact_events")[]` | `{ capabilities }`                                                             |
-| `permission_response`     | `requestId: string`、`decision: "allow" \| "deny" \| "allow_session"`                 | `{ accepted: boolean }`（false = 当前没在等这个 id，已暂存，稍后被问到时生效） |
+| 命令                      | 参数                                                                                                      | `data`                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `set_client_capabilities` | `capabilities: ("approvals" \| "images" \| "hooks" \| "plans" \| "compact_events" \| "workflow_gates")[]` | `{ capabilities }`                                                             |
+| `permission_response`     | `requestId: string`、`decision: "allow" \| "deny" \| "allow_session"`                                     | `{ accepted: boolean }`（false = 当前没在等这个 id，已暂存，稍后被问到时生效） |
 
 `compact_events`（docs/history/memory-plan.md D9）：声明后，`turn_end.toolResults`、`message_start` 与 `entry_appended` 不再重复携带工具结果与带图用户消息的正文（以 `contentOmitted: true` 标记），正文只在 `message_end` 与 `tool_execution_end` 里发；不声明时事件形状逐字节不变。形状见「[精简事件](#精简事件compact_events)」。`stream-json` 没有这个开关，输出始终是全量形状。
 
@@ -175,7 +175,25 @@
 `details.status: "running"`），随后发 `subagent_background`；任务结束时照常 `subagent_end`，父会话空闲后收到 `origin: "task"`
 的通知消息。语义与交互界面的 `Ctrl+B` 相同，见 [agents.md](../guides/agents.md)「前台与后台」。
 
-合计 44 条命令，名字即 `RpcCommandMap` 的键。
+### 多 Agent 工作流（#318）
+
+| 命令                    | 参数                                                    | `data`                                                                                                                                      |
+| ----------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_workflows`         | —                                                       | `{ workflows: WorkflowSummary[] }`（`id`、`scope`、`filePath`、`title?`、`roles?`、`steps?`、`params?`、`valid`、`error?`；无效文件带原因） |
+| `run_workflow`          | `workflowId: string`、`params?: Record<string, string>` | `{ runId, host, url? }`；异步，进度走 `workflow_update`                                                                                     |
+| `respond_workflow_gate` | `runId`、`stepId`、`decision: "approve" \| "reject"`    | `{ ok: boolean }`（false = 当前没有在等）                                                                                                   |
+| `cancel_workflow`       | `runId`                                                 | `{ ok: boolean }`                                                                                                                           |
+
+- 工作流 id 的参数名是 `workflowId`，不是 `id`：`id` 已是命令信封的请求编号。
+- `run_workflow` 在单独运行时立即应答 `{ runId, host: false }`；交给宿主时等宿主应答，`runId` 是宿主的运行 id、`host: true`，`url` 可空。宿主拒绝时以宿主的 `code` 与 message 应答失败。
+- 能力 `workflow_gates`：客户端用 `set_client_capabilities` 声明后，`gate` 与验证升级才会等 `respond_workflow_gate`。`approve` 在 `gate` = 放行、在验证升级 = 接受（带警告完成）；`reject` 在 `gate` = 拒绝（`gate_rejected`）、在验证升级 = 失败（`verify_failed`）。等待中的步骤在 `workflow_update` 里是 `status: "waiting"`、`phase: "waiting_human"`；用 `stepId` 区分是哪个步骤。
+- 未声明 `workflow_gates`：`gate` 按 `workflows.unattendedGate`（缺省 `reject`），验证升级一律失败。`approve` 不放行验证失败。
+- `workflow_update` 事件形状见「[子 Agent 事件](#子-agent-事件第五波)」。每次运行与步骤状态变化各发一条，运行开始与结束的条目不带 `step`。
+- stdin 关闭：没人能再回答，等着的 `gate` 按拒绝、验证升级按失败收口，并等在途运行结束后退出；SIGINT / SIGTERM 先取消运行。交给宿主的运行不受影响。
+- 错误：`invalid_arguments`（`workflowId` 不是非空字符串、`params` 不是字符串表）、`workflow_not_found`、`invalid_workflow`、`missing_param`、`invalid_param`、`prompt_too_long`、`workflow_agent_unavailable`、`workflow_busy`。
+- 黄金记录 `test/fixtures/rpc/workflow.out.jsonl`：一次声明 `workflow_gates` 的完整运行，含 `respond_workflow_gate`。
+
+合计 48 条命令，名字即 `RpcCommandMap` 的键。
 
 ## 事件
 
@@ -247,7 +265,7 @@
 （[agents.md](../guides/agents.md)「结构化报告」）：`subagent_update{kind:"report"}` 在子 Agent 每次调用后发一次（这次运行当前折叠后的值），
 `subagent_end.costUsd`（#317）是这次运行含后代的花费（美元）；`get_tasks` 的 `TaskInfo.costUsd` 是任务累计。ama 子任务现在也报告它（以前只有外部 Agent 有），并计入根会话的 `--max-cost`。
 
-`workflow_update`（#318）：工作流运行或步骤状态变化时作为会话事件出现在事件流里，载荷 `runId`、`workflowId`、`title`、`status: running | waiting | succeeded | failed | cancelled`、`host`（已交给宿主）、`step?`（`id`、`kind`、`status`、`phase?`、`roleId?`、`taskId?`、`attempt?`、`startedAt?`、`endedAt?`、`outputFile?`、`decision?`、`error?`、`warnings?`）。`get_workflows` / `run_workflow` 等 RPC 命令与能力 `workflow_gates` 在后续版本提供；`RPC_PROTOCOL_VERSION` 不变。
+`workflow_update`（#318）：工作流运行或步骤状态变化时作为会话事件出现在事件流里，载荷 `runId`、`workflowId`、`title`、`status: running | waiting | succeeded | failed | cancelled`、`host`（已交给宿主）、`step?`（`id`、`kind`、`status`、`phase?`、`roleId?`、`taskId?`、`attempt?`、`startedAt?`、`endedAt?`、`outputFile?`、`decision?`、`error?`、`warnings?`）。命令见「[多 Agent 工作流](#多-agent-工作流318)」；这些都是新增的命令、能力与事件，`RPC_PROTOCOL_VERSION` 不变。
 
 `subagent_end.report` 与 `get_tasks` 的 `TaskInfo.report` 是最终值；子 Agent 没报告时都缺省。`humanAction` 是只有人能决定的事，
 客户端应直接展示给人。都是新增的可选字段与一个新的 `kind` 值，`RPC_PROTOCOL_VERSION` 不变，客户端忽略不认识的 `kind` 即可。

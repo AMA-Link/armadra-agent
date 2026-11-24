@@ -21,7 +21,7 @@ import type { ApiRegistry } from "./ai/apis/api.js";
 import { ProviderRegistry } from "./ai/providers/registry.js";
 import type { KeyResolverOptions } from "./ai/providers/auth.js";
 import type { ModelThinkingLevel, ProviderData } from "./ai/types.js";
-import type { AgentSessionImpl } from "./agent/session.js";
+import { AgentSessionImpl } from "./agent/session.js";
 import {
   planController,
   type PlanDecision,
@@ -30,6 +30,19 @@ import {
 } from "./agent/session-plan.js";
 import type { PlanData, TodoItemView } from "./agent/types.js";
 import type { PlanConfig } from "./config/types-w5.js";
+import type {
+  WorkflowFile,
+  WorkflowRunHandle,
+  WorkflowRunOptions,
+  WorkflowSummary,
+} from "./workflows/run-types.js";
+import type { WorkflowDocument } from "./workflows/types.js";
+import {
+  checkedDocument,
+  findWorkflow,
+  runWorkflowOn,
+  summariesFor,
+} from "./workflows/session-run.js";
 import { parseArgs, type ParsedArgs } from "./cli/args.js";
 import { bootstrap } from "./cli/bootstrap.js";
 import { resolveMemory } from "./cli/compose-memory.js";
@@ -374,8 +387,12 @@ export async function createAgentSession(
     warn,
   };
   session = composeSession(assembly, state, { log: options.log ?? (() => undefined) });
+  sessionLookup.set(session, { configDir, trusted: assembly.trust.trusted });
   return withPlanApi(session, onProposed);
 }
+
+/** [#318] 会话创建时的配置目录与信任（`runWorkflow` 的缺省来源，与 `-p` / RPC 同一套取值）。 */
+const sessionLookup = new WeakMap<AgentSessionImpl, { configDir: string; trusted: boolean }>();
 
 /** SDK 会话：审批交给 `onProposed`（没有则无人值守策略），并挂上 `session.plan`。 */
 function withPlanApi(
@@ -393,4 +410,54 @@ function withPlanApi(
     todos: () => controller?.todos() ?? [],
   };
   return Object.assign(session, { plan, trace: (o?: TraceOptions) => sdkSessionTrace(session, o) }); // [W6-T2]
+}
+
+/** [#318] 工作流目录的查找位置；缺省 cwd = 当前目录、configDir = 用户级配置目录、trusted = true（同 `createAgentSession`）；`runWorkflow` 优先取会话创建时的配置目录与信任。 */
+export interface ListWorkflowsOptions {
+  cwd?: string;
+  configDir?: string;
+  trusted?: boolean;
+  /** 追加的工作流目录（等价 config `workflows.dirs`）。 */
+  dirs?: string[];
+}
+
+function workflowLookup(
+  defaultCwd: string,
+  o: ListWorkflowsOptions,
+  from?: { configDir: string; trusted: boolean },
+) {
+  return {
+    cwd: resolve(o.cwd ?? defaultCwd),
+    configDir: o.configDir ?? from?.configDir ?? resolveConfigDir(),
+    trusted: o.trusted ?? from?.trusted ?? true,
+    ...(o.dirs === undefined ? {} : { dirs: o.dirs }),
+  };
+}
+
+/** [#318] 列出可用工作流（含无效文件及原因）。同步，不缓存。 */
+export function listWorkflows(options: ListWorkflowsOptions = {}): WorkflowSummary[] {
+  return summariesFor(workflowLookup(process.cwd(), options));
+}
+
+export type RunWorkflowOptions = WorkflowRunOptions & ListWorkflowsOptions;
+
+/**
+ * [#318] 在会话上运行工作流：`idOrDocument` 是工作流 id（按目录发现）或内联文档（校验后单独运行）。
+ * 起跑检查失败（找不到、无效、缺参数、Agent 不可用、已有运行）同步抛 `AmaError`；成功返回句柄，
+ * `await handle.wait()` 得到 `WorkflowRunResult`。没有 `onGate` 时 gate 按 `unattendedGate`（缺省 reject）；
+ * 没有 `onVerifyFailed` 时验证用尽即失败。
+ */
+export function runWorkflow(
+  session: AgentSessionImpl,
+  idOrDocument: string | WorkflowDocument,
+  options: RunWorkflowOptions = {},
+): WorkflowRunHandle {
+  if (!(session instanceof AgentSessionImpl))
+    throw new AmaError("not_implemented", "runWorkflow needs a session created by ama.");
+  const { cwd: _cwd, configDir: _configDir, trusted: _trusted, dirs: _dirs, ...run } = options;
+  const target: WorkflowFile | { workflow: WorkflowDocument } =
+    typeof idOrDocument === "string"
+      ? findWorkflow(idOrDocument, workflowLookup(session.cwd, options, sessionLookup.get(session)))
+      : { workflow: checkedDocument(idOrDocument) };
+  return runWorkflowOn(session, target, run);
 }

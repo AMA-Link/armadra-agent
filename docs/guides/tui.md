@@ -227,6 +227,7 @@ line 模式（`--no-tui`）运行中输入 `/interrupt <文本>` 效果相同（
 - `/session`、`/cache`：会话用量与缓存统计面板（见上文「缓存与上下文」）；`/permissions` 同样是面板，allow 绿、deny 红，判定顺序折行对齐。`/session` 有子 Agent 任务时多一行「子 Agent」（任务数与各状态），用过外部 Agent 时多一段「外部 Agent」（每个 Agent 的运行次数与用量，美元 / token / 请求数按各自单位，不换算）。
 - `/plan`：当前计划面板（见下文「Plan 审批」）；`/plan <目标>` 进入 Plan 模式并发出目标；`/plan approve [模式|fresh]`、`/plan reject` 不开对话框直接批准 / 放弃。
 - `/tasks`：聚焦 Agent 栏，`/tasks <id>` 打开子 Agent 视图；`/agents`：可用的子 Agent 类型（见下文「子 Agent」）。
+- `/workflow`：多 Agent 工作流（见 [workflows.md](workflows.md)）。`/workflow list` 列出，`/workflow show <id>` 看详情，`/workflow run <id> [name=value …]` 预览确认后运行（步骤进度逐行显示，`gate` 与验证升级弹确认框；line 模式用选择提示），`/workflow save [id] [--user]` 把本会话的子任务存成工作流，`/workflow cancel` 取消运行。line 模式下运行期间输入 `/workflow cancel` 被当作插话，请用 `Ctrl+C`。
 - `/paste`：同 `Ctrl+V`。
 - `/context`：上下文按类别的明细面板（见下一节）。
 

@@ -16,7 +16,12 @@
 - **行为变化：ama 子任务的花费现在计入预算。** 根会话的 `--max-cost` 包含 ama 子任务，`budgetUsd` 对 ama 子任务也生效；以前两者都不计。`subagent_end` 与 `get_tasks` 为 ama 子任务带 `costUsd`。
 - **`alwaysAsk` 权限层**：工具声明 `annotations.alwaysAsk` 后，在拒绝规则之后、危险命令与模式之前，任何模式都询问；allow 规则、Hook allow 与会话授权都不放行，无人值守按拒绝。
 - **`workflow_save` 工具**：把校验过的工作流存成 `.ama/workflows/<id>.md`（或用户配置目录）。不在任何预设里（`+workflow_save` 打开；codemode 只在显式打开时可调），每次都询问。工作流从 `workflows.dirs`、`<configDir>/workflows` 与项目 `.ama/workflows` 发现（未信任项目跳过）。
-- **工作流调度器**（能力层，入口 `/workflow`、`-p --workflow` 在后续版本）：并行、同角色串行续聊同一任务、gate、验证退回与升级、`workflow_update` 事件与 `ama.workflow` 运行记录。无人值守时 gate 按 `workflows.unattendedGate`，验证失败直接失败（`approve` 不放行）；运行预算用尽以 `limit_reached` 结束。
+- **工作流调度器**：并行、同角色串行续聊同一任务、gate、验证退回与升级、`workflow_update` 事件与 `ama.workflow` 运行记录。无人值守时 gate 按 `workflows.unattendedGate`，验证失败直接失败（`approve` 不放行）；运行预算用尽以 `limit_reached` 结束。
+- **`/workflow` 命令**：`list`、`show <id>`、`run <id> [name=value …]`（预览、确认、逐步进度行，gate 与验证升级弹确认框）、`save [id] [--user]`、`cancel`，交互界面与 line 模式都有。见 [docs/guides/workflows.md](docs/guides/workflows.md)。
+- **`ama -p --workflow <id> [--param name=value]…`**：无人值守运行工作流。退出码 0（完成或已交给宿主）、1（步骤或验证失败）、2（找不到、无效、参数错）、8（预算上限）、10（gate 被拒或停在 gate，或宿主要求人工确认）；`--output-format json` 与 `stream-json` 带 `workflow_update`。
+- **SDK**：`listWorkflows(options)` 与 `runWorkflow(session, idOrDocument, options)`，支持 `onGate`、`onVerifyFailed`、`onUpdate`、`unattendedGate` 与 `limits`。
+- **RPC**：命令 `get_workflows`、`run_workflow { workflowId, params? }`、`respond_workflow_gate`、`cancel_workflow`（共 48 条），能力 `workflow_gates`（未声明时 gate 按 `workflows.unattendedGate`、验证升级一律失败）。`RPC_PROTOCOL_VERSION` 不变。
+- **ACP**：每个工作流步骤是一个合成 tool call `workflow:<runId>:<stepId>`，带 `_meta.ama.workflow`；不发 `plan`，嵌套报告挂在步骤调用上。
 - **Host API 1.5**：`workflows.provide(handler)`（`versions`、`run(request) → { runId, url? }`；一个 HostContext 一个处理器，重复抛 `workflow_handler_exists`；`workflow_unsupported` 表示等人在画布确认）、宿主事件 `workflow_update`。交出后 ama 不镜像进度、不能取消。`HOST_API_MINOR` 现为 5。
 - **任务树**：任务带可选的 `parentTaskId`、`depth`、`tier`；`/tasks`、`task_ctl list` 与 Agent 栏按缩进的树显示，并有「等待子任务」状态；RPC、宿主 runner 请求与 ACP `_meta.ama` 带这些可选字段（`HOST_API_MINOR`、`RPC_PROTOCOL_VERSION` 不变）。
 - **`@armadra/agent/workflow`**：纯函数子路径导出（`validateWorkflow`、`parseWorkflowFile`、`formatWorkflowFile`、`renderWorkflowPrompt`、`resolveWorkflowParams`、`validateOwnsGlob`、`globsOverlap`、`workflowJsonSchema`），以及两份 JSON：`@armadra/agent/workflow.schema.json`、`@armadra/agent/workflow-glob-vectors.json`。

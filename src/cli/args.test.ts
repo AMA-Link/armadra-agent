@@ -316,3 +316,45 @@ describe("--tier（#316）", () => {
     expect(usage(["--max-cost", "0"])).toMatch(/正数/);
   });
 });
+
+describe("--workflow / --param（#318）", () => {
+  it("解析 id 与可重复的 name=value（值里可以有等号）", () => {
+    const args = run([
+      "-p",
+      "--workflow",
+      "review",
+      "--param",
+      "a=1",
+      "--param=b=x=y",
+      "--param",
+      "c=",
+    ]);
+    expect(args.workflow).toBe("review");
+    expect(args.workflowParams).toEqual({ a: "1", b: "x=y", c: "" });
+    expect(run(["-p", "--workflow=r"]).workflowParams).toBeUndefined();
+  });
+
+  it("非法参数名报用法错误（含原型键以外的符号与空名）", () => {
+    for (const bad of ["1a=x", "a-b=x", "=x", "a b=x", "novalue"])
+      expect(() => run(["-p", "--workflow", "r", "--param", bad])).toThrow(UsageError);
+    const args = run(["-p", "--workflow", "r", "--param", "__proto__=x"]);
+    expect(Object.getPrototypeOf(args.workflowParams)).toBeNull();
+    expect(Object.keys(args.workflowParams ?? {})).toEqual(["__proto__"]);
+  });
+
+  it("用法错误：缺 -p、带位置提示或 -、--param 无 --workflow、格式错、重复名", () => {
+    expect(usage(["--workflow", "r"])).toMatch(/只用于 -p/);
+    expect(usage(["-p", "--workflow", "r", "hello"])).toMatch(/不接受提示/);
+    expect(usage(["-p", "--workflow", "r", "-"])).toMatch(/不接受提示/);
+    expect(usage(["-p", "--param", "a=1"])).toMatch(/需要同时给出 --workflow/);
+    expect(usage(["-p", "--workflow", "r", "--param", "novalue"])).toMatch(/name=value/);
+    expect(usage(["-p", "--workflow", "r", "--param", "=v"])).toMatch(/name=value/);
+    expect(usage(["-p", "--workflow", "r", "--param", "a=1", "--param", "a=2"])).toMatch(
+      /不止一次/,
+    );
+  });
+
+  it("退出码 10 = 工作流停住", () => {
+    expect(ExitCode.WorkflowStopped).toBe(10);
+  });
+});

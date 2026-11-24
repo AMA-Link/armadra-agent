@@ -36,6 +36,9 @@ RPC or the SDK, or as the coordinator on the [Armadra](https://github.com/AMA-Li
   sub-agents and external agents. When nobody can approve (`-p`, unattended RPC), the answer is "deny".
 - **Built to be called**: `-p`, `--mode rpc`, `--mode acp`, the SDK and host adapters are first-class entry points;
   exit codes and JSON shapes are contracts, versioned and checked before every release.
+- **Multi-agent workflows**: a Markdown file describes roles, parallel steps, gates and verification; run it with
+  `/workflow`, `ama -p --workflow`, the SDK or RPC, or hand it to the Armadra canvas
+  ([guide](docs/guides/workflows.md), Chinese).
 - **Skills, not MCP**: extend ama with `SKILL.md` directories, prompt templates, command hooks and host adapters.
 
 ## Install

@@ -41,6 +41,7 @@ import {
 import { backgroundTasks, backgroundedText } from "./interactive/task-background.js";
 import { describeCache, describeFingerprint, describeSession } from "./session-report.js";
 import { describeContext } from "./context-report.js";
+import { workflowCommand, type WorkflowUi } from "./workflow-command.js";
 import { msg, type Catalog } from "../i18n/index.js";
 
 export { describeSession } from "./session-report.js";
@@ -73,6 +74,8 @@ export interface CommandContext {
    * `/memory`（W6-M）等在这里挂；命中时先于内置分派。交互模式走 `CommandUi` 的面板钩子。
    */
   extra?: Readonly<Record<string, CommandHandler>>;
+  /** [#318] `/workflow` 的界面（选择框、进度通知）；没有时 run 不预览直接起跑。 */
+  workflow?: WorkflowUi;
 }
 
 /** [W6-C0] `CommandContext.extra` 的处理器。 */
@@ -133,6 +136,11 @@ export const BUILTIN_COMMANDS: readonly CommandInfo[] = [
   Object.assign(command("tasks", "tasks", "[id] | stop <id> | bg [id]"), {
     requires: "task" as const,
   }),
+  command(
+    "workflow",
+    "workflow",
+    "list | show <id> | run <id> [name=value …] | save [id] [--user] | cancel",
+  ),
   command("agents", "agents"),
   command("paste", "paste"),
   command("interrupt", "interrupt", { key: "interruptArgs" }),
@@ -374,6 +382,8 @@ export async function runSlashCommand(
       void session.prompt(args, { interrupt: true }).catch(() => undefined);
       return { kind: "handled", message: msg().report.command.interruptSent(args) };
     }
+    case "workflow":
+      return workflowCommand(args, ctx);
     case "agents":
       return { kind: "handled", message: describeAgents(session.state.sessionId) };
     case "paste": {

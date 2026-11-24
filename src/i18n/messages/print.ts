@@ -23,6 +23,13 @@ export const en = {
     retry: (attempt: number, max: number, seconds: number, error: string) =>
       `ama: ↻ retry ${attempt}/${max} (in ${seconds}s): ${error}\n`,
     modelFailed: "model call failed",
+    workflowNotFound: (id: string) => `ama: No workflow named ${id}.\n`,
+    workflowInvalid: (id: string, issues: string) => `ama: Workflow ${id} is invalid: ${issues}\n`,
+    workflowUntrusted: (dir: string) => `ama: Skipped ${dir}: this project is not trusted\n`,
+    workflowOnHost: (where: string) => `ama: workflow started on the host: ${where}\n`,
+    workflowWaitingHost: (message: string) =>
+      `ama: the host did not start the workflow (${message}); confirm it on the host, -p does not run it here\n`,
+    workflowCancelled: "ama: the workflow was cancelled\n",
     waitingTasks: (n: number) =>
       `ama: waiting for ${plural(n, "background task")} and their notification turns (Ctrl+C stops them)\n`,
     planPending: (version: number, where: string) =>
@@ -65,6 +72,13 @@ export const zh = {
     retry: (attempt, max, seconds, error) =>
       `ama: ↻ 重试 ${attempt}/${max}（${seconds}s 后）：${error}\n`,
     modelFailed: "模型调用失败",
+    workflowNotFound: (id) => `ama: 没有名为 ${id} 的工作流。\n`,
+    workflowInvalid: (id, issues) => `ama: 工作流 ${id} 无效：${issues}\n`,
+    workflowUntrusted: (dir) => `ama: 已跳过 ${dir}：项目未受信任\n`,
+    workflowOnHost: (where) => `ama: 工作流已交给宿主运行：${where}\n`,
+    workflowWaitingHost: (message) =>
+      `ama: 宿主没有起跑工作流（${message}）；请在宿主上确认，-p 不在本地代跑\n`,
+    workflowCancelled: "ama: 工作流已取消\n",
     planPending: (version, where) =>
       `ama: 计划 v${version} 已落盘、待审批（未执行）：${where}；-p 不替人批准——` +
       "在交互界面或 RPC plan_response 里审批，或设 plan.unattended: approve 让 -p 批准后接着执行",

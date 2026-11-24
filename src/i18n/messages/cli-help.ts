@@ -24,6 +24,9 @@ Modes
   --output-format <format>     -p output: text (default) | json | stream-json
   --max-turns <N>              -p runs at most N turns (one model request plus its tool calls is a turn);
                                ends early with exit code 8 if tool calls are still pending at the limit
+  --workflow <id>              -p runs workflow <id> instead of a prompt (no prompt argument); stdout gets the
+                               outputs; gates follow workflows.unattendedGate (default reject)
+  --param <name=value>         A workflow parameter (repeatable, needs --workflow)
   --image <file>               -p sends images with the prompt (repeatable; png / jpg / gif / webp,
                                ≤ 5 MB each); in the interactive UI write @image-path or paste an image path
   --mode rpc                   stdio JSONL protocol (for embedding)
@@ -134,6 +137,7 @@ Exit codes: 0 ok · 1 runtime error · 2 usage error · 3 config error · 4 no u
             5 session error · 6 host / hook startup failure · 7 -p tool call denied (no one to approve;
             allow with --permission-mode auto-edit|auto or --allow) · 8 -p reached a budget limit ·
             9 -p plan saved, awaiting approval (plan.unattended: approve runs it automatically) ·
+            10 -p --workflow stopped at a gate nobody could answer, or the host asked for confirmation ·
             78 host API version mismatch ·
             130 SIGINT · 143 SIGTERM
 `,
@@ -153,6 +157,9 @@ export const zh = {
   --output-format <格式>       -p 的输出：text（缺省）| json | stream-json
   --max-turns <N>              -p 最多跑 N 轮（一次模型请求加其工具执行算一轮）；到达上限仍有
                                未完成的工具调用时提前结束，退出码 8
+  --workflow <id>              -p 运行工作流 <id> 而不是发提示（不接受提示参数）；输出写到 stdout；
+                               gate 按 workflows.unattendedGate（缺省 reject）
+  --param <name=value>         工作流参数（可重复，需要 --workflow）
   --image <文件>               -p 随提示发送图片（可重复；png / jpg / gif / webp，单张 ≤ 5 MB）；
                                交互界面里写 @图片路径 或粘贴图片路径
   --mode rpc                   stdio JSONL 协议（供嵌入）
@@ -254,6 +261,7 @@ export const zh = {
         5 会话错误 · 6 宿主 / Hook 启动失败 · 7 -p 有工具调用被拒（无人审批；用
         --permission-mode auto-edit|auto 或 --allow 放行）· 8 -p 到达预算上限 ·
         9 -p 的计划已落盘待审批（plan.unattended: approve 则自动批准执行）·
+        10 -p --workflow 停在无人可答的 gate，或宿主要求人工确认 ·
         78 宿主 API 版本不匹配 ·
         130 SIGINT · 143 SIGTERM
 `,

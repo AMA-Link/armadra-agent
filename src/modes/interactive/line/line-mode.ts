@@ -36,6 +36,7 @@ import { createLineReader } from "../../rpc/jsonl.js";
 import { errorText, onTerminationSignals } from "../../shared.js";
 import { memoryLineCommand } from "../memory-panel.js";
 import { LineEditor } from "./line-editor.js";
+import { lineChooser } from "../workflow-gate.js";
 import { cacheNoticesEnabled } from "../../session-report.js";
 import { EventPrinter, approvalQuestion, logsInfo, pickHint } from "./line-render.js";
 
@@ -149,6 +150,14 @@ export async function runLineMode(
     io.stdout(`${msg().interactive.line.banner(AMA_VERSION, `${model?.provider}/${model?.id}`)}\n`);
   }
   // /permission full-auto：进入 Bypass 前文本确认一次（管道里没有这一步，命令本身就是显式选择）
+  commands.workflow = {
+    choose: lineChooser(
+      (q, f) => ed.ask(q, f),
+      (t) => io.stdout(t),
+    ),
+    notice: (text, level) => (level === "error" ? err : out)(`${text}\n`),
+    wait: true,
+  };
   commands.confirmPermissionMode = createBypassGate(() => {
     ed.hide();
     io.stdout(
