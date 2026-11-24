@@ -10,7 +10,9 @@
 
 import type { ModelRef, Usage } from "../ai/types.js";
 import type { PermissionMode } from "../permissions/types.js";
-import type { SubagentReport, SubagentStatus } from "../tools/types.js";
+import type { TierName } from "../agents/tier-ladder.js";
+import type { SubagentReport, SubagentStatus, SubagentWorkflowRef } from "../tools/types.js";
+import type { WorkflowUpdate } from "../workflows/run-types.js";
 
 export type { SubagentReport, SubagentReportState, SubagentStatus } from "../tools/types.js";
 
@@ -62,6 +64,13 @@ export interface SubagentStartEvent {
   model?: string;
   sessionFile?: string;
   cwd: string;
+  /** [#317] 父任务 id（根层缺省）与深度（直接子任务 = 1）。 */
+  parentTaskId?: string;
+  depth?: number;
+  /** [#316] 实际命中的档。 */
+  tier?: TierName;
+  /** [#318] 工作流步骤发起的任务。 */
+  workflow?: SubagentWorkflowRef;
 }
 
 export interface SubagentUpdateEvent {
@@ -90,6 +99,10 @@ export interface SubagentEndEvent {
   worktree?: { branch: string; changed: boolean };
   /** [#269] 这次运行折叠后的报告；子 Agent 没报告时缺省。 */
   report?: SubagentReport;
+  /** [#317] 含已结束子树的花费（美元）。 */
+  costUsd?: number;
+  parentTaskId?: string;
+  depth?: number;
 }
 
 /**
@@ -200,6 +213,11 @@ export interface BackgroundJobEvent {
   exitCode?: number | null;
 }
 
+/** [#318] 工作流运行 / 步骤状态变化。 */
+export interface WorkflowUpdateEvent extends WorkflowUpdate {
+  type: "workflow_update";
+}
+
 export type SessionEventW5 =
   /** 流式中 ≤ 2 Hz（`ui.animation: false` 时不发）；数据从 `getStats().telemetry` 取。 */
   | { type: "telemetry_tick" }
@@ -207,6 +225,7 @@ export type SessionEventW5 =
   | SubagentUpdateEvent
   | SubagentEndEvent
   | SubagentBackgroundEvent
+  | WorkflowUpdateEvent
   | PlanProposedEvent
   | PlanResolvedEvent
   | TodoUpdatedEvent

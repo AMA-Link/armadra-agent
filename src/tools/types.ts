@@ -22,6 +22,7 @@
  */
 
 import type { ContentBlock, JsonSchema, ModelRef, ModelThinkingLevel, Usage } from "../ai/types.js";
+import type { TierName } from "../agents/tier-ladder.js";
 import type { CheckpointHooks } from "../checkpoints/types.js";
 import type { PermissionMode } from "../permissions/types.js";
 import type { TraceExternalTurnData } from "../trace/types.js";
@@ -46,6 +47,16 @@ export interface ToolAnnotations {
   pollable?: boolean;
   /** [W5-C0] 结果不被档一裁剪（压缩保护集，§8.2 C4）。 */
   keepInContext?: boolean;
+  /** [#318] 权限管线在「拒绝」之后、「模式」之前一律询问（无视模式、会话授权与 allow 规则）；无人值守拒绝。 */
+  alwaysAsk?: boolean;
+}
+
+/** [#318] 由工作流发起的任务。 */
+export interface SubagentWorkflowRef {
+  runId: string;
+  workflowId: string;
+  stepId: string;
+  roleId: string;
 }
 
 export interface ToolDefinition<I = unknown> {
@@ -118,6 +129,14 @@ export interface SubagentRequest {
   budgetUsd?: number;
   /** [ME-C0] `fork`：继承父会话已完成的回合（同模型、同前缀）；缺省 `fresh`。 */
   context?: "fork" | "fresh";
+  /** [#316] 调用方显式给的档；`model` 优先。 */
+  tier?: TierName;
+  /** [#317] 运行时写入（嵌套派发）；task 工具不读模型输入。 */
+  parentTaskId?: string;
+  /** [#318] 运行时写入：强制只读（ama 子会话用只读管线，外部 runner 拿 plan）。task 工具不暴露。 */
+  readOnly?: boolean;
+  /** [#318] 工作流步骤（运行时写入）。 */
+  workflow?: SubagentWorkflowRef;
 }
 
 /** [W5-C0] 子 Agent 任务的终态（`subagent_end.status`）。 */
@@ -227,6 +246,12 @@ export interface SubagentRunRequest {
   budgetUsd?: number;
   /** [W5-EG] 发起的任务 id（审批标注 `context.taskId`、外部会话引用记账用）；可选。 */
   taskId?: string;
+  /** [#317] 父任务 id（与 taskId 同一命名空间，根层缺省）与深度（直接子任务 = 1）。 */
+  parentTaskId?: string;
+  depth?: number;
+  /** [#316] **请求的**档（`request.tier ?? agent.tier`），不是解析结果；runner 自行解释。 */
+  tier?: TierName;
+  workflow?: SubagentWorkflowRef;
   signal: AbortSignal;
   onEvent(event: SubagentEvent): void;
 }
@@ -274,6 +299,16 @@ export interface TaskInfo {
   context?: "fork" | "fresh";
   /** [#269] 最近一次运行的报告（运行开始清空、运行中随 `report` 调用更新）；没报告时缺省。 */
   report?: SubagentReport;
+  /** [#317] 父任务 id（根层缺省）。 */
+  parentTaskId?: string;
+  /** 缺省按 1。 */
+  depth?: number;
+  /** [#316] 实际命中的档。 */
+  tier?: TierName;
+  /** 本次运行生效的上限（截过父余额之后）。 */
+  budgetUsd?: number;
+  maxTurns?: number;
+  workflow?: SubagentWorkflowRef;
 }
 
 /** [W5-C0] 任务注册表的只读视图（W5-G 的 `SubagentRegistry` 提供）。 */
@@ -288,7 +323,7 @@ export interface ToolContext {
   readonly sessionId: string;
   readonly sessionFile?: string;
   readonly signal: AbortSignal;
-  /** task 深度：主会话 0，子 Agent 1。 */
+  /** 主会话 0，子 Agent = 嵌套层数。 */
   readonly depth: number;
   readonly model?: ModelRef;
   readonly thinkingLevel?: ModelThinkingLevel;

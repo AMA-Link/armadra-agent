@@ -104,6 +104,13 @@ const ALL_EVENTS: { [K in AgentEventName]: AgentEvents[K] } = {
   plan_proposed: { planId: "p1", version: 1, markdown: "# plan", steps: [] },
   plan_resolved: { planId: "p1", decision: "approve" },
   quota_update: { provider: "chatgpt", primary: { usedPercent: 42 } },
+  workflow_update: {
+    runId: "r1",
+    workflowId: "w1",
+    title: "Workflow",
+    status: "running",
+    host: false,
+  },
 };
 
 describe("HostApi 实现", () => {

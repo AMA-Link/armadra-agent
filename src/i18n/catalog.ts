@@ -4,7 +4,7 @@
  *
  * 领域 → 所有者：cli / subcommands（I1）；interactive / approval / plan / rewind / panels / permissions（I2）；
  * report / print / drivers / session / errors（I3）；config（I4）；agents（A）；trace（T1 / T2）；
- * memory（M）；auth（O）；settings（S）；acp（ACP-C0 新增，docs/history/acp-plan.md D15）。
+ * memory（M）；auth（O）；settings（S）；acp（ACP-C0 新增，docs/history/acp-plan.md D15）；workflows（#318，批 4 起归 M11a）。
  */
 
 import type { Messages } from "./types.js";
@@ -29,6 +29,7 @@ import * as auth from "./messages/auth.js";
 import * as settings from "./messages/settings.js";
 import * as acp from "./messages/acp.js";
 import * as bridge from "./messages/bridge.js";
+import * as workflows from "./messages/workflows.js";
 
 const en = {
   cli: cli.en,
@@ -52,6 +53,7 @@ const en = {
   settings: settings.en,
   acp: acp.en,
   bridge: bridge.en,
+  workflows: workflows.en,
 };
 
 /** 运行期取用的目录形状：en 的形状、叶子放宽为 string / 同签名函数。 */
@@ -79,6 +81,7 @@ const zh = {
   settings: settings.zh,
   acp: acp.zh,
   bridge: bridge.zh,
+  workflows: workflows.zh,
 } satisfies Catalog;
 
 export const CATALOGS: { readonly en: Catalog; readonly zh: Catalog } = { en, zh };
