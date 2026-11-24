@@ -118,6 +118,7 @@ schema validation
 → permission pipeline:
    ① rule tier (no model call)
       deny rules (including built-in deny), hook deny                     → deny
+      alwaysAsk tool (currently only workflow_save)                       → ask, straight to approval (skips everything below and the mode)
       dangerous-command list                                              → ask
       [auto] protected paths, writes outside the project, network, deletion → ask
       hook ask                                                            → ask
@@ -134,6 +135,7 @@ schema validation
 → when asking, the approval chain runs (host broker → interface → deny when unattended)
 ```
 
+- `alwaysAsk`: a tool that declares `annotations.alwaysAsk` always asks, after deny rules and before dangerous commands and the mode. Every mode asks (plan, allowlist and full-auto included); allow rules, hook allow and session grants do not release it; unattended means deny. When the session has no permission pipeline, or a host-provided pipeline ignores the annotation, the gate itself still turns an allow into an ask (deny when unattended). Only `workflow_save` uses it today.
 - Later steps cannot loosen earlier results: allow rules cannot override dangerous commands or auto's rule tier, and the classifier only handles calls neither ① nor ② decided.
 - `allowlist` never asks: anything that would ask (dangerous commands, hook ask) is denied, with the denial text `Not in the allowlist` (text returned to the model is always English).
 - When unattended (`-p`, RPC without approvals), asking always means deny; in auto mode the classifier still runs first, and calls it judges allow are executed.

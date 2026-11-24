@@ -113,6 +113,7 @@ schema 校验
 → 权限管线：
    ① 规则层（不调模型）
       deny 规则（含内置 deny）、Hook deny                → 拒绝
+      alwaysAsk 工具（目前只有 workflow_save）             → 询问，直接跳到审批（不看下面各项与模式）
       危险命令表                                           → 询问
       [auto] 受保护路径、项目外写入、网络命令、删除类命令 → 询问
       Hook ask                                             → 询问
@@ -129,6 +130,7 @@ schema 校验
 → 询问时走审批链（宿主 broker → 界面 → 无人值守按拒绝）
 ```
 
+- `alwaysAsk`：工具声明 `annotations.alwaysAsk` 时，在拒绝规则之后、危险命令与模式之前一律询问——任何模式（含 plan、allowlist、full-auto）都问，allow 规则、Hook allow 与本会话授权都不放行；无人值守按拒绝。会话没有权限管线、或宿主自带的管线不认这个标注时，门控层兜底：放行结果也改成询问（无人值守拒绝）。目前只有 `workflow_save` 用它。
 - 后面的步骤不能放宽前面的结论：allow 规则越不过危险命令和 auto 的规则层，分类器只能处理①②都没决定的调用。
 - `allowlist` 从不询问：凡是会询问的（危险命令、Hook ask）一律拒绝，拒绝说明写 `Not in the allowlist`（回给模型的文本固定英文）。
 - 无人值守（`-p`、RPC 未接审批）时，询问一律按拒绝；auto 模式下分类器仍会先跑，判 allow 的照样执行。

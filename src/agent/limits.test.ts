@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { SessionLimits } from "./types.js";
-import { LIMIT_REACHED, budgetOf, createLimitsExtension, resolveLimits } from "./limits.js";
+import {
+  LIMIT_REACHED,
+  budgetOf,
+  chargeSpend,
+  createLimitsExtension,
+  resolveLimits,
+} from "./limits.js";
+import type { SessionCore } from "./session-core.js";
 import { createHarness, type HarnessOptions } from "./testing/harness.js";
 import type { ScriptStep } from "./testing/scripted-api.js";
 import { stubHooks, stubTool } from "./testing/stubs.js";
@@ -129,5 +136,63 @@ describe("limits 扩展（W5-H2 H2）", () => {
     expect(budgetOf(h.session)).toMatchObject({ maxTurns: 3, turns: 0 });
     await h.session.dispose();
     expect(budgetOf(h.session)).toBeUndefined();
+  });
+});
+
+describe("chargeSpend（后代花费，#317）", () => {
+  it("记进本周期 spentUsd；到限与自身花费同样 limit_reached 并结束 run", async () => {
+    const holder: { core?: SessionCore } = {};
+    const charging = stubTool({
+      name: "ls",
+      run: async () => {
+        chargeSpend(holder.core as SessionCore, 1.2);
+        return { content: "ok" };
+      },
+    });
+    const h = createHarness({
+      script: [toolStep(), { text: "never" }],
+      tools: [charging],
+      limits: { maxCostUsd: 1 },
+      extensions: [
+        ({ core }) => {
+          holder.core = core;
+          return createLimitsExtension(core, core.options.limits);
+        },
+      ],
+    });
+    await h.session.prompt("go");
+    expect(budgetOf(holder.core as SessionCore)?.spentUsd).toBeCloseTo(1.2, 6);
+    expect(h.events.filter((e) => e.type === "limit_reached")).toEqual([
+      { type: "limit_reached", kind: "cost", value: 1.2, limit: 1 },
+    ]);
+    expect(h.scripted.calls).toHaveLength(1);
+  });
+
+  it("没有上限的主会话不装扩展，chargeSpend 什么也不做", () => {
+    const h = createHarness({ script: [{ text: "ok" }] });
+    expect(() => chargeSpend(h.session, 5)).not.toThrow();
+  });
+
+  it("subagent_end 的 costUsd 计入根会话花费（无 usage.cost 时）", async () => {
+    const holder: { core?: SessionCore } = {};
+    const h = createHarness({
+      script: [{ text: "a" }],
+      limits: { maxCostUsd: 5 },
+      extensions: [
+        ({ core }) => {
+          holder.core = core;
+          return createLimitsExtension(core, core.options.limits);
+        },
+      ],
+    });
+    await h.session.prompt("go");
+    const before = budgetOf(holder.core as SessionCore)?.spentUsd ?? 0;
+    h.session.emit({
+      type: "subagent_end",
+      taskId: "t1",
+      status: "completed",
+      costUsd: 0.75,
+    } as never);
+    expect(budgetOf(holder.core as SessionCore)?.spentUsd).toBeCloseTo(before + 0.75, 6);
   });
 });

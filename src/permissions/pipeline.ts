@@ -12,6 +12,9 @@
  *      Hook ask：随后把 allow 变 ask——净效果是 Hook ask 总得到 ask（reason "hook"，对话框显示 Hook 的 reason）
  *   无人值守：最终 ask → deny。
  *
+ * [#318] `alwaysAsk` 工具（`input.alwaysAsk`）：① 之后一律 ask，跳过 ②③④（不看模式、allow 规则、Hook allow 与
+ * 会话记忆）；无人值守 ask → deny。
+ *
  * auto（§7.4）：①② 同上；规则层再把受保护路径、项目外写入、网络命令、删除类命令判 ask（不能被 allow
  * 规则越过）；Hook ask → ask；allow 规则 / Hook allow / 会话记忆 → allow；静态判定（只读工具、项目内写入、
  * 安全名单里的 bash）→ allow；都没决定 → ask 且 `classify: true`，由调用方问模型分类器（分类器只能
@@ -133,6 +136,10 @@ export function planDecision(
   }
   return { decision: "deny", message: PLAN_MODE_MESSAGE };
 }
+
+/** [#318] `annotations.alwaysAsk` 工具的询问说明。 */
+export const ALWAYS_ASK_MESSAGE =
+  "This tool always requires approval, whatever the permission mode.";
 
 export const UNATTENDED_MESSAGE =
   "This tool call requires approval, but no one is available to approve it (unattended mode).";
@@ -295,6 +302,19 @@ export class PermissionPipeline implements PermissionPipelineApi {
       };
     }
     // ② 危险命令
+    if (input.alwaysAsk === true) {
+      // [#318] alwaysAsk：在 deny 之后、危险命令与模式之前；plan / allowlist 也问，allow 规则与会话授权不放行
+      const verdict: PermissionVerdict = {
+        decision: "ask",
+        step: "mode",
+        approvalReason: "mode",
+        message: ALWAYS_ASK_MESSAGE,
+      };
+      if (this.currentMode === "auto") {
+        verdict.auto = { layer: "rule", decision: "ask", reason: ALWAYS_ASK_MESSAGE };
+      }
+      return verdict;
+    }
     const command = toolName === "bash" ? inputCommand(input.input) : undefined;
     const danger = command !== undefined ? matchDangerous(command) : undefined;
     if (danger) {

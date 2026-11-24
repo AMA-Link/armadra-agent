@@ -56,11 +56,14 @@ import {
   DEFAULT_SUBAGENT_CONCURRENCY,
   SubagentPool,
   TASK_CUSTOM_TYPE,
-  subagentRegistryFor,
   type AmaRunnerSpec,
   type RegistryHost,
   type TaskHandle,
 } from "./subagent-registry.js";
+import { addCache, collect } from "./session-subagent-collect.js";
+import { DEFAULT_MAX_DEPTH } from "./subagent-nest.js";
+import { nestedSpawner, rootRegistryOf } from "./subagent-tree.js";
+import { LIMIT_ERROR_PREFIX, formatUsd } from "./limits.js";
 import type { SessionEvent, SessionStats } from "./types.js";
 
 export { DEFAULT_SUBAGENT_CONCURRENCY, SubagentPool, TASK_CUSTOM_TYPE };
@@ -69,6 +72,12 @@ export const DEFAULT_SUBAGENT_MAX_TURNS = 30;
 export const PARENT_ONLY_TOOLS: readonly string[] = ["task", "task_ctl", "task_land"];
 /** [#269] 子会话总是可用的工具（类型白名单 / 黑名单不能去掉；父会话里它运行时被拒）。 */
 export const CHILD_ONLY_TOOLS: readonly string[] = [REPORT_TOOL];
+
+/** [#317] 可再派任务的子会话的 role 节末尾说明。 */
+export const NESTED_TASK_NOTE =
+  "You may delegate parts of your task with task. Your sub-tasks run in the foreground, share " +
+  "the session's concurrency limit and draw from your remaining turns and budget; do not " +
+  "delegate trivial steps.";
 
 export const FINAL_REPORT_PROMPT =
   "You have reached the turn limit for this task. Do not call any tools. Reply now with your " +
@@ -93,12 +102,18 @@ export interface SubagentParent extends RegistryHost {
 }
 
 /** 子会话的 broker：请求带上发起方上下文（对话框标 `[task:<agent>]`），其余原样交给父链。 */
-function brokersForChild(
+export function brokersForChild(
   brokers: AgentSessionOptions["brokers"],
   context: ApprovalRequestContext,
 ): ApprovalBroker[] {
   return (brokers ?? []).map((broker) => ({
-    ask: (request, signal) => broker.ask({ ...request, context }, signal),
+    // 请求已被内层子会话的 broker 标过任务（带 taskId）时保留内层，两层嵌套不被外层覆盖；
+    // 会话自己填的 context（depth / readFiles，不带 taskId）仍由这一层标注
+    ask: (request, signal) =>
+      broker.ask(
+        { ...request, context: request.context?.taskId === undefined ? context : request.context },
+        signal,
+      ),
   }));
 }
 
@@ -121,6 +136,8 @@ export interface ChildSession {
  * 只读子会话的权限管线：plan 模式、规则同父；ask 一律转 deny（只读类型不弹审批）。
  * 父管线不是 `PermissionPipeline`（宿主 / SDK 自带实现）时退化为「只放行 read 类」。
  */
+const readOnlyPipelines = new WeakSet<object>();
+
 export function readOnlyPermission(
   parent: PermissionPipelineApi | undefined,
   cwd: string,
@@ -136,7 +153,7 @@ export function readOnlyPermission(
   });
   const denied =
     "Read-only sub-agent: this call is not allowed (it would modify files or run a non-read-only command).";
-  return {
+  const pipeline: PermissionPipelineApi = {
     get mode() {
       return "plan" as const;
     },
@@ -153,6 +170,18 @@ export function readOnlyPermission(
     rememberForSession: () => undefined,
     ...(parent?.projectRoot === undefined ? {} : { projectRoot: parent.projectRoot }),
   };
+  readOnlyPipelines.add(pipeline);
+  return pipeline;
+}
+
+/** 已经是只读管线的直接沿用（嵌套的只读子会话再派任务不套第二层）。 */
+function readOnlyFrom(
+  parent: PermissionPipelineApi | undefined,
+  cwd: string,
+): PermissionPipelineApi {
+  return parent !== undefined && readOnlyPipelines.has(parent)
+    ? parent
+    : readOnlyPermission(parent, cwd);
 }
 
 function failed(text: string): SubagentResult {
@@ -165,9 +194,15 @@ export async function runSubagent(
   _pool: SubagentPool,
   createChild: (options: AgentSessionOptions) => ChildSession,
 ): Promise<SubagentResult> {
-  if (parent.depth > 0) return failed("subagents cannot spawn subagents");
-  const registry = subagentRegistryFor(parent);
-  return registry.run(request, (spec) => createAmaRunner(parent, spec, createChild));
+  const nested = parent.options.nested;
+  if (parent.depth > 0 && nested === undefined) return failed("subagents cannot spawn subagents");
+  const registry = rootRegistryOf(parent);
+  if (registry === undefined)
+    return failed("Sub-agents are not available here (the main session has ended).");
+  // parentTaskId 只由运行时写，task 工具从不设它
+  const req = nested === undefined ? request : { ...request, parentTaskId: nested.taskId };
+  const spawner = nested === undefined ? undefined : nestedSpawner(parent);
+  return registry.run(req, (spec) => createAmaRunner(parent, spec, createChild), spawner);
 }
 
 /**
@@ -178,20 +213,24 @@ function childToolNames(
   parent: SubagentParent,
   spec: AmaRunnerSpec,
   base: readonly string[] | undefined,
+  nestable = false,
 ): string[] {
   const available = new Set((parent.options.tools ?? []).map((tool) => tool.name));
   const all = [...(base ?? available)].filter((name) => available.has(name));
+  // [#317] 可再派任务时显式列出的 task 保留；task_ctl / task_land 仍滤掉
+  const keep = (name: string): boolean =>
+    !PARENT_ONLY_TOOLS.includes(name) || (nestable && name === "task");
   const allow = spec.request.tools ?? spec.agent.tools;
   if (allow !== undefined) {
     return withChildOnly(
-      allow.filter((name) => available.has(name) && !PARENT_ONLY_TOOLS.includes(name)),
+      allow.filter((name) => available.has(name) && keep(name)),
       available,
     );
   }
   const deny = spec.agent.disallowedTools;
   if (deny !== undefined) {
     return withChildOnly(
-      all.filter((name) => !deny.includes(name) && !PARENT_ONLY_TOOLS.includes(name)),
+      all.filter((name) => !deny.includes(name) && keep(name)),
       available,
     );
   }
@@ -260,7 +299,8 @@ async function startAmaChild(
   const wanted =
     spec.resumeFile === undefined && requestedContext(spec.request, spec.agent) === "fork";
   // #149：比例来自 `subagents.forkMaxContextRatio`（注册表环境里的整段配置）
-  const ratio = subagentRegistryFor(parent).env.modelConfig?.subagents?.forkMaxContextRatio;
+  const registry = rootRegistryOf(parent);
+  const ratio = registry?.env.modelConfig?.subagents?.forkMaxContextRatio;
   const plan = wanted ? forkPlan(parent, spec, model, thinkingLevel, ratio) : undefined;
   if (plan !== undefined && "fallback" in plan)
     parent.log("info", `task ${spec.taskId}: fork falls back to fresh (${plan.fallback})`);
@@ -268,8 +308,34 @@ async function startAmaChild(
   const mode: ContextMode | undefined = !wanted ? undefined : forked ? "fork" : "fresh";
   const manager = forked ?? childManager(parent, spec);
   const checkpointHooks = spec.isolated ? undefined : parent.checkpointHooks?.();
-  const maxTurns = spec.request.maxTurns ?? spec.agent.maxTurns ?? DEFAULT_SUBAGENT_MAX_TURNS;
-  const allowed = childToolNames(parent, spec, base.activeTools);
+  /** 本次运行的上限（注册表按父余额截过；续聊时重新读）。 */
+  const runLimits = (): { maxTurns: number; budgetUsd?: number } => {
+    const run = registry?.runBudget(spec.taskId);
+    return {
+      maxTurns:
+        run?.maxTurns ?? spec.request.maxTurns ?? spec.agent.maxTurns ?? DEFAULT_SUBAGENT_MAX_TURNS,
+      ...(run?.budgetUsd === undefined ? {} : { budgetUsd: run.budgetUsd }),
+    };
+  };
+  let { maxTurns } = runLimits();
+  const childDepth = parent.depth + 1;
+  const maxDepth = registry?.env.maxDepth ?? DEFAULT_MAX_DEPTH;
+  // 可派条件：fresh、深度未到顶、根会话还在；工具表里有 task 在下面判
+  const nestable =
+    forked === undefined &&
+    parent.options.subagents !== false &&
+    registry !== undefined &&
+    childDepth < maxDepth;
+  const allowed = childToolNames(parent, spec, base.activeTools, nestable);
+  const nested =
+    nestable && allowed.includes("task")
+      ? {
+          rootSessionId: parent.options.nested?.rootSessionId ?? parent.manager.id,
+          taskId: spec.taskId,
+          depth: childDepth,
+          maxDepth,
+        }
+      : undefined;
   // fork：工具表 = 父活动集（前缀不变），类型限制的工具在执行层拒绝
   const inherited = base.activeTools ?? (parent.options.tools ?? []).map((tool) => tool.name);
   const unavailable = inherited.filter(
@@ -287,7 +353,17 @@ async function startAmaChild(
     ...parent.options,
     ...base,
     // fork：系统提示与父相同（base.system，不加 role 节）
-    ...(forked === undefined ? { system: { ...base.system, role: agentRole(spec.agent) } } : {}),
+    ...(forked === undefined
+      ? {
+          system: {
+            ...base.system,
+            role:
+              nested === undefined
+                ? agentRole(spec.agent)
+                : `${agentRole(spec.agent, { nested: true })}\n\n${NESTED_TASK_NOTE}`,
+          },
+        }
+      : {}),
     sessionManager: manager,
     model,
     thinkingLevel,
@@ -297,20 +373,33 @@ async function startAmaChild(
       parentToolCallId: spec.request.parentToolCallId,
       taskId: spec.taskId,
     }),
-    depth: parent.depth + 1,
+    depth: childDepth,
     maxTurns,
-    subagents: false,
+    subagents: nested === undefined ? false : {},
   };
+  // 继承自父 options 的字段要显式重置：嵌套范围、会话级上限（子会话只认本任务的美元预算）
+  delete options.nested;
+  delete options.limits;
+  if (nested !== undefined) options.nested = nested;
+  const budgetUsd = runLimits().budgetUsd;
+  if (budgetUsd !== undefined) options.limits = { maxCostUsd: budgetUsd };
   if (forked !== undefined && unavailable.length > 0)
     options.unavailableTools = [...(parent.options.unavailableTools ?? []), ...unavailable];
   delete options.checkpointHooks;
   if (checkpointHooks !== undefined) options.checkpointHooks = checkpointHooks;
-  if (spec.agent.permissionMode === "plan")
-    options.permission = readOnlyPermission(parent.options.permission, spec.cwd);
+  // 只读：类型是 plan、请求要求只读，或嵌套任务的发起方是 plan（取更严者，权限不外溢）
+  if (
+    spec.agent.permissionMode === "plan" ||
+    spec.request.readOnly === true ||
+    (parent.options.nested !== undefined && parent.options.permission?.mode === "plan")
+  )
+    options.permission = readOnlyFrom(parent.options.permission, spec.cwd);
   const child = createChild(options);
 
   let turns = 0;
   let toolUse = false;
+  /** [#317] 这次运行因美元预算停下（`limit_reached{cost}`）。 */
+  const costLimit: { hit: { spent: number; limit: number } | undefined } = { hit: undefined };
   /** [#269] 这次运行的报告槽（runOnce 开始清空；codemode 内层调用的 report 同样折叠）。 */
   let report: SubagentReport | undefined;
   const unsubscribe = child.subscribe((event) => {
@@ -332,11 +421,15 @@ async function startAmaChild(
       turns++;
       toolUse = event.toolResults.length > 0;
       const { input, output, cacheRead, cacheWrite, total } = child.getStats().tokens;
+      const { cost } = child.getStats();
       run.onEvent({
         type: "usage",
         usage: { input, output, cacheRead, cacheWrite, totalTokens: total },
+        ...(cost === undefined ? {} : { unit: "usd" as const, amount: cost }),
       });
       run.onEvent({ type: "turn", turn: turns });
+    } else if (event.type === "limit_reached" && event.kind === "cost") {
+      costLimit.hit = { spent: event.value, limit: event.limit };
     } else if (event.type === "permission_request" || event.type === "permission_resolved")
       parent.emit(event);
   });
@@ -363,6 +456,13 @@ async function startAmaChild(
     const startTurns = turns;
     let error: string | undefined;
     report = undefined;
+    costLimit.hit = undefined;
+    // 续聊按本次请求重算上限（limits 扩展每次运行开始重读 options.limits）
+    const now = runLimits();
+    maxTurns = now.maxTurns;
+    options.maxTurns = maxTurns;
+    if (now.budgetUsd === undefined) delete options.limits;
+    else options.limits = { maxCostUsd: now.budgetUsd };
     active = true;
     const controller = new AbortController();
     runController = controller;
@@ -397,6 +497,17 @@ async function startAmaChild(
       }
     }
     const result = collect(child, error, exhausted, signal.aborted);
+    const spentOut = (costLimit as typeof costLimit).hit as
+      { spent: number; limit: number } | undefined;
+    if (spentOut !== undefined && !signal.aborted) {
+      // 预算耗尽是正常收尾：正文前一行说明，状态仍 completed
+      const line = `[budget] stopped after spending ${formatUsd(spentOut.spent)} of the ${formatUsd(spentOut.limit)} budget`;
+      result.text =
+        `${line}\n${result.text.startsWith(LIMIT_ERROR_PREFIX) ? "" : result.text}`.trimEnd();
+      result.stopReason = "limit_reached";
+      result.isError = false;
+      result.status = "completed";
+    }
     if (mode !== undefined) result.context = mode;
     if (report !== undefined) result.report = report;
     billed = addCache(parent, child.getStats(), billed);
@@ -447,69 +558,4 @@ async function startAmaChild(
     },
   };
   return handle satisfies RunnerHandle;
-}
-
-function collect(
-  child: ChildSession,
-  error: string | undefined,
-  exhausted: boolean,
-  aborted: boolean,
-): SubagentResult {
-  const stats = child.getStats();
-  const last = child.manager
-    .branch()
-    .findLast((entry) => entry.type === "message" && entry.message.role === "assistant");
-  const stopReason =
-    error !== undefined
-      ? "error"
-      : last?.type === "message" && last.message.role === "assistant"
-        ? last.message.stopReason
-        : "stop";
-  const isError = error !== undefined || stopReason === "error" || stopReason === "aborted";
-  const result: SubagentResult = {
-    text: child.getLastAssistantText() ?? error ?? "",
-    usage: {
-      input: stats.tokens.input,
-      output: stats.tokens.output,
-      cacheRead: stats.tokens.cacheRead,
-      cacheWrite: stats.tokens.cacheWrite,
-      totalTokens: stats.tokens.total,
-    },
-    stopReason,
-    isError,
-    status:
-      aborted || stopReason === "aborted"
-        ? "aborted"
-        : isError
-          ? "failed"
-          : exhausted
-            ? "max_turns"
-            : "completed",
-  };
-  if (stats.cache !== undefined) {
-    result.cache = { reBilledTokens: stats.cache.reBilledTokens };
-    if (stats.cache.hitRate !== undefined) result.cache.hitRate = stats.cache.hitRate;
-  }
-  return result;
-}
-
-/** 子会话命中与重计费按增量汇总进父（续聊不重复计）。 */
-function addCache(
-  parent: SubagentParent,
-  stats: SessionStats,
-  before: { cacheRead: number; prompt: number; reBilled: number },
-): { cacheRead: number; prompt: number; reBilled: number } {
-  const cache = stats.cache;
-  if (cache === undefined) return before;
-  // 不报缓存的子会话不进命中率分母（同父会话口径）
-  const reported = cache.reporting === "reported";
-  const { input, cacheRead, cacheWrite } = stats.tokens;
-  const now = reported
-    ? { cacheRead, prompt: input + cacheRead + cacheWrite, reBilled: cache.reBilledTokens }
-    : { cacheRead: 0, prompt: 0, reBilled: cache.reBilledTokens };
-  parent.cache?.addSubagent(
-    { cacheRead: now.cacheRead - before.cacheRead, prompt: now.prompt - before.prompt },
-    now.reBilled - before.reBilled,
-  );
-  return now;
 }

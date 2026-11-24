@@ -12,6 +12,7 @@ import {
 const builtins = () =>
   builtinTools()
     .filter((tool) => tool.name !== "task_land") // [#313] 不进 codemode 清单
+    .filter((tool) => tool.name !== "workflow_save") // [#318] alwaysAsk：未显式打开时不进清单
     .map((tool) => ({ tool }));
 
 describe("schemaToType", () => {

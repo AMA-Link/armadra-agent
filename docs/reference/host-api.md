@@ -1,6 +1,6 @@
 # 宿主适配器 API（@armadra/agent/host）
 
-宿主适配器是一个本地 JS 模块，ama 启动时加载它并交给它一个 `HostApi`：它可以注册工具、追加系统提示、观察事件、回答审批、注入用户消息、在界面上显示通知与状态。Armadra 画布就是以宿主适配器的形式接入的（画布工具 `canvas_*` / `context_*` 都由适配器注册）。类型定义在 `src/host/types.ts`，从 `@armadra/agent/host` 导出，`HOST_API_VERSION = 1`、`HOST_API_MINOR = 4`（host-api 1.4，见「版本」）。设计依据见 [design.md](../design/design.md) §6.2、§6.3、§11.1 第 13 步。
+宿主适配器是一个本地 JS 模块，ama 启动时加载它并交给它一个 `HostApi`：它可以注册工具、追加系统提示、观察事件、回答审批、注入用户消息、在界面上显示通知与状态。Armadra 画布就是以宿主适配器的形式接入的（画布工具 `canvas_*` / `context_*` 都由适配器注册）。类型定义在 `src/host/types.ts`，从 `@armadra/agent/host` 导出，`HOST_API_VERSION = 1`、`HOST_API_MINOR = 5`（host-api 1.5，见「版本」）。设计依据见 [design.md](../design/design.md) §6.2、§6.3、§11.1 第 13 步。
 
 ## 模块形状
 
@@ -52,13 +52,14 @@ export function create(api) {
 - **小版本** `HOST_API_MINOR`（`api.minor`）：只加不改的可选成员每加一批递增一次，旧宿主不受影响，不改主版本。旧运行时没有 `api.minor`，按 0 算。
 - 宿主按成员是否存在做特性探测（如 `typeof api.runners?.onDone === "function"`），比按 `api.agent.version` 比较更可靠。
 
-| 小版本 | ama 起始版本 | 新增                                                              |
-| ------ | ------------ | ----------------------------------------------------------------- |
-| 0      | —            | 现有全部成员（`cache?`、`runners?.provide` 等可选面同样要先判断） |
-| 1      | 0.11.0       | `minor`、`runners?.onDone`（见「runner 完成事件」）               |
-| 2      | 0.16.0       | `resources?.register` / `resources?.list`（见「宿主资源」）       |
-| 3      | 0.16.0       | `session_start.uncleanEnd`（`reason: "resume"` 时，#268）         |
-| 4      | 未发布       | `commands?.register` / `commands?.list`（见「斜杠命令」，#301）   |
+| 小版本 | ama 起始版本 | 新增                                                                     |
+| ------ | ------------ | ------------------------------------------------------------------------ |
+| 0      | —            | 现有全部成员（`cache?`、`runners?.provide` 等可选面同样要先判断）        |
+| 1      | 0.11.0       | `minor`、`runners?.onDone`（见「runner 完成事件」）                      |
+| 2      | 0.16.0       | `resources?.register` / `resources?.list`（见「宿主资源」）              |
+| 3      | 0.16.0       | `session_start.uncleanEnd`（`reason: "resume"` 时，#268）                |
+| 4      | 未发布       | `commands?.register` / `commands?.list`（见「斜杠命令」，#301）          |
+| 5      | 未发布       | `workflows?.provide`、`workflow_update` 事件（见「工作流处理器」，#318） |
 
 ## HostApi
 
@@ -85,6 +86,7 @@ export function create(api) {
 | `resources?.register(resource)`                 | 注册一个只读资源命名空间 `scheme://…`，内置 `read` 读它（见「宿主资源」）；只能在 `create()` 里调用；host-api 1.2 起，用前判断 `api.resources !== undefined`                                                                                                                  |
 | `resources?.list()`                             | 已注册的 scheme，按名排序                                                                                                                                                                                                                                                     |
 | `commands?.register(command)`                   | 注册斜杠命令（见「斜杠命令」）；宿主适配器与本地扩展都可用，返回注销函数；host-api 1.4 起，用前判断 `api.commands !== undefined`                                                                                                                                              |
+| `workflows?.provide(handler)`                   | 提供工作流处理器（见「工作流处理器」），返回注销函数；一个 HostContext 只能有一个；host-api 1.5 起，用前判断 `api.workflows !== undefined`                                                                                                                                    |
 | `commands?.list()`                              | 已注册的命令名（全部模块），按注册顺序                                                                                                                                                                                                                                        |
 | `minor?`                                        | `HOST_API_MINOR`（见「版本」）；旧运行时缺省                                                                                                                                                                                                                                  |
 
@@ -168,6 +170,7 @@ type HostCommandResult =
 | `cache_miss`                                                      | `missedTokens`、`missedCost?`、`reason`、`detail?`、`idleMs`                                                                                                                                                                                                                                     | 一次缓存未命中（含低于界面门槛的）                                                           |
 | `context_pressure`                                                | `percent`、`threshold: 70 \| 90`、`remainingTokens?`、`estimatedTurnsLeft?`                                                                                                                                                                                                                      | 上下文占用跨过 70% / 90%                                                                     |
 | `quota_update`                                                    | `provider`、`planType?`、`primary?`、`secondary?`（`{ usedPercent, resetsAt?, windowMinutes? }`）                                                                                                                                                                                                | ChatGPT 订阅配额更新（[W6-O]；配额耗尽另有错误码 `quota_exceeded`，登录失效 `auth_expired`） |
+| `workflow_update`                                                 | `runId`、`workflowId`、`title`、`status: running \| waiting \| succeeded \| failed \| cancelled`、`host`（是否已交给宿主）、`step?`（步骤状态变化时带，形状见 [session-format.md](session-format.md) 的 `ama.workflow`）；host-api 1.5                                                           |
 | `session_shutdown`                                                | `{}`                                                                                                                                                                                                                                                                                             | 退出前（之后跑 SessionEnd Hook、`dispose`）                                                  |
 
 需要逐 token 的流式内容或完整事件流时用 RPC 或 SDK 的 `subscribe`，宿主事件是精简过的。
@@ -223,7 +226,7 @@ interface RunnerDoneEvent {
 - `status` 与任务注册表一致：任务的 `signal` 已 abort 或调过 `stop()` → `aborted`；否则取结果自报的终态（`max_turns` / `interrupted` 等）；再按 `isError` 分 `failed` / `completed`。`wait()` 抛错且未中断 → `failed`，带 `error`。
 - 只观察：处理器不被 await，抛错（含 Promise 拒绝）只经 `log` 记一条 error，不影响 `wait()` 的结果与其它处理器。
 - 同一轮里 ama 可能多次调用 `wait()`（任务入口与注册表各一次），事件只发一次；该轮落定后、没有新的 `send` / `interrupt` 时再调用 `wait()` 不再发。运行中的 `interrupt` 由当前这一轮跟到结束，不另起一轮。
-- （#316 / #317）`SubagentRunRequest` 新增可选字段 `parentTaskId`、`depth`、`tier`（请求的档，原样透传，不是回落后的档）与 `workflow`；`RunnerDoneEvent` 新增可选 `parentTaskId`、`depth`。都是可选新增，`HOST_API_MINOR` 不变（仍为 4）。
+- （#316 / #317）`SubagentRunRequest` 新增可选字段 `parentTaskId`、`depth`、`tier`（请求的档，原样透传，不是回落后的档）与 `workflow`；`RunnerDoneEvent` 新增可选 `parentTaskId`、`depth`。都是可选新增，随 host-api 1.5 一并发布。
 - 只覆盖宿主注入的 runner；ama 自己的子会话（`general` / `explore` / `plan`）仍看 `subagent_start` / `subagent_end` 事件。
 - （#269）`subagent_end` 可带 `report?: { state: ready | blocked | failed | waiting, summary, humanAction? }`——子 Agent 用 `report` 工具自报的状态（[agents.md](../guides/agents.md)「结构化报告」）；宿主 runner 可在结果里带 `report`，或发 `{ type: "report", report }` 进度事件。可选字段，`HOST_API_VERSION` / `HOST_API_MINOR` 不变。
 - 用途：宿主不必轮询「协调者是否还在等这个任务」——收到事件即知道 ama 这一侧的任务结束了。
@@ -250,6 +253,26 @@ api.resources.register({
 - **出错**：宿主抛错、超过 30 秒未返回、返回形状不对、未注册的 scheme（错误里列出已注册的；`http(s)://` 另提示用 `web_fetch`）都以 `isError` 的工具结果回给模型，不影响会话。`signal` 在会话中断或超时时 abort。
 - **时机与稳定性**：只能在 `create()` 里注册，宿主激活后列表冻结（再注册抛 `invalid_arguments`）；最多 12 个 scheme。系统提示工具节多一行 `Host resources (pass "scheme://path" to read; …): demo:// <describe>; …`，按 scheme 排序，会话开始时固定；没有注册资源的运行零字节变化。
 - 没有注册任何资源时，`read` 不解析 `scheme://`，仍按文件路径处理。
+
+## 工作流处理器
+
+`api.workflows.provide(handler)`（host-api 1.5）：宿主声明自己能执行工作流文件，之后 ama 把文件工作流交给它而不是自己调度。返回注销函数。
+
+```ts
+interface HostWorkflowHandler {
+  readonly versions: readonly number[]; // 能执行的文件格式版本（Armadra：[2]）
+  run(request: HostWorkflowRunRequest): Promise<{ runId: string; url?: string }>;
+}
+```
+
+`run(request)` 的字段：`workflowId`（文件 id；ama 不把内联草案交给宿主）、`workflow`（已校验的文档）、`params`（已解析的参数）、
+`source: { scope, filePath, hash }`、`sessionId`、`cwd`、`signal`。返回 `{ runId, url? }`：宿主侧的运行 id 与可选的画布链接。
+
+- 一个 HostContext 只能提供一个处理器：重复提供抛 `workflow_handler_exists`（同一模块再次提供替换自己的）；参数不合格抛 `invalid_arguments`。
+- `run()` 抛 `code: "workflow_unsupported"` 表示这次要等人在画布上确认：ama 记一条 `waiting` 的运行；抛其它 code 则运行记为 `failed`，code 与 message 原样透传。
+- 只交出并起跑：交出后 ama 不镜像进度、不等结果、也不能取消（要取消在宿主侧）。`run()` 落定后 ama 记一条 `ama.workflow` 快照
+  并发一条 `workflow_update`（`host: true`，没有 `step`）。
+- 入口命令在后续版本提供；没有处理器时，工作流由 ama 自己调度。
 
 ## 退出
 

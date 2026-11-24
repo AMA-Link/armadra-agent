@@ -1,7 +1,7 @@
 /**
  * 会话预算（docs/history/wave5-plan.md §8.3 H2，D29）：`--max-turns` / `--max-cost` / config `limits.*`。[W5-H2]
  *
- * 以 `SessionExtension` 实现（只装主会话；task 子会话有自己的 maxTurns）：
+ * 以 `SessionExtension` 实现（主会话有上限时装；[#317] task 子会话总装：美元预算按本次运行重读、后代花费经 `chargeSpend` 记入）：
  * - **回合**：每个会话周期（`before_agent_start` 起）累计助手回复（error / aborted 不算）；第 N 次回复
  *   带工具调用时 `requestStop`——本轮工具照常执行，之后结束 run（与原 `--max-turns` 语义一致：
  *   「一次模型请求加其工具执行算一轮」；第 N 次回复不再调用工具时自然结束，不算到限）。
@@ -36,6 +36,15 @@ export interface BudgetState {
 }
 
 const budgets = new WeakMap<SessionCore, BudgetState>();
+const chargers = new WeakMap<SessionCore, (usd: number) => void>();
+
+/**
+ * [#317] 后代任务的花费记进本会话本周期的 `spentUsd`（嵌套派发：孙任务花费经注册表回调到每个祖先会话）；
+ * 到限时与自身花费同样 `limit_reached` 并结束 run。会话没装预算扩展时什么也不做。
+ */
+export function chargeSpend(core: SessionCore, usd: number): void {
+  if (usd > 0) chargers.get(core)?.(usd);
+}
 
 /** 当前会话的预算状态（未设上限 / 未装扩展时 undefined）。 */
 export function budgetOf(core: SessionCore): Readonly<BudgetState> | undefined {
@@ -81,11 +90,18 @@ export function createLimitsExtension(
   core: SessionCore,
   limits: SessionLimits | undefined,
 ): SessionExtension | undefined {
-  if (limits === undefined || (limits.maxTurns === undefined && limits.maxCostUsd === undefined))
-    return undefined;
+  const unlimited =
+    limits === undefined || (limits.maxTurns === undefined && limits.maxCostUsd === undefined);
+  // 子会话总装（上限可能在续聊时才给，后代花费也要记）；主会话没有上限就不装
+  if (unlimited && core.depth === 0) return undefined;
   const state: BudgetState = { turns: 0, spentUsd: 0 };
-  if (limits.maxTurns !== undefined) state.maxTurns = limits.maxTurns;
-  if (limits.maxCostUsd !== undefined) state.maxCostUsd = limits.maxCostUsd;
+  const load = (next: SessionLimits | undefined): void => {
+    delete state.maxTurns;
+    delete state.maxCostUsd;
+    if (next?.maxTurns !== undefined) state.maxTurns = next.maxTurns;
+    if (next?.maxCostUsd !== undefined) state.maxCostUsd = next.maxCostUsd;
+  };
+  load(limits);
   budgets.set(core, state);
   /** 本周期已报过的类别（每周期每类只报一次）。 */
   const reported = new Set<LimitKind>();
@@ -99,6 +115,14 @@ export function createLimitsExtension(
 
   const overCost = (): boolean =>
     state.maxCostUsd !== undefined && state.spentUsd >= state.maxCostUsd;
+
+  chargers.set(core, (usd) => {
+    state.spentUsd += usd;
+    if (overCost()) {
+      reach("cost", state.spentUsd, state.maxCostUsd as number);
+      core.requestStop(undefined);
+    }
+  });
 
   const onAssistant = (message: AssistantMessage): void => {
     state.spentUsd += message.usage.cost?.total ?? 0;
@@ -122,10 +146,12 @@ export function createLimitsExtension(
         state.turns = 0;
         state.spentUsd = 0;
         reported.clear();
+        // 子会话的上限按每次运行重读（续聊时 maxTurns / budgetUsd 按本次请求重算）
+        if (core.depth > 0) load(core.options.limits);
       } else if (event.type === "message_end" && event.message.role === "assistant") {
         onAssistant(event.message);
       } else if (event.type === "subagent_end") {
-        state.spentUsd += event.usage?.cost?.total ?? 0;
+        state.spentUsd += event.usage?.cost?.total ?? event.costUsd ?? 0;
       }
     },
     wrapStream(stream: StreamFn): StreamFn {
@@ -149,6 +175,7 @@ export function createLimitsExtension(
     },
     dispose(): void {
       budgets.delete(core);
+      chargers.delete(core);
     },
   };
 }

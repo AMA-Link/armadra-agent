@@ -5,7 +5,7 @@ English · [简体中文](../../reference/host-api.md)
 > Translated from the Chinese [docs/reference/host-api.md](../../reference/host-api.md) as of commit `979608b`. When the two differ, the Chinese
 > version is authoritative.
 
-A host adapter is a local JS module that ama loads at startup and hands a `HostApi`. With it the adapter can register tools, append to the system prompt, observe events, answer approvals, inject user messages and show notifications and status in the interface. The Armadra canvas plugs in as a host adapter (the canvas tools `canvas_*` / `context_*` are all registered by the adapter). The types are defined in `src/host/types.ts` and exported from `@armadra/agent/host`; `HOST_API_VERSION = 1`, `HOST_API_MINOR = 4` (host-api 1.4, see "Versioning"). The design rationale is in [design.md](../../design/design.md) §6.2, §6.3 and §11.1 step 13 (Chinese).
+A host adapter is a local JS module that ama loads at startup and hands a `HostApi`. With it the adapter can register tools, append to the system prompt, observe events, answer approvals, inject user messages and show notifications and status in the interface. The Armadra canvas plugs in as a host adapter (the canvas tools `canvas_*` / `context_*` are all registered by the adapter). The types are defined in `src/host/types.ts` and exported from `@armadra/agent/host`; `HOST_API_VERSION = 1`, `HOST_API_MINOR = 5` (host-api 1.5, see "Versioning"). The design rationale is in [design.md](../../design/design.md) §6.2, §6.3 and §11.1 step 13 (Chinese).
 
 ## Module shape
 
@@ -64,6 +64,7 @@ export function create(api) {
 | 2     | 0.16.0            | `resources?.register` / `resources?.list` (see "Host resources")                                   |
 | 3     | 0.16.0            | `session_start.uncleanEnd` (with `reason: "resume"`, #268)                                         |
 | 4     | Unreleased        | `commands?.register` / `commands?.list` (see "Slash commands", #301)                               |
+| 5     | Unreleased        | `workflows?.provide`, the `workflow_update` event (see "Workflow handler", #318)                   |
 
 ## HostApi
 
@@ -90,6 +91,7 @@ export function create(api) {
 | `resources?.register(resource)`                 | Registers a read-only resource namespace `scheme://…` that the built-in `read` reads (see "Host resources"); only callable inside `create()`. Since host-api 1.2, so check `api.resources !== undefined` before use                                                                                                                                                                                                                                                          |
 | `resources?.list()`                             | The registered schemes, sorted by name                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `commands?.register(command)`                   | Register a slash command (see "Slash commands"); available to host adapters and local extensions, returns an unregister function; since host-api 1.4, check `api.commands !== undefined` first                                                                                                                                                                                                                                                                               |
+| `workflows?.provide(handler)`                   | Provide the workflow handler (see "Workflow handler"), returns an unregister function; one per HostContext; since host-api 1.5, check `api.workflows !== undefined` first                                                                                                                                                                                                                                                                                                    |
 | `commands?.list()`                              | Registered command names (all modules), in registration order                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `minor?`                                        | `HOST_API_MINOR` (see "Versioning"); missing in older runtimes                                                                                                                                                                                                                                                                                                                                                                                                               |
 
@@ -173,6 +175,7 @@ type HostCommandResult =
 | `cache_miss`                                                      | `missedTokens`, `missedCost?`, `reason`, `detail?`, `idleMs`                                                                                                                                                                                                                                                                                                                                          | A cache miss (including those below the interface threshold)                                                                             |
 | `context_pressure`                                                | `percent`, `threshold: 70 \| 90`, `remainingTokens?`, `estimatedTurnsLeft?`                                                                                                                                                                                                                                                                                                                           | Context usage crossed 70% / 90%                                                                                                          |
 | `quota_update`                                                    | `provider`, `planType?`, `primary?`, `secondary?` (`{ usedPercent, resetsAt?, windowMinutes? }`)                                                                                                                                                                                                                                                                                                      | ChatGPT subscription quota updated ([W6-O]; an exhausted quota has its own error code `quota_exceeded`, an expired login `auth_expired`) |
+| `workflow_update`                                                 | `runId`, `workflowId`, `title`, `status: running \| waiting \| succeeded \| failed \| cancelled`, `host` (already handed to the host), `step?` (on step changes; shape in the `ama.workflow` entry of session-format.md); host-api 1.5                                                                                                                                                                |
 | `session_shutdown`                                                | `{}`                                                                                                                                                                                                                                                                                                                                                                                                  | Before exit (followed by the SessionEnd hook and `dispose`)                                                                              |
 
 For token-level streaming content or the full event stream, use RPC or the SDK's `subscribe`; host events are a trimmed set.
@@ -228,7 +231,7 @@ interface RunnerDoneEvent {
 - `status` follows the task registry: the task's `signal` aborted or `stop()` called → `aborted`; otherwise the terminal status the result reports (`max_turns`, `interrupted`, …); otherwise `failed` / `completed` by `isError`. A `wait()` that throws without an abort → `failed` with `error`.
 - Observe-only: handlers are not awaited; a throw (including a rejected Promise) is logged once at error level through `log` and affects neither the `wait()` result nor other handlers.
 - ama may call `wait()` several times in one round (the task entry and the registry each once); the event is sent once. Calling `wait()` again after the round settled, without a new `send` / `interrupt`, sends nothing. An `interrupt` while running is followed to the end by the current round instead of starting another.
-- (#316 / #317) `SubagentRunRequest` gains optional `parentTaskId`, `depth`, `tier` (the requested tier, passed through as is, not the tier after fallback) and `workflow`; `RunnerDoneEvent` gains optional `parentTaskId` and `depth`. All are optional additions; `HOST_API_MINOR` is unchanged (still 4).
+- (#316 / #317) `SubagentRunRequest` gains optional `parentTaskId`, `depth`, `tier` (the requested tier, passed through as is, not the tier after fallback) and `workflow`; `RunnerDoneEvent` gains optional `parentTaskId` and `depth`. All are optional additions, released with host-api 1.5.
 - Only host-injected runners are covered; ama's own sub-sessions (`general` / `explore` / `plan`) still report through `subagent_start` / `subagent_end`.
 - (#269) `subagent_end` may carry `report?: { state: ready | blocked | failed | waiting, summary, humanAction? }`, the status a sub-agent gives through its `report` tool ([agents.md](../../guides/agents.md) "structured reports", Chinese); a host runner may put `report` on its result or emit a `{ type: "report", report }` progress event. Optional field; `HOST_API_VERSION` / `HOST_API_MINOR` unchanged.
 - Use: the host no longer needs to poll whether the coordinator is still waiting on a task — the event says ama's side of it has ended.
@@ -255,6 +258,24 @@ api.resources.register({
 - **Errors**: a throwing host, no answer within 30 seconds, an invalid result shape and an unregistered scheme (the error lists the registered ones; `http(s)://` additionally points to `web_fetch`) all come back to the model as `isError` tool results and do not affect the session. `signal` aborts when the session is interrupted or the deadline passes.
 - **Timing and stability**: registration is only possible inside `create()`; the list is frozen once the host is activated (a later `register` throws `invalid_arguments`), with at most 12 schemes. The tools section of the system prompt gains one line, `Host resources (pass "scheme://path" to read; …): demo:// <describe>; …`, sorted by scheme and fixed at session start; a run without resources changes by zero bytes.
 - Without any registered resource `read` does not parse `scheme://` and treats the path as a file path.
+
+## Workflow handler
+
+`api.workflows.provide(handler)` (host-api 1.5): the host declares that it can execute workflow files, and ama then hands file workflows to it instead of scheduling them itself. Returns an unregister function.
+
+```ts
+interface HostWorkflowHandler {
+  readonly versions: readonly number[]; // file format versions it can run (Armadra: [2])
+  run(request: HostWorkflowRunRequest): Promise<{ runId: string; url?: string }>;
+}
+```
+
+Fields of `run(request)`: `workflowId` (the file id; ama never hands an inline draft to the host), `workflow` (the validated document), `params` (resolved), `source: { scope, filePath, hash }`, `sessionId`, `cwd`, `signal`. It returns `{ runId, url? }`: the host-side run id and an optional canvas link.
+
+- One handler per HostContext: providing a second one throws `workflow_handler_exists` (the same module providing again replaces its own); malformed arguments throw `invalid_arguments`.
+- `run()` throwing `code: "workflow_unsupported"` means the run waits for a person to confirm on the canvas: ama records a `waiting` run. Any other code marks the run `failed`, with code and message passed through unchanged.
+- Hand-off only: after handing over, ama does not mirror progress, wait for a result or cancel (cancel on the host side). Once `run()` settles, ama writes one `ama.workflow` snapshot and emits one `workflow_update` (`host: true`, no `step`).
+- The entry commands arrive in a later version; with no handler, ama schedules workflows itself.
 
 ## Exit
 

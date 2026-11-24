@@ -42,6 +42,7 @@ import type {
   HostRunner,
   InstructionSource,
 } from "./types.js";
+import type { HostWorkflowHandler } from "../workflows/run-types.js";
 import { HOST_API_MINOR, HOST_API_VERSION } from "./types.js";
 import { HostCommandRegistry } from "./commands.js";
 import { HostResourceRegistry } from "./resources.js";
@@ -140,6 +141,8 @@ export interface HostContext {
   readonly commands: HostCommandRegistry;
   /** [#306] 全部模块经 `runners.provide` 注入的 runner（同 id 先到先得）。 */
   readonly runners: HostRunnerRegistry;
+  /** [#318] `workflows.provide` 提供的处理器（一个 HostContext 一个；host-api 1.5）。 */
+  readonly workflows: { owner?: symbol; handler?: HostWorkflowHandler };
   /** [#304] 由模块禁用的工具名 → 持有它的模块；最后一个持有者撤回时才解除禁用。 */
   readonly disabledBy: Map<string, Set<symbol>>;
 }
@@ -159,6 +162,7 @@ export function createHostContext(options: HostContextOptions = {}): HostContext
     notify: options.notify,
     commands: new HostCommandRegistry(options.reservedCommand),
     runners: new HostRunnerRegistry(),
+    workflows: {},
     disabledBy: new Map(),
   };
 }
@@ -204,6 +208,13 @@ const hostRunnerRegistries = new WeakMap<HostApi, HostRunnerRegistry>();
 /** 共享的 runner 注册表（HostApi 不是本模块创建的返回 undefined；[#306] 全部模块共用同一张）。 */
 export function hostRunnersOf(api: HostApi): HostRunnerRegistry | undefined {
   return hostRunnerRegistries.get(api);
+}
+
+const hostWorkflowContexts = new WeakMap<HostApi, HostContext["workflows"]>();
+
+/** [#318] 宿主提供的工作流处理器（HostApi 不是本模块创建的、或没人提供返回 undefined）。 */
+export function hostWorkflowsOf(api: HostApi): HostWorkflowHandler | undefined {
+  return hostWorkflowContexts.get(api)?.handler;
 }
 
 function validateTool(tool: ToolDefinition): void {
@@ -398,6 +409,31 @@ export function createHostApi(
         return off;
       },
     }),
+    workflows: Object.freeze({
+      provide(handler: HostWorkflowHandler): () => void {
+        if (ignored("workflows.provide")) return noop;
+        if (
+          typeof handler?.run !== "function" ||
+          !Array.isArray(handler.versions) ||
+          !handler.versions.every((v) => Number.isInteger(v))
+        ) {
+          throw new AmaError("invalid_arguments", msg().drivers.host.workflowsBadHandler);
+        }
+        const slot = context.workflows;
+        if (slot.handler !== undefined && slot.owner !== token) {
+          throw new AmaError("workflow_handler_exists", msg().drivers.host.workflowsHandlerExists);
+        }
+        slot.owner = token;
+        slot.handler = handler;
+        const off = (): void => {
+          if (slot.handler !== handler) return;
+          delete slot.handler;
+          delete slot.owner;
+        };
+        undo.push(off);
+        return off;
+      },
+    }),
     commands: Object.freeze({
       register(command: HostCommand): () => void {
         if (ignored("commands.register")) return noop;
@@ -417,6 +453,7 @@ export function createHostApi(
     }),
   });
   hostRunnerRegistries.set(api, runners);
+  hostWorkflowContexts.set(api, context.workflows);
 
   const revoke = (): void => {
     if (revoked) return;

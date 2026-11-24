@@ -117,12 +117,15 @@
 | -------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `ama.todo`           | `custom`         | `data: { items: { id, text, status: pending \| in_progress \| done, planStep? }[] }`，整表快照                | `todo` 工具 `set` / `update`、计划获批时由步骤生成（W5-F）；`get` 取分支上最近一条          |
 | `ama.task`           | `custom`         | `data: { parentToolCallId, description, parentSession? }`；第五波见表后说明                                   | `task` 子会话的首条条目；第五波起父会话也写                                                 |
+| `ama.workflow`       | `custom`         | `data: WorkflowRunRecord`，整条快照（#318，见表后说明）                                                       | 工作流运行状态变化时                                                                        |
 | `ama.fork`           | `custom`         | `data: { taskLine }`：`<task>` 指令首个非空行（≤ 120 字符）                                                   | fork 子会话复制分支后追加；`task` / `task_ctl` 被拒时据此说明身份并附摘要（#191）           |
 | `ama.codemode-store` | `custom`         | `data: { entries }`，`store()` 的完整快照                                                                     | codemode 脚本成功结束且写过 store；读取取分支上最近一条                                     |
 | `ama.codemode-call`  | `custom`         | `data: { parent, name, target?, ok }`：脚本里一个已完成的内层调用（`parent` 是外层 `codemode` 的 toolCallId） | codemode 内层调用完成时；只用于恢复提醒，不进上下文；可选条目，旧版本读到按未知 custom 忽略 |
 | `ama.aborted`        | `custom_message` | `content`：告诉模型上一条回复被用户中断；`display: false`                                                     | 用户中断运行                                                                                |
 | `ama.hook_context`   | `custom_message` | `content`：UserPromptSubmit Hook 的 `additionalContext`；`display: false`                                     | 随用户提示进上下文                                                                          |
 | `ama.rewind-note`    | `custom_message` | `content`：回滚后哪些文件与对话不一致（最多列 20 个）；`display: false`                                       | 仅对话 / 仅代码回滚后，下一次提示之前追加在末尾                                             |
+
+`ama.workflow`（#318）：`custom`，`data` = `WorkflowRunRecord`：`{ runId, workflowId, title, source: { scope, filePath?, hash? }, params, status: running | waiting | succeeded | failed | cancelled, host?: { runId, url? }, steps: WorkflowStepState[], startedAt, endedAt?, error?: { code, message } }`；整条快照，同一 `runId` 取分支上最后一条。每次运行状态或步骤变化时写，交给宿主时在 `run()` 落定后写一条（带 `host`，没有步骤）。resume 时最后一条仍是 `running` / `waiting` 且没有 `host` 的运行追加一条 `failed`（`error.code: "interrupted"`）。`TaskInfo` 的 `costUsd` 现在对 ama 子任务也有值，含已结束后代。可选字段，`SESSION_FORMAT_VERSION` 不变。
 
 `ama.task`（第五波 W5-G）：子会话首条的 `data` 另带 `taskId`、`agent`；父会话在任务开始、每次续聊与结束时各写一条，
 `data` = `TaskInfo`（`taskId, agent, runner, description, background, status, startedAt, endedAt?, turns?, usage?, costUsd?,

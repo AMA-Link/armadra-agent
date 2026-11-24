@@ -143,6 +143,17 @@ describe("工具预设", () => {
     ).toEqual(["bash", "edit", "glob", "grep", "read", "todo", "web_fetch", "write"]);
   });
 
+  it("[#318] workflow_save 不在任何预设；+workflow_save 可打开", () => {
+    for (const preset of ["default", "minimal", "codemode-only", "coordinator"] as const) {
+      const r = resolvePreset({ config: cfg({ preset }), available: available() });
+      expect(r.builtin).not.toContain("workflow_save");
+    }
+    expect(
+      resolvePreset({ config: cfg({ default: ["+workflow_save"] }), available: available() })
+        .builtin,
+    ).toContain("workflow_save");
+  });
+
   it("tools.default：+ / - 微调、纯名字整组替换、未知名 warning", () => {
     expect(applyToolAdjustments(["read", "bash"], ["+ls", "-bash"])).toEqual(["read", "ls"]);
     expect(applyToolAdjustments(["read", "bash"], ["grep", "read", "+todo"])).toEqual([

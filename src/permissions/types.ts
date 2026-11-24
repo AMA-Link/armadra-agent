@@ -184,6 +184,8 @@ export interface PermissionCheckInput {
   hookReason?: string;
   /** 无人值守：ask → deny。 */
   unattended: boolean;
+  /** [#318] 工具声明 `annotations.alwaysAsk`：拒绝规则之后、模式之前一律询问，不被 allow 规则与会话授权放行。 */
+  alwaysAsk?: boolean;
 }
 
 /** 管线哪一步做出了最终决定。 */

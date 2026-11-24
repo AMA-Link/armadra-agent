@@ -99,6 +99,8 @@ export interface AgentSessionOptions {
   fallbackModel?: string;
   /** 子 Agent 并发上限，缺省 4；`false` 关闭 spawnSubagent。 */
   subagents?: { maxConcurrent?: number } | false;
+  /** [#317] 可再派任务的子会话（fresh 且深度未到顶）：派发走根会话的注册表。 */
+  nested?: NestedTaskScope;
   /** 宿主适配器 id（写进 HookInput.host）。 */
   hostId?: string;
   /** [W3-C1b] 会话层缓存设置（config `cache` 段 + 环境变量，组装根解析）；缺省见 DEFAULT_CACHE_SETTINGS。 */
@@ -115,6 +117,17 @@ export interface AgentSessionOptions {
   /** [RW-B] 中断即撤回（config `ui.restoreOnCancel`，缺省 true）。 */
   restoreOnCancel?: boolean;
   log?(level: "debug" | "info" | "warn" | "error", message: string): void;
+}
+
+/** [#317] 嵌套派发范围（`startAmaChild` 一次算好）。 */
+export interface NestedTaskScope {
+  /** 根会话 id（注册表按它登记）。 */
+  rootSessionId: string;
+  /** 本子会话对应的任务 id（它派出的任务的 parentTaskId）。 */
+  taskId: string;
+  /** 本会话深度。 */
+  depth: number;
+  maxDepth: number;
 }
 
 export interface SessionCore {

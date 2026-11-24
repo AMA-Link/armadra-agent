@@ -11,7 +11,7 @@ const BUDGET = 150;
  * 描述已整段改写压到 +10 token 以内，放宽到 240 / 255（三档 prompt-budget 仍在原上限内）；
  * [#316] 加 `tier` 参数与量表一行、删 `thinkingLevel`，净增约 24 token，放宽到 260 / 275。
  */
-const BUDGETS: Record<string, number> = { task: 260 };
+const BUDGETS: Record<string, number> = { task: 260, workflow_save: 190 };
 /**
  * [W7-B1] 缺省后台（交互 / RPC / ACP）时 task 换成后台版描述（docs/history/agents-concurrency-plan.md §2.6：要说明
  * 缺省后台、何时写 background:false、不要轮询），比前台版长约 20 token；规则句已精简到一句。

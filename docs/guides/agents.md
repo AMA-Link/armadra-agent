@@ -9,7 +9,7 @@
 
 `task` 与 `task_ctl` 同进退：`default` 预设下只在 codemode 脚本里可调用，`--tools …,task` 或 `tools.default: ["+task"]`
 时直接暴露；嵌入宿主时宿主可以禁用。子 Agent 运行在同一进程的新会话里（全新上下文，看不到父对话，`prompt` 要写全），
-有自己的 JSONL（与父会话同目录，头的 `parentSession` 指回父文件）。子 Agent 里调用 `task` / `task_ctl` 仍会被拒绝（`subagents.maxDepth` 已作为配置键加入，嵌套派发随后续批次启用，见下表）。
+有自己的 JSONL（与父会话同目录，头的 `parentSession` 指回父文件）。fresh 子会话可以按 `subagents.maxDepth` 继续派发（见「嵌套派发」）；fork 子会话不能，调用 `task` / `task_ctl` 会被拒绝。
 `report` 是第三个同进退的工具：子 Agent 用它向父会话报告结构化状态（见「结构化报告」），父会话里调用会被拒绝。
 
 ### 内置类型
@@ -300,7 +300,7 @@ RPC `get_tasks` / `get_agents` 返回任务快照与可用类型（来源、定�
 | `subagents.maxConcurrent`         | 同时运行的子 Agent，缺省 4                                                                           |
 | `subagents.maxPending`            | 排队上限，缺省 16                                                                                    |
 | `subagents.retainSessions`        | 保留在内存里的已结束子会话数（LRU），缺省 4，0 = 结束即释放；只认用户级                              |
-| `subagents.maxDepth`              | 子 Agent 可继续派发的嵌套层数，1–3，缺省 2；项目级只能调小                                           |
+| `subagents.maxDepth`              | 任务树的最大深度（直接子任务 = 1），1–3，缺省 2，已生效；1 = 不嵌套；项目级只能调小                  |
 | `subagents.forkMaxContextRatio`   | fork 回落比例（见「fork 模式」），0.05–0.95，缺省 0.5；只认用户级                                    |
 | `subagents.worktreeSetup`         | 新建任务 worktree 后运行一次的命令（见「worktree 隔离」）；只认用户级                                |
 | `subagents.background`            | `auto`（缺省）\| `always` \| `never`，见「前台与后台」；用户 / 项目 / 宿主级都认                     |
@@ -333,7 +333,44 @@ RPC `get_tasks` / `get_agents` 返回任务快照与可用类型（来源、定�
 `@armadra/agent/workflow` 子路径导出工作流文档的类型与纯函数（零运行时依赖、不读写文件，可在浏览器与 Node 里用）：
 `validateWorkflow`、`resolveWorkflowParams`、`renderWorkflowPrompt`、`parseWorkflowFile`、`formatWorkflowFile`、`validateOwnsGlob`、`globsOverlap`、`workflowJsonSchema`。
 包还导出两份 JSON：`@armadra/agent/workflow.schema.json`（工作流文档的 JSON Schema）与 `@armadra/agent/workflow-glob-vectors.json`（`owns` glob 的判定向量，供另一实现对照）。
-解析再格式化不补缺省值、不改写 glob。本批只提供文件格式与校验，运行与 `/workflow` 命令在后续批次。
+解析再格式化不补缺省值、不改写 glob。运行见下面「工作流调度与保存」。
+
+### 嵌套派发
+
+`subagents.maxDepth`（缺省 2，1–3）已生效：fresh 子会话（`context: "fresh"`）里 `task` / `task_ctl` 可用，派出的任务深度加 1，
+超过上限的调用被拒绝。fork 子会话不能派发。规则：
+
+- **权限不外溢**：嵌套任务的权限模式取发起它的子会话的模式，不取根会话的。只读父（如 `explore` / `plan`）派出的任务仍只读；
+  派给外部 Agent 的嵌套任务一律按 `plan`；只读发起方不能用 `tier` 改派到更高权限的档位，该调用被拒。审批请求的来源标注保留最内层。
+- **共享并发池**：整棵任务树共用 `subagents.maxConcurrent` 与 `subagents.maxPending`；父任务在 `wait` 等子任务时让出自己的名额，等完再排回，
+  所以深层任务不会因父占着名额而死锁。
+- **预算按本次运行计**：`maxTurns` 与 `budgetUsd` 按这一次运行（首跑或一次续聊）的用量计；并行兄弟从父的余额里各自预留，
+  后代花费逐级记到每个祖先，嵌套任务的上限被父的余额截断。根会话的 `--max-cost` 现在也计入 ama 子任务的花费。
+  **行为变化**：以前 ama 子任务的花费不进 `--max-cost`，`budgetUsd` 对 ama 子任务也不生效；现在两者都生效。
+  `subagent_end.costUsd` 是这次运行含后代的花费，`TaskInfo.costUsd` 是任务累计。
+- **父停止即级联**：父任务结束或被中止时，仍在跑的后代一起中止。
+- **转后台与工作流**：嵌套任务与工作流起的任务不参与转后台（`autoBackgroundAfterMs`、`Ctrl+B`、`background: true`）；
+  模型不能用 `task_ctl` 续聊工作流任务。
+
+### 工作流调度与保存
+
+工作流文件（`workflowJsonSchema` 描述的 v2 文档）按下面的顺序发现，每个目录只看直接下层的 `*.md`，id 即文件名，同 id 先发现者胜：
+`workflows.dirs` → `<configDir>/workflows` → 项目的 `.ama/workflows`。项目目录需要信任，未信任项目被跳过并给出提示；无效文件只在列表里标为无效。
+
+调度器（会话里一次只有一个单独运行，再起得 `workflow_busy`）的语义：
+
+- 步骤按 `after` 依赖并行运行；同一角色的步骤串行，并续聊同一个任务（上下文延续）。
+- `gate` 步骤停下来问人：批准继续，拒绝则运行失败（`gate_rejected`）。无人值守时按 `workflows.unattendedGate`，缺省拒绝。
+- `collect` 步骤带 `verify` 时，验证不过就退回给该角色（最多 `maxRetries` 轮，缺省 2）；用尽、没有报告或无法重开时升级给人：
+  接受则带警告完成，否则 `verify_failed`。无人值守没有人可问，直接 `verify_failed`；`unattendedGate: "approve"` **不**放行验证失败。
+- 运行预算：运行的总花费或总回合达到上限时，下一次向任务发消息前以 `limit_reached` 失败。
+- 每次状态变化发 `workflow_update` 事件，并以 `custom ama.workflow` 记整条快照；resume 时未结束的运行记为 `interrupted`。
+
+入口命令（`/workflow`、`-p --workflow`、SDK 与 RPC 命令）在后续版本提供，当前版本只有上面的能力层。
+
+`workflow_save` 工具把工作流 JSON 校验后存成 `<cwd>/.ama/workflows/<id>.md`（`scope: "user"` 存 `<configDir>/workflows`），
+不覆盖已有文件，除非 `overwrite: true`。它不在任何工具预设里，要 `tools.default: ["+workflow_save"]` 或 `--tools` 才暴露；
+codemode 脚本只有它被显式打开时才能调用。每次调用都先问人（权限管线的 `alwaysAsk` 一层，见 [permissions.md](permissions.md)）。
 
 ### 任务树
 
@@ -343,7 +380,7 @@ RPC `subagent_start` 与 `TaskInfo`、ACP 的 `_meta.ama` 带这两个可选字�
 
 ### 限制
 
-- 当前子 Agent 仍不能再委派（嵌套派发随后续批次启用，届时受 `subagents.maxDepth` 约束）；协调多个 Agent 的场景交给宿主（如 Armadra 画布）。
+- 嵌套深度受 `subagents.maxDepth` 约束（最多 3 层），fork 子会话不能派发；更大的多 Agent 协调场景交给宿主（如 Armadra 画布）。
 - 只读类型的 bash 只放行 plan 模式认可的只读命令，识别不了的一律拒绝，宁可少用。
 - 不读取 `.claude/agents`。fork 模式只用父的模型与思考级别（不同则回落 fresh），外部 Agent 不支持 fork。
 

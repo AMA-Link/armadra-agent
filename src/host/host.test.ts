@@ -318,3 +318,45 @@ describe("loader", () => {
     expect(disposed).toBe(1);
   });
 });
+
+describe("workflows.provide（#318）", () => {
+  const handler = { versions: [2], run: async () => ({ runId: "h" }) };
+
+  it("exposes the handler, refuses a second module, off() releases", async () => {
+    const { createHostContext, hostWorkflowsOf } = await import("./api-impl.js");
+    const context = createHostContext();
+    const a = createHostApi(deps(), context);
+    const b = createHostApi(deps(), context);
+    expect(hostWorkflowsOf(a.api)).toBeUndefined();
+    const off = a.api.workflows!.provide(handler);
+    expect(hostWorkflowsOf(a.api)).toBe(handler);
+    expect(hostWorkflowsOf(b.api)).toBe(handler);
+    expect(() => b.api.workflows!.provide({ ...handler })).toThrowError(
+      expect.objectContaining({ code: "workflow_handler_exists" }),
+    );
+    off();
+    expect(hostWorkflowsOf(a.api)).toBeUndefined();
+    b.api.workflows!.provide(handler);
+    expect(hostWorkflowsOf(a.api)).toBe(handler);
+    b.revoke();
+    expect(hostWorkflowsOf(a.api)).toBeUndefined();
+  });
+
+  it("errors follow the UI language (en / zh)", async () => {
+    const { setLocale, getLocale } = await import("../i18n/index.js");
+    const previous = getLocale();
+    try {
+      const api = createHostApi(deps()).api;
+      setLocale("en");
+      expect(() => api.workflows!.provide({} as never)).toThrowError(/handler needs versions/);
+      setLocale("zh");
+      expect(() => api.workflows!.provide({} as never)).toThrowError(/需要 versions/);
+    } finally {
+      setLocale(previous);
+    }
+  });
+
+  it("api.minor is 5", () => {
+    expect(createHostApi(deps()).api.minor).toBe(5);
+  });
+});

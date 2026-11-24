@@ -296,8 +296,8 @@ describe("#191 子会话里 task 被拒的文案", () => {
     expect(toolResults(h).at(-1)?.details).toMatchObject({ context: "fork" });
   });
 
-  it("fresh：按深度拒绝的文案不变", async () => {
-    const h = subagentHarness({ script: forkScript({}, child) });
+  it("fresh（深度到顶，maxDepth 1）：按深度拒绝的文案不变", async () => {
+    const h = subagentHarness({ env: { maxDepth: 1 }, script: forkScript({}, child) });
     const { child: calls } = await runParent(h, 1);
     expect(calls.some(isFork)).toBe(false);
     const text = JSON.stringify(calls[1]!.context.messages.at(-1));

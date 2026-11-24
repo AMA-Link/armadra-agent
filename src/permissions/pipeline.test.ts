@@ -630,3 +630,49 @@ describe("[#270] 宿主资源读取按 read 类放行（只认已注册的 schem
     expect(p.check(call("Demo://other")).decision).toBe("allow");
   });
 });
+
+describe("[#318] alwaysAsk：拒绝之后、模式之前一律询问", () => {
+  const save = {
+    toolName: "workflow_save",
+    permission: "write" as ToolPermission,
+    input: { id: "demo", workflow: {} },
+    alwaysAsk: true,
+  };
+
+  for (const mode of MODES) {
+    it(`${mode} 模式询问（有人值守 ask，无人值守 deny）`, () => {
+      const p = pipeline(mode);
+      expect(p.check({ ...save, unattended: false }).decision).toBe("ask");
+      const unattended = p.check({ ...save, unattended: true });
+      expect(unattended.decision).toBe("deny");
+      expect(unattended.message).toBe(UNATTENDED_MESSAGE);
+    });
+  }
+
+  it("allow 规则与会话授权不放行（含 Hook allow）", () => {
+    const p = pipeline("default", [], ["workflow_save", "write(**)"]);
+    expect(p.check({ ...save, unattended: false }).decision).toBe("ask");
+    p.rememberForSession("workflow_save", save.input);
+    expect(p.check({ ...save, unattended: false }).decision).toBe("ask");
+    expect(p.check({ ...save, unattended: false, hookDecision: "allow" }).decision).toBe("ask");
+    // 不带 alwaysAsk 的同名调用仍被会话授权 / allow 规则放行（对照）
+    expect(p.check({ ...save, alwaysAsk: false, unattended: false }).decision).toBe("allow");
+  });
+
+  it("deny 规则与 Hook deny 仍先拒", () => {
+    const p = pipeline("full-auto", ["workflow_save"]);
+    expect(p.check({ ...save, unattended: false })).toMatchObject({
+      decision: "deny",
+      step: "deny-rule",
+    });
+    const q = pipeline("full-auto");
+    expect(q.check({ ...save, unattended: false, hookDecision: "deny" }).decision).toBe("deny");
+  });
+
+  it("auto 模式不交给分类器；审批原因为 mode", () => {
+    const v = pipeline("auto").check({ ...save, unattended: false });
+    expect(v.classify).not.toBe(true);
+    expect(v).toMatchObject({ decision: "ask", approvalReason: "mode" });
+    expect(v.auto?.decision).toBe("ask");
+  });
+});
