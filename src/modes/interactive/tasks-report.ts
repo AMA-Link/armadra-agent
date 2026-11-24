@@ -21,7 +21,49 @@ export function taskStatusText(status: SubagentStatus | "running"): string {
 }
 
 export function listTasks(sessionId: string): readonly TaskInfo[] {
-  return taskRegistryView(sessionId)?.list() ?? [];
+  return treeOrder(taskRegistryView(sessionId)?.list() ?? []);
+}
+
+/** [#317] 树序：父后紧跟其子，同层保持原顺序；父不在列表里的当根。 */
+export function treeOrder<T extends { taskId: string; parentTaskId?: string }>(
+  items: readonly T[],
+): T[] {
+  const ids = new Set(items.map((item) => item.taskId));
+  const children = new Map<string, T[]>();
+  const roots: T[] = [];
+  for (const item of items) {
+    const parent = item.parentTaskId;
+    if (parent === undefined || parent === item.taskId || !ids.has(parent)) roots.push(item);
+    else children.set(parent, [...(children.get(parent) ?? []), item]);
+  }
+  const out: T[] = [];
+  const seen = new Set<string>();
+  const walk = (item: T): void => {
+    if (seen.has(item.taskId)) return;
+    seen.add(item.taskId);
+    out.push(item);
+    for (const child of children.get(item.taskId) ?? []) walk(child);
+  };
+  for (const root of roots) walk(root);
+  // 父子成环时没被走到的项：补在末尾
+  for (const item of items) walk(item);
+  return out;
+}
+
+/** 有在跑的子任务的父任务 id 集合。 */
+export function parentsWithRunningChildren(
+  tasks: readonly { parentTaskId?: string; status: string }[],
+): Set<string> {
+  const out = new Set<string>();
+  for (const task of tasks)
+    if (task.status === "running" && task.parentTaskId !== undefined) out.add(task.parentTaskId);
+  return out;
+}
+
+/** 树状前缀：深度 1 无前缀，更深每层两格并以 `↳ ` 起头。 */
+export function treePrefix(depth: number | undefined): string {
+  const d = depth ?? 1;
+  return d > 1 ? `${"  ".repeat(d - 2)}↳ ` : "";
 }
 
 export function listAgents(sessionId: string): AgentInfo[] {
@@ -40,9 +82,13 @@ export async function stopTask(sessionId: string, taskId: string): Promise<void>
 }
 
 /** 任务一行的各字段（状态、耗时、轮数、用量、费用）。 */
-export function taskFacts(task: TaskInfo, now: number): string[] {
+export function taskFacts(task: TaskInfo, now: number, waiting = false): string[] {
   const end = task.endedAt ?? now;
-  const facts = [taskStatusText(task.status), formatDuration(end - task.startedAt)];
+  const status =
+    waiting && task.status === "running"
+      ? msg().panels.tasks.status.waitingChildren
+      : taskStatusText(task.status);
+  const facts = [status, formatDuration(end - task.startedAt)];
   if (task.turns !== undefined && task.turns > 0) facts.push(msg().panels.tasks.turns(task.turns));
   const usage = task.usage;
   if (usage !== undefined && usage.input + usage.output + usage.cacheRead > 0)
@@ -71,16 +117,16 @@ function oneLine(text: string, max = 60): string {
 }
 
 /** `t1  explore · 运行中 · 1m05s · 7 轮 · 描述` */
-export function taskLine(task: TaskInfo, now: number): string {
+export function taskLine(task: TaskInfo, now: number, waiting = false): string {
   const m = msg().panels.tasks;
   const agent =
     task.runner !== "ama" && task.runner !== task.agent
       ? m.agentRunner(task.agent, task.runner)
       : task.agent;
-  const parts = [agent, ...taskFacts(task, now)];
+  const parts = [agent, ...taskFacts(task, now, waiting)];
   if (task.background) parts.push(m.background);
   const description = oneLine(task.description);
-  return `${task.taskId}  ${parts.join(" · ")}${description !== "" ? `  ${description}` : ""}`;
+  return `${treePrefix(task.depth)}${task.taskId}  ${parts.join(" · ")}${description !== "" ? `  ${description}` : ""}`;
 }
 
 /** `/tasks` 的纯文本（line 模式）。 */
@@ -88,9 +134,10 @@ export function describeTasks(sessionId: string, now: number): string {
   const m = msg().panels.tasks;
   const tasks = listTasks(sessionId);
   if (tasks.length === 0) return m.none;
+  const waiting = parentsWithRunningChildren(tasks);
   return [
     m.heading(tasks.length),
-    ...tasks.map((task) => `  ${taskLine(task, now)}`),
+    ...tasks.map((task) => `  ${taskLine(task, now, waiting.has(task.taskId))}`),
     m.footer,
   ].join("\n");
 }

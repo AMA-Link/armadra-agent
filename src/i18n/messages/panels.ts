@@ -122,6 +122,7 @@ export const en = {
       aborted: "stopped",
       max_turns: "out of turns",
       interrupted: "interrupted",
+      waitingChildren: "waiting for subtasks",
     },
     turns: (n: number) => plural(n, "turn"),
     /** 外部 Agent 报告的上下文占用（`34%`、`0.4%`）。 */
@@ -245,6 +246,7 @@ export const zh = {
       aborted: "已停止",
       max_turns: "轮数耗尽",
       interrupted: "已中断",
+      waitingChildren: "等待子任务",
     },
     turns: (n) => `${n} 轮`,
     context: (percent) => `ctx ${percent}`,

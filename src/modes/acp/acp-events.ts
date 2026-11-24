@@ -60,6 +60,8 @@ export class AcpEventMapper {
   private readonly pendingCalls: { id: string; name: string; args: string }[] = [];
   /** [#269] 子 Agent 任务 → 发起它的 task 调用（ama 的 toolCallId）。 */
   private readonly taskParents = new Map<string, string>();
+  /** [#317] 嵌套任务的父任务与深度（`_meta.ama`）。 */
+  private readonly taskTree = new Map<string, { parentTaskId?: string; depth?: number }>();
   /** 已经以 `tool_call` 公布、尚未结束的调用：id → title（含 codemode 内层）。 */
   private readonly published = new Map<string, string>();
   /** 挂起的权限请求：requestId → 已公布的 toolCallId。 */
@@ -213,14 +215,29 @@ export class AcpEventMapper {
         return;
       }
       case "subagent_start":
-        this.taskParents.set(event.taskId, event.parentToolCallId);
+        // 嵌套任务的报告挂在根祖先的 task 调用上（子任务自己没有对外公布的调用）
+        this.taskParents.set(
+          event.taskId,
+          (event.parentTaskId !== undefined
+            ? this.taskParents.get(event.parentTaskId)
+            : undefined) ?? event.parentToolCallId,
+        );
+        if (event.parentTaskId !== undefined || event.depth !== undefined)
+          this.taskTree.set(event.taskId, {
+            ...(event.parentTaskId !== undefined ? { parentTaskId: event.parentTaskId } : {}),
+            ...(event.depth !== undefined ? { depth: event.depth } : {}),
+          });
         return;
       case "subagent_update": {
         // [#269] 结构化报告只随 _meta 走：不改父 task 调用的状态与内容（后台任务的父调用可能早已结束）
         if (event.kind !== "report" || event.report === undefined) return;
         const parent = this.taskParents.get(event.taskId);
         if (parent === undefined) return;
-        const meta: AcpAmaMeta = { taskId: event.taskId, report: event.report };
+        const meta: AcpAmaMeta = {
+          taskId: event.taskId,
+          report: event.report,
+          ...this.taskTree.get(event.taskId),
+        };
         this.emit({
           sessionUpdate: "tool_call_update",
           toolCallId: this.wireId(parent),

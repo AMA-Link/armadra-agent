@@ -34,7 +34,7 @@ import {
   type Theme,
 } from "../../tui.js";
 import type { SubagentTracker } from "./subagent-view.js";
-import { reportFacts } from "./tasks-report.js";
+import { parentsWithRunningChildren, reportFacts, treeOrder, treePrefix } from "./tasks-report.js";
 
 export const BAR_ROWS = 3;
 /** 结束后未查看的任务在栏里保留多久。 */
@@ -55,6 +55,10 @@ export interface BarRow {
   context?: string;
   /** [#269] 子 Agent 自报的状态；有 `humanAction` 时整行警告色。 */
   report?: SubagentReport;
+  /** [#317] 父任务与深度（缺省 = 根 / 1）；有在跑的子任务时 `waiting` 为真。 */
+  parentTaskId?: string;
+  depth?: number;
+  waiting?: boolean;
 }
 
 /** 栏与视图读的任务注册表（当前会话的 `registryOf(sessionId)`；测试给假的）。 */
@@ -124,6 +128,8 @@ export function taskRow(
   };
   const context = formatTaskContext(info);
   if (context !== undefined) row.context = context;
+  if (info.parentTaskId !== undefined) row.parentTaskId = info.parentTaskId;
+  if (info.depth !== undefined) row.depth = info.depth;
   const report = info.report ?? state?.report;
   if (report !== undefined) row.report = report;
   const tool = state?.tools.at(-1);
@@ -144,7 +150,11 @@ export function agentLabel(row: Pick<BarRow, "agent" | "runner">): string {
 
 /** `运行中 1m05s · 3 轮 · grep`（不带颜色）。 */
 export function rowFacts(row: BarRow, withTool = true): string {
-  const facts = [statusLabel(row.status)];
+  const facts = [
+    row.waiting === true && row.status === "running"
+      ? msg().agents.status.waitingChildren
+      : statusLabel(row.status),
+  ];
   if (row.elapsedMs !== undefined) facts[0] += ` ${formatElapsed(row.elapsedMs)}`;
   if (row.turns > 0) facts.push(msg().agents.turns(row.turns));
   if (row.context !== undefined) facts.push(msg().agents.context(row.context));
@@ -178,8 +188,14 @@ export class AgentBar implements Component {
     if (registry === undefined) return [];
     const approvals = this.deps.approvals();
     const now = this.deps.now();
-    const rows = registry.list().map((info) => this.row(info, approvals, now));
-    return rows.sort(compareRows);
+    const infos = registry.list();
+    const waiting = parentsWithRunningChildren(infos);
+    const rows = infos.map((info) => {
+      const row = this.row(info, approvals, now);
+      if (waiting.has(info.taskId)) row.waiting = true;
+      return row;
+    });
+    return treeOrder(rows.sort(compareRows));
   }
 
   /** 未聚焦时显示的行：活动的 + 本会话看着结束、未查看、10 分钟内的。 */
@@ -302,7 +318,7 @@ export class AgentBar implements Component {
     const id = alert ? t.fg("warning", plainId) : plainId;
     const description = row.description.replace(/\s+/g, " ").trim();
     const text =
-      `${lead}${marker} ${id} ${t.fg("tool", agent)}` +
+      `${lead}${marker} ${treePrefix(row.depth)}${id} ${t.fg("tool", agent)}` +
       t.fg("dim", " · ") +
       t.fg(alert ? "warning" : "muted", rowFacts(row)) +
       (description === "" ? "" : `  ${t.fg("dim", description)}`);

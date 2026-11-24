@@ -225,3 +225,32 @@ describe("Agent 栏：显示规则", () => {
     expect(bar.focus()).toBe(false);
   });
 });
+
+describe("[#317] 任务树", () => {
+  it("树序、缩进、等待子任务", () => {
+    setLocale("en");
+    const tracker = new SubagentTracker(() => 0);
+    const infos = [
+      info("t1", {}),
+      info("t2", { status: "completed", endedAt: 1000 }),
+      info("t3", { parentTaskId: "t1", depth: 2 }),
+      info("t4", { parentTaskId: "t3", depth: 3 }),
+    ];
+    const bar = new AgentBar({
+      theme: plainTheme(),
+      registry: () => fakeRegistry(infos),
+      tracker,
+      now: () => 0,
+      approvals: () => new Set(),
+      enabled: () => true,
+    });
+    const rows = bar.all();
+    expect(rows.map((r) => r.taskId)).toEqual(["t1", "t3", "t4", "t2"]);
+    expect(rowFacts(rows[0]!)).toContain("waiting for subtasks");
+    expect(rowFacts(rows[2]!)).toContain("running");
+    const text = lines(bar, 80).join("\n");
+    expect(text).toContain("↳ t3");
+    expect(text).toContain("  ↳ t4");
+    expect(taskLine(infos[3]!, 0)).toMatch(/^ {2}↳ t4/);
+  });
+});
