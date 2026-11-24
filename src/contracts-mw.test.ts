@@ -40,8 +40,6 @@ import {
   workflowTargetPath,
 } from "./workflows/discover.js";
 import { workflowFromTasks } from "./workflows/from-tasks.js";
-import { runStandalone } from "./workflows/scheduler.js";
-import { rebuildWorkflowRuns, runRecordOf } from "./workflows/record.js";
 import { runOnHost } from "./workflows/host-handoff.js";
 import { activeWorkflow, startWorkflow, workflowHostOf } from "./workflows/runner.js";
 import { createWorkflowsFactory } from "./cli/compose-workflows.js";
@@ -96,9 +94,6 @@ describe("契约：桩抛 not_implemented", () => {
     ["workflowTargetPath", () => workflowTargetPath("user", "x", { cwd: "", configDir: "" })],
     ["workflowFileHash", () => workflowFileHash("")],
     ["workflowFromTasks", () => workflowFromTasks([], new Map(), "")],
-    ["runStandalone", () => runStandalone(undefined as never, undefined as never, {})],
-    ["runRecordOf", () => runRecordOf(undefined)],
-    ["rebuildWorkflowRuns", () => rebuildWorkflowRuns([])],
     ["runOnHost", () => runOnHost(undefined as never, undefined as never, undefined as never, {})],
     ["startWorkflow", () => startWorkflow(undefined as never, undefined as never, {})],
     ["workflowHostOf", () => workflowHostOf(undefined as never)],
