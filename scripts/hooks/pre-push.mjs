@@ -196,11 +196,16 @@ export function parseSkip(value) {
 }
 
 /**
- * 去掉 GIT_* 的环境。git 给钩子设的 GIT_DIR、GIT_INDEX_FILE 等会被子进程继承：
- * 测试在临时目录里起的 git 会改到本仓库。
+ * 去掉 GIT_* 的环境与 git 在非交互钩子里注入的 TERM=dumb。git 给钩子设的 GIT_DIR、
+ * GIT_INDEX_FILE 等会被子进程继承（测试在临时目录里起的 git 会改到本仓库），无终端时
+ * 注入的 TERM=dumb 也会污染启动序列对终端模式的单测。
  */
 export function cleanEnv(env = process.env) {
-  return Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith("GIT_")));
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      ([name, value]) => !name.startsWith("GIT_") && !(name === "TERM" && value === "dumb"),
+    ),
+  );
 }
 
 function gitRaw(args) {
@@ -356,9 +361,10 @@ async function modelsDevStep() {
 }
 
 async function main(argv, input) {
-  // 子进程一律不带 GIT_*（见 cleanEnv）。
+  // 子进程一律不带 GIT_* 与非交互钩子的 TERM=dumb（见 cleanEnv）。
   for (const name of Object.keys(process.env))
     if (name.startsWith("GIT_")) delete process.env[name];
+  if (process.env.TERM === "dumb") delete process.env.TERM;
   const skip = parseSkip(process.env.ARMADRA_SKIP_PREPUSH);
   if (skip.all) return 0;
   const remote = argv[0] && !argv[0].includes("/") ? argv[0] : "origin";
