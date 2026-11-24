@@ -47,8 +47,16 @@ export type {
 } from "./cli/runtime.js";
 
 // SDK（B6 追加）
-export { createAgentSession, createRuntime } from "./sdk.js";
-export type { CreateSessionOptions, RuntimeOptions, SessionAuth } from "./sdk.js";
+export { createAgentSession, createRuntime, listWorkflows, runWorkflow } from "./sdk.js";
+export type {
+  CreateSessionOptions,
+  ListWorkflowsOptions,
+  RunWorkflowOptions,
+  RuntimeOptions,
+  SessionAuth,
+} from "./sdk.js";
+// [#318] 工作流运行期类型（文档类型在 `@armadra/agent/workflow`）
+export type * from "./workflows/run-types.js";
 // [W5-Z] 计划（docs/guides/plan.md「SDK」）：`createAgentSession({ plan })` 与 `session.plan` 的类型。
 export type {
   PlanDecision,

@@ -36,6 +36,7 @@ import type { AgentInfo } from "./agents/types.js";
 import type { TaskInfo } from "./tools/types.js";
 import type { RewindRequest } from "./checkpoints/types.js";
 import type { ApprovalDecision, PermissionMode } from "./permissions/types.js";
+import type { WorkflowGateDecision, WorkflowSummary } from "./workflows/run-types.js";
 import type { TracePreview } from "./trace/preview.js";
 import type { Trace, TraceSubagentNode } from "./trace/types.js";
 
@@ -46,8 +47,11 @@ export const RPC_PROTOCOL_VERSION = 1 as const;
 /**
  * `plans`（W5-C0）：客户端声明后计划审批交给客户端（`plan_proposed` → `plan_response`）。
  * `compact_events`（M-G）：客户端声明后 turn_end / message_start / entry_appended 不重复带工具结果与图片正文。
+ * `workflow_gates`（#318）：客户端声明后，工作流的 gate 与验证升级交客户端（`respond_workflow_gate`）；未声明时
+ * gate 按 `workflows.unattendedGate`、验证升级一律失败。
  */
-export type RpcCapability = "approvals" | "images" | "hooks" | "plans" | "compact_events";
+export type RpcCapability =
+  "approvals" | "images" | "hooks" | "plans" | "compact_events" | "workflow_gates";
 
 export interface RpcHello {
   type: "hello";
@@ -133,6 +137,22 @@ export interface RpcCommandMap {
   get_trace: RpcGetTraceParams;
   // [W7-B2] 前台任务转后台（docs/history/agents-concurrency-plan.md §2.5）
   background_task: { taskId?: string };
+  // [#318] 多 Agent 工作流
+  get_workflows: NoParams;
+  /** 工作流 id 叫 `workflowId`：`id` 已是命令信封的请求编号。 */
+  run_workflow: { workflowId: string; params?: Record<string, string> };
+  respond_workflow_gate: { runId: string; stepId: string; decision: WorkflowGateDecision };
+  cancel_workflow: { runId: string };
+}
+
+/** [#318] 工作流命令成功时的 `data` 形状；进度走 `workflow_update` 事件。 */
+export interface RpcWorkflowResults {
+  get_workflows: { workflows: WorkflowSummary[] };
+  /** 单独运行：`runId` 是 ama 的运行 id、`host: false`；交给宿主：`runId` 是宿主的运行 id、`host: true`，`url` 可空。 */
+  run_workflow: { runId: string; host: boolean; url?: string };
+  /** gate 与验证升级共用：`approve` = 放行 / 接受，`reject` = 拒绝 / 失败；`ok: false` = 当前没有在等。 */
+  respond_workflow_gate: { ok: boolean };
+  cancel_workflow: { ok: boolean };
 }
 
 /** [W7-B2] 第七波命令成功时的 `data` 形状。 */

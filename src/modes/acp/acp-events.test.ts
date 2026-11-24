@@ -65,6 +65,12 @@ function expectValid(out: readonly AcpSessionUpdate[]): void {
     ).toEqual([]);
 }
 
+const todoUpdated = (): SessionEvent =>
+  ({
+    type: "todo_updated",
+    items: [{ id: "1", text: "keep going", status: "pending" }],
+  }) as unknown as SessionEvent;
+
 const toolcallEnd = (id: string, name: string, args: Record<string, unknown>): SessionEvent =>
   ({
     type: "message_update",
@@ -169,6 +175,132 @@ describe("AcpEventMapper", () => {
       },
     ]);
     expect(statuses(out, "c1")).toEqual(["pending", "in_progress", "completed"]);
+    expectValid(out);
+  });
+
+  it("[#318] 运行终态后清掉该运行的步骤去重表", () => {
+    const { m } = mapper();
+    const ev = (status: string, step?: Record<string, unknown>): SessionEvent =>
+      ({
+        type: "workflow_update",
+        runId: "wf-9",
+        workflowId: "w",
+        title: "t",
+        status,
+        host: false,
+        ...(step === undefined ? {} : { step }),
+      }) as unknown as SessionEvent;
+    const table = (): Map<string, string> =>
+      (m as unknown as { workflowSteps: Map<string, string> }).workflowSteps;
+    m.onEvent(ev("running", { id: "a", kind: "prompt", status: "running" }));
+    expect(table().size).toBe(1);
+    m.onEvent(ev("waiting"));
+    expect(table().size).toBe(1);
+    m.onEvent(ev("succeeded"));
+    expect(table().size).toBe(0);
+  });
+
+  it("[#318] 工作流步骤：每步一个合成 tool call，阶段放 _meta.ama.workflow，不发 plan；过 schema", () => {
+    const { m, out } = mapper();
+    const update = (step?: Record<string, unknown>, status = "running"): SessionEvent =>
+      ({
+        type: "workflow_update",
+        runId: "wf-1",
+        workflowId: "feature-split",
+        title: "Split",
+        status,
+        host: false,
+        ...(step === undefined ? {} : { step }),
+      }) as unknown as SessionEvent;
+    m.onEvent(update()); // 运行开始：没有步骤，不发
+    m.onEvent(todoUpdated());
+    m.onEvent(update({ id: "build", kind: "prompt", status: "running" }));
+    m.onEvent(update({ id: "build", kind: "prompt", status: "running" })); // 同状态不重发
+    m.onEvent(
+      update({ id: "build", kind: "prompt", status: "running", phase: "waiting_children" }),
+    );
+    m.onEvent(update({ id: "build", kind: "prompt", status: "done", taskId: "t1" }));
+    m.onEvent(update({ id: "review", kind: "gate", status: "waiting", phase: "waiting_human" }));
+    m.onEvent(update({ id: "review", kind: "gate", status: "failed" }));
+    m.onEvent(update({ id: "after", kind: "prompt", status: "skipped" }));
+    m.onEvent(update({ id: "late", kind: "prompt", status: "cancelled" }));
+    m.onEvent(update(undefined, "failed")); // 终态：没有步骤，不发
+    const calls = out.filter((u) => u.sessionUpdate === "tool_call");
+    expect(calls).toHaveLength(4);
+    expect(calls[0]).toEqual({
+      sessionUpdate: "tool_call",
+      toolCallId: "workflow:wf-1:build",
+      name: "workflow",
+      title: "feature-split \u00b7 build",
+      kind: "other",
+      status: "pending",
+      _meta: {
+        ama: {
+          workflow: {
+            runId: "wf-1",
+            workflowId: "feature-split",
+            stepId: "build",
+            status: "running",
+          },
+        },
+      },
+    });
+    expect(statuses(out, "workflow:wf-1:build")).toEqual([
+      "pending",
+      "in_progress",
+      "in_progress",
+      "completed",
+    ]);
+    expect(statuses(out, "workflow:wf-1:review")).toEqual(["pending", "in_progress", "failed"]);
+    expect(statuses(out, "workflow:wf-1:after")).toEqual(["pending", "completed"]);
+    expect(statuses(out, "workflow:wf-1:late")).toEqual(["pending", "completed"]);
+    const phase = out.find(
+      (u) =>
+        u.sessionUpdate === "tool_call_update" &&
+        u.toolCallId === "workflow:wf-1:review" &&
+        u.status === "in_progress",
+    );
+    expect(phase).toMatchObject({
+      _meta: { ama: { workflow: { status: "waiting", phase: "waiting_human" } } },
+    });
+    // 只有 todo_updated 发 plan；工作流自己不发
+    expect(out.filter((u) => u.sessionUpdate === "plan")).toHaveLength(1);
+    expectValid(out);
+  });
+
+  it("[#318] 工作流任务的嵌套报告挂在步骤调用上（parentToolCallId = workflow:<runId>:<stepId>）；过 schema", () => {
+    const { m, out } = mapper();
+    m.onEvent({
+      type: "workflow_update",
+      runId: "wf-1",
+      workflowId: "w",
+      title: "W",
+      status: "running",
+      host: false,
+      step: { id: "build", kind: "prompt", status: "running" },
+    } as unknown as SessionEvent);
+    const base = { runner: "ama", description: "", background: false, cwd: CWD, agent: "general" };
+    m.onEvent({
+      type: "subagent_start",
+      taskId: "t1",
+      parentToolCallId: "workflow:wf-1:build",
+      ...base,
+    });
+    m.onEvent({
+      type: "subagent_start",
+      taskId: "t2",
+      parentToolCallId: "c-inner",
+      parentTaskId: "t1",
+      depth: 2,
+      ...base,
+    });
+    const report = { state: "ready" as const, summary: "nested ok" };
+    m.onEvent({ type: "subagent_update", taskId: "t2", kind: "report", turn: 1, report });
+    expect(out.at(-1)).toEqual({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "workflow:wf-1:build",
+      _meta: { ama: { taskId: "t2", report, parentTaskId: "t1", depth: 2 } },
+    });
     expectValid(out);
   });
 

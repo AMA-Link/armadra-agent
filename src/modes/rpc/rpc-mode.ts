@@ -6,6 +6,7 @@
  * - 审批：客户端 `set_client_capabilities{capabilities:["approvals"]}` 之后才挂 UI broker；
  *   之前的 ask 无人作答 → deny。`permission_request` 带 `timeoutMs`，超时由会话 deny 并发
  *   `permission_resolved`。
+ * - [#318] 声明 `workflow_gates` 之后工作流的 gate 与验证升级交客户端（`respond_workflow_gate`）。
  * - [M-G] 声明 `compact_events` 之后的事件经 `toWireEvent(event, { compact: true })` 精简（json-event.ts）。
  * - 宿主 `ui.notify` → `{type:"notification", level, message}` 一行（stderr 同时一份）。
  * - stdin 关闭：撤下审批（之后的 ask 无人作答 → deny）、等在途命令与已开始的运行结束、
@@ -26,6 +27,7 @@ import { toJsonLine, toWireEvent } from "../print/json-event.js";
 import { errorText, onTerminationSignals } from "../shared.js";
 import { sessionAgents, taskRegistryView } from "../../agent/subagent-registry.js";
 import { cachedAgentInfos } from "../../agents/external.js";
+import { RpcWorkflows } from "./rpc-workflows.js";
 import { RpcApprovals, handlers, type RpcContext } from "./commands.js";
 import { createLineReader, writeChunked } from "./jsonl.js";
 import { msg } from "../../i18n/index.js";
@@ -41,6 +43,7 @@ export const RPC_CAPABILITIES: RpcHello["capabilities"] = [
   "hooks",
   "plans",
   "compact_events",
+  "workflow_gates",
 ];
 
 type Command = { id?: unknown; type?: unknown } & Record<string, unknown>;
@@ -66,11 +69,13 @@ export async function runRpcMode(
   let session = currentSession(runtime);
   let unsubscribe = subscribe(session);
   const approvals = new RpcApprovals();
+  const workflows = new RpcWorkflows();
   const ctx: RpcContext = {
     runtime,
     session: () => session,
     capabilities: new Set(),
     approvals,
+    workflows,
     onSessionChanged(next) {
       unsubscribe();
       session = next;
@@ -177,8 +182,11 @@ export async function runRpcMode(
       (stdin as { pause?: () => void }).pause?.();
       runtime.approvals.setUiBroker(undefined);
       approvals.cancelAll();
+      // 没人能再回答工作流的 gate 与验证升级：按拒绝 / 失败收口，并等在途运行结束
+      const closing = workflows.close(abort);
       if (abort) await session.abort().catch(() => undefined);
       await Promise.allSettled([...inflight]);
+      await closing;
       await session.waitForIdle().catch(() => undefined);
       unsubscribe();
       runtime.notifier.set(undefined);

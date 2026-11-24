@@ -12,6 +12,7 @@
  * | permission_resolved（allow / allow_session）| tool_call_update（in_progress）                                |
  * | tool_execution_end                        | tool_call_update（completed / failed，`[diff?, text]`，locations[].line） |
  * | subagent_update{kind:"report"}            | tool_call_update（只带 `_meta.ama.{taskId, report}`，挂在发起的 task 调用上；[#269]） |
+ * | workflow_update{step}（#318）             | 每步一个合成 tool call：首次 tool_call（pending，`workflow:<runId>:<stepId>`），之后 tool_call_update；阶段放 `_meta.ama.workflow`；不发 plan |
  * | todo_updated                              | plan                                                             |
  * | message_end（助手）/ turn_end             | usage_update（上下文用量、窗口、会话累计美元；与上次同值不发）   |
  * | permission_mode_changed                   | current_mode_update + config_option_update                       |
@@ -36,6 +37,7 @@ import {
   type AcpPlanEntry,
   type AcpSessionConfigOption,
   type AcpSessionUpdate,
+  type AcpToolCallStatus,
 } from "../../drivers/acp/types.js";
 import { PERMISSION_MODES_STRICT_FIRST } from "../../permissions/types.js";
 import { PERMISSION_MODE_INFO, permissionModeLabel } from "../../permissions/modes.js";
@@ -62,6 +64,8 @@ export class AcpEventMapper {
   private readonly taskParents = new Map<string, string>();
   /** [#317] 嵌套任务的父任务与深度（`_meta.ama`）。 */
   private readonly taskTree = new Map<string, { parentTaskId?: string; depth?: number }>();
+  /** [#318] 已公布合成 tool call 的工作流步骤：toolCallId → 上次发出的状态（相同不重发）。 */
+  private readonly workflowSteps = new Map<string, string>();
   /** 已经以 `tool_call` 公布、尚未结束的调用：id → title（含 codemode 内层）。 */
   private readonly published = new Map<string, string>();
   /** 挂起的权限请求：requestId → 已公布的 toolCallId。 */
@@ -245,6 +249,15 @@ export class AcpEventMapper {
         });
         return;
       }
+      case "workflow_update":
+        if (event.step !== undefined) this.workflowStep(event, event.step);
+        else if (event.status !== "running" && event.status !== "waiting") {
+          // 终态：该运行的步骤状态不会再变，清掉去重表
+          const prefix = `workflow:${event.runId}:`;
+          for (const key of [...this.workflowSteps.keys()])
+            if (key.startsWith(prefix)) this.workflowSteps.delete(key);
+        }
+        return;
       case "todo_updated":
         this.emit({
           sessionUpdate: "plan",
@@ -340,6 +353,56 @@ export class AcpEventMapper {
         });
       }
     }
+  }
+
+  /**
+   * [#318] 工作流步骤 → 合成 tool call：pending → in_progress → completed / failed（skipped、cancelled 记 completed）。
+   * toolCallId 与调度器给任务的 `parentToolCallId` 相同，嵌套任务的报告因此挂在步骤调用上。不发 `plan`。
+   */
+  private workflowStep(
+    event: Extract<SessionEvent, { type: "workflow_update" }>,
+    step: NonNullable<(typeof event)["step"]>,
+  ): void {
+    const id = `workflow:${event.runId}:${step.id}`;
+    const status: AcpToolCallStatus =
+      step.status === "pending"
+        ? "pending"
+        : step.status === "running" || step.status === "waiting"
+          ? "in_progress"
+          : step.status === "failed"
+            ? "failed"
+            : "completed";
+    const key = `${step.status}/${step.phase ?? ""}`;
+    const last = this.workflowSteps.get(id);
+    if (last === key) return;
+    const meta: AcpAmaMeta = {
+      workflow: {
+        runId: event.runId,
+        workflowId: event.workflowId,
+        stepId: step.id,
+        status: step.status,
+        ...(step.phase === undefined ? {} : { phase: step.phase }),
+      },
+    };
+    this.workflowSteps.set(id, key);
+    if (last === undefined) {
+      this.emit({
+        sessionUpdate: "tool_call",
+        toolCallId: id,
+        name: "workflow",
+        title: `${event.workflowId} \u00b7 ${step.id}`,
+        kind: "other",
+        status: "pending",
+        _meta: { [ACP_META_KEY]: meta },
+      });
+      if (status === "pending") return;
+    }
+    this.emit({
+      sessionUpdate: "tool_call_update",
+      toolCallId: id,
+      status,
+      _meta: { [ACP_META_KEY]: meta },
+    });
   }
 
   private status(toolCallId: string, status: "pending" | "in_progress"): void {
