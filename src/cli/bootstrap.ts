@@ -222,10 +222,19 @@ export async function bootstrap(
         : {}),
     }),
   );
-  const { model, provider } = await step(ExitCode.NoModel, m().steps.model, () =>
-    resolveModel(args, providers, sessionManager, config.defaultModel, deps, interactive, io.env),
+  const modelChoice = await step(ExitCode.NoModel, m().steps.model, () =>
+    resolveModel(args, providers, sessionManager, config.defaultModel, deps, interactive, io.env, {
+      tiers: config.models?.tiers,
+      warn: io.stderr,
+    }),
   );
-  const thinkingLevel = thinkingOf(args, sessionManager, config.thinkingLevel);
+  const { model, provider } = modelChoice;
+  const thinkingLevel = thinkingOf(
+    args,
+    sessionManager,
+    config.thinkingLevel,
+    modelChoice.tierThinking,
+  );
   // 12. 工具注册表（[#270] 宿主资源注册表先建好：read 工具与第 13 步的 HostApi 共用，激活后冻结）
   const hostResources = new HostResourceRegistry();
   const tools = await step(ExitCode.RuntimeError, m().steps.tools, () =>

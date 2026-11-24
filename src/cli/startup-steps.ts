@@ -14,6 +14,8 @@ import type { ProfileOptions } from "../config/profile.js";
 import { AmaError, StartupError, isAmaError } from "../errors.js";
 import type { InstructionSource } from "../host/types.js";
 import type { SessionEntry, SessionManagerApi } from "../session/types.js";
+import { nearestTier } from "../agents/tiers.js";
+import type { TierTable } from "../agents/tier-ladder.js";
 import { UsageError, type ParsedArgs } from "./args.js";
 import { noModelGuidance, pickDefaultModel } from "./default-model.js";
 import { hideFakeProvider } from "./fake-visibility.js";
@@ -128,6 +130,14 @@ export function lastEntry(
 export interface ModelChoice {
   model: Model;
   provider: ProviderData;
+  /** `--tier` 命中档的思考档（只在 `--model` 没给且命中时有值）。 */
+  tierThinking?: ModelThinkingLevel;
+}
+
+/** [#316] `--tier` 的输入：档位表与 stderr 提示出口。 */
+export interface TierOptions {
+  tiers: TierTable | undefined;
+  warn: (line: string) => void;
 }
 
 /** 第 11 步：解析模型与 key。 */
@@ -139,6 +149,37 @@ export async function resolveModel(
   deps: RuntimeDeps,
   interactive: boolean,
   env: Readonly<Record<string, string | undefined>> = {},
+  tierOptions?: TierOptions,
+): Promise<ModelChoice> {
+  const missed = { tier: false };
+  const choice = await resolveModelInner(
+    args,
+    registry,
+    manager,
+    defaultModel,
+    deps,
+    interactive,
+    env,
+    tierOptions,
+    missed,
+  );
+  if (missed.tier && args.tier !== undefined)
+    tierOptions?.warn(
+      msg().cli.args.tierNotSet(args.tier, `${choice.provider.id}/${choice.model.id}`),
+    );
+  return choice;
+}
+
+async function resolveModelInner(
+  args: ParsedArgs,
+  registry: ProviderRegistryApi,
+  manager: SessionManagerApi,
+  defaultModel: string | undefined,
+  deps: RuntimeDeps,
+  interactive: boolean,
+  env: Readonly<Record<string, string | undefined>>,
+  tierOptions: TierOptions | undefined,
+  missed: { tier: boolean },
 ): Promise<ModelChoice> {
   if (args.provider !== undefined && args.model === undefined) {
     throw new UsageError(msg().cli.startupSteps.providerNeedsModel(args.provider));
@@ -157,7 +198,21 @@ export async function resolveModel(
         : args.model;
     choice = lookup(ref, "");
   } else {
-    const change = lastEntry(manager, (e) => e.type === "model_change");
+    if (args.tier !== undefined) {
+      const hit = nearestTier(tierOptions?.tiers, args.tier, {
+        // 只认 ama 自己的模型条目；带 agent 的档是给 task 改派外部 Agent 用的
+        accept: (spec) => spec.model !== undefined && spec.agent === undefined,
+      });
+      if (hit?.spec.model !== undefined) {
+        const found = lookup(hit.spec.model, "");
+        choice =
+          hit.spec.thinkingLevel !== undefined
+            ? { ...found, tierThinking: hit.spec.thinkingLevel }
+            : found;
+      } else missed.tier = true;
+    }
+    const change =
+      choice === undefined ? lastEntry(manager, (e) => e.type === "model_change") : undefined;
     if (change?.type === "model_change") {
       // ChatGPT 的渠道跟随当前登录方式：会话里记的渠道不当显式渠道（可能是换登录前的）
       const channel = change.provider === CHATGPT_PROVIDER_ID ? undefined : change.channel;
@@ -201,8 +256,10 @@ export function thinkingOf(
   args: ParsedArgs,
   manager: SessionManagerApi,
   fallback: ModelThinkingLevel | undefined,
+  tierThinking?: ModelThinkingLevel,
 ): ModelThinkingLevel {
   if (args.thinking !== undefined) return args.thinking;
+  if (tierThinking !== undefined && args.model === undefined) return tierThinking;
   const change = lastEntry(manager, (e) => e.type === "thinking_level_change");
   if (change?.type === "thinking_level_change") return change.thinkingLevel;
   return fallback ?? "medium";

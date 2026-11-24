@@ -19,6 +19,8 @@ export const en = {
   fullscreenUnsupported: "--tui-mode fullscreen is not supported yet (only regular for now)",
   maxTurnsPositive: (got: string) => `--max-turns must be a positive integer (got ${got})`,
   maxCostPositive: (got: string) => `--max-cost must be a positive number (USD, got ${got})`,
+  tierNotSet: (tier: string, using: string) =>
+    `No model is set for tier ${tier} or a tier near it (models.tiers); using ${using}.\n`,
   printWithMode: (mode: string) => `-p and --mode ${mode} cannot be used together`,
   apiKeyNeedsModel: "--api-key requires --model",
   printOnly: (option: string) => `${option} is only for -p / --print`,
@@ -43,6 +45,8 @@ export const zh = {
   fullscreenUnsupported: "--tui-mode fullscreen 尚未支持（第一期只有 regular）",
   maxTurnsPositive: (got) => `--max-turns 应为正整数（收到 ${got}）`,
   maxCostPositive: (got) => `--max-cost 应为正数（美元，收到 ${got}）`,
+  tierNotSet: (tier, using) =>
+    `档位 ${tier} 及相邻档位都没有配置模型（models.tiers），改用 ${using}。\n`,
   printWithMode: (mode) => `-p 与 --mode ${mode} 不能同时使用`,
   apiKeyNeedsModel: "--api-key 需要同时给出 --model",
   printOnly: (option) => `${option} 只用于 -p / --print`,

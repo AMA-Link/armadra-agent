@@ -1,13 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { TierName, TierSpec, TierTable } from "../agents/tier-ladder.js";
 import type { AgentSession, EnqueueOptions, PromptOptions } from "../agent/types.js";
 import { createDefaultApiRegistry } from "../ai/apis/api.js";
 import { ProviderRegistry } from "../ai/providers/registry.js";
 import type { ProviderRegistryApi } from "../ai/types.js";
+import { msg } from "../i18n/index.js";
 import { SessionManager } from "../session/manager.js";
 import { emptyArgs } from "./args.js";
 import { noModelGuidance } from "./default-model.js";
 import type { RuntimeDeps } from "./deps.js";
-import { defaultSendUser, resolveModel } from "./startup-steps.js";
+import { defaultSendUser, resolveModel, thinkingOf } from "./startup-steps.js";
+
+// nearestTier 由 M3b 实现；这里按 §5.2 的签名做最小替身（本档优先，其余按档位次序取第一个可接受的）
+vi.mock("../agents/tiers.js", () => ({
+  nearestTier: (
+    table: TierTable | undefined,
+    wanted: TierName,
+    options?: { accept?: (spec: TierSpec, tier: TierName) => boolean },
+  ) => {
+    const order: TierName[] = [wanted, "light", "standard", "strong", "max"];
+    for (const tier of order) {
+      const spec = table?.[tier];
+      if (spec !== undefined && (options?.accept?.(spec, tier) ?? true)) return { tier, spec };
+    }
+    return undefined;
+  },
+}));
 
 function fakeSession(isStreaming: boolean): {
   session: AgentSession;
@@ -95,5 +113,108 @@ describe("零配置选模型：选择器不列 fake，没有模型时给出引�
     expect(reasons[0]).toContain("ama providers add <id> --base-url <url>");
     expect(error.message).toBe(reasons[0]);
     expect(noModelGuidance(registry())).toBe(reasons[0]);
+  });
+});
+
+describe("--tier 选模型（#316）", () => {
+  const registry = () =>
+    new ProviderRegistry({
+      apis: createDefaultApiRegistry(),
+      keys: { env: { ANTHROPIC_API_KEY: "k" }, useEnv: true, userAuthFile: null },
+    });
+  const deps = {} as unknown as RuntimeDeps;
+  const ref = (() => {
+    const p = registry()
+      .list()
+      .find((x) => x.id === "anthropic");
+    const m = registry().findModel(`anthropic/${p?.models?.[0]?.id ?? ""}`);
+    return m.ok ? `${m.provider.id}/${m.model.id}` : "";
+  })();
+
+  it("命中档位：选其模型与思考档；未命中：stderr 一行并继续走缺省来源", async () => {
+    expect(ref).not.toBe("");
+    const warns: string[] = [];
+    const tiers = { strong: { model: ref, thinkingLevel: "high" as const } };
+    const args = { ...emptyArgs(), tier: "strong" as const };
+    const hit = await resolveModel(
+      args,
+      registry(),
+      SessionManager.inMemory("/w"),
+      undefined,
+      deps,
+      false,
+      {},
+      {
+        tiers,
+        warn: (l) => warns.push(l),
+      },
+    );
+    expect(`${hit.provider.id}/${hit.model.id}`).toBe(ref);
+    expect(hit.tierThinking).toBe("high");
+    expect(warns).toEqual([]);
+    expect(thinkingOf(args, SessionManager.inMemory("/w"), "low", hit.tierThinking)).toBe("high");
+    expect(
+      thinkingOf({ ...args, model: ref }, SessionManager.inMemory("/w"), "low", hit.tierThinking),
+    ).toBe("low");
+
+    const miss = await resolveModel(
+      args,
+      registry(),
+      SessionManager.inMemory("/w"),
+      ref,
+      deps,
+      false,
+      {},
+      {
+        tiers: undefined,
+        warn: (l) => warns.push(l),
+      },
+    );
+    expect(`${miss.provider.id}/${miss.model.id}`).toBe(ref);
+    expect(miss.tierThinking).toBeUndefined();
+    expect(warns).toHaveLength(1);
+    expect(warns[0]).toBe(msg().cli.args.tierNotSet("strong", ref));
+  });
+
+  it("档位是外部 Agent 条目（agent + model）：不当成 ama 模型，回落并提示，不退出", async () => {
+    const warns: string[] = [];
+    const tiers = { strong: { agent: "claude", model: "opus" } };
+    const args = { ...emptyArgs(), tier: "strong" as const };
+    const got = await resolveModel(
+      args,
+      registry(),
+      SessionManager.inMemory("/w"),
+      ref,
+      deps,
+      false,
+      {},
+      {
+        tiers,
+        warn: (l) => warns.push(l),
+      },
+    );
+    expect(`${got.provider.id}/${got.model.id}`).toBe(ref);
+    expect(got.tierThinking).toBeUndefined();
+    expect(warns).toEqual([msg().cli.args.tierNotSet("strong", ref)]);
+  });
+
+  it("--model 优先于 --tier，且不提示", async () => {
+    const warns: string[] = [];
+    const args = { ...emptyArgs(), tier: "max" as const, model: ref };
+    const got = await resolveModel(
+      args,
+      registry(),
+      SessionManager.inMemory("/w"),
+      undefined,
+      deps,
+      false,
+      {},
+      {
+        tiers: undefined,
+        warn: (l) => warns.push(l),
+      },
+    );
+    expect(`${got.provider.id}/${got.model.id}`).toBe(ref);
+    expect(warns).toEqual([]);
   });
 });

@@ -70,6 +70,8 @@ Resources
   --host <module>              Host adapter module (CJS / ESM)
   --instructions <file>        Extra instruction file, repeatable
   --skill-dir <dir>            Extra skill directory, repeatable
+  --tier <tier>                Pick the model by tier: light | standard | strong | max (--model wins;
+                               a missing tier falls back to the nearest one in models.tiers)
   --agent-dir <dir>            Extra subagent definition directory, repeatable
   --auth-file <file>           Location of auth.json (default ~/.config/ama/auth.json)
   --tools <a,b,…>              Enable only these tools
@@ -191,6 +193,8 @@ export const zh = {
   --host <模块>                宿主适配器模块（CJS / ESM）
   --instructions <文件>        追加指令文件，可重复
   --skill-dir <目录>           追加 Skill 目录，可重复
+  --tier <档>                  按档位选模型：light | standard | strong | max（--model 优先；
+                               该档没配时取 models.tiers 里最近的一档）
   --agent-dir <目录>           追加子 Agent 定义目录，可重复
   --auth-file <文件>           auth.json 位置（缺省 ~/.config/ama/auth.json）
   --tools <a,b,…>              只启用这些工具
