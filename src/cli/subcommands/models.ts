@@ -27,6 +27,7 @@ import { ExitCode } from "../exit-codes.js";
 import { buildRegistry, loadUserLevel, type UserLevel } from "./context.js";
 import { CACHE_PROBE_ACTION } from "./models-cache-probe.js";
 import { DISCOVER_ACTION } from "./models-discover.js";
+import { TIERS_ACTION } from "./models-tiers.js";
 import { DISABLE_ACTION, ENABLE_ACTION, listEnabled } from "./models-enable.js";
 import { metadataOf, modelFlags, sourcesLine } from "./model-meta.js";
 import { msg } from "../../i18n/index.js";
@@ -190,6 +191,7 @@ export const MODELS_ACTIONS: Readonly<Record<string, ModelsAction>> = Object.fre
   },
   enable: ENABLE_ACTION,
   disable: DISABLE_ACTION,
+  tiers: TIERS_ACTION,
 });
 
 export function modelsUsage(): string {

@@ -272,6 +272,7 @@ describe("ama models / sessions（依赖注入）", () => {
       "refresh-catalog",
       "enable",
       "disable",
+      "tiers",
     ]);
     expect(modelsUsage()).toMatch(
       /^用法：ama models list \[--provider <id>\] \[--enabled\]\n {6}ama models check <provider\/id>\n {6}ama models discover /,

@@ -7,8 +7,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { AmaError } from "./errors.js";
 import type { TierName } from "./agents/tier-ladder.js";
-import { tierCostRows, TYPICAL_TASK_TOKENS } from "./agents/tier-cost.js";
-import { nearestTier, resolveTaskModel } from "./agents/tiers.js";
+import { TYPICAL_TASK_TOKENS } from "./agents/tier-cost.js";
 import type {
   SubagentRequest,
   SubagentRunRequest,
@@ -91,12 +90,6 @@ describe("契约：类型与常量", () => {
 
 describe("契约：桩抛 not_implemented", () => {
   const calls: [string, () => unknown][] = [
-    ["nearestTier", () => nearestTier(undefined, "light")],
-    [
-      "resolveTaskModel",
-      () => resolveTaskModel(undefined as never, { agentNamed: false }, {}, undefined as never),
-    ],
-    ["tierCostRows", () => tierCostRows(undefined, () => undefined)],
     ["userWorkflowDir", () => userWorkflowDir("")],
     ["workflowSources", () => workflowSources({ cwd: "", configDir: "" })],
     ["discoverWorkflows", () => discoverWorkflows([], { trusted: true })],

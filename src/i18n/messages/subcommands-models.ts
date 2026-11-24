@@ -21,6 +21,17 @@ export const en = {
     notInTable: "not in the model table",
     nothing: "  (none)\n",
   },
+  modelsTiers: {
+    colTier: "Tier",
+    colTarget: "Target",
+    colThinking: "Thinking",
+    colPrice: "Input / output per 1M",
+    colTypical: "Typical task",
+    priceUnknown: "price unknown",
+    external: "external agent",
+    note: (input: string, output: string) =>
+      `Typical task: ${input} input + ${output} output tokens. "inherit" = tier not set.`,
+  },
 };
 
 export const zh = {
@@ -36,5 +47,16 @@ export const zh = {
     listUnset: "未设置 models.enabled；/model 显示已配置供应商的模型：\n",
     notInTable: "不在模型表里",
     nothing: "  （无）\n",
+  },
+  modelsTiers: {
+    colTier: "档位",
+    colTarget: "目标",
+    colThinking: "思考档",
+    colPrice: "输入 / 输出（每 1M）",
+    colTypical: "典型任务",
+    priceUnknown: "价格未知",
+    external: "外部 Agent",
+    note: (input, output) =>
+      `典型任务：${input} 输入 + ${output} 输出 token。inherit = 该档未配置。`,
   },
 } satisfies Messages<typeof en>;
