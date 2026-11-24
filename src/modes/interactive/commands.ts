@@ -38,6 +38,7 @@ import {
   type CommandInfo,
   type CommandResult,
 } from "../commands-core.js";
+import type { WorkflowUi } from "../workflow-command.js";
 import { contextPanel } from "../context-report.js";
 import { contentText, type NoticeLevel } from "./message-view.js";
 import { cachePanel, permissionsPanel, sessionPanel } from "./panels.js";
@@ -101,6 +102,8 @@ export interface CommandUi {
   setDraft?(draft: RewindDraftText): void;
   exit(code: number): void;
   now(): number;
+  /** [#318] `/workflow` 的界面。 */
+  workflow?: WorkflowUi;
   /** 面板用的主题（与 panel 一起提供）。 */
   theme?(): Theme;
   /** 家目录（面板里路径缩写为 ~）。 */
@@ -396,6 +399,7 @@ export async function runInteractiveCommand(line: string, ui: CommandUi): Promis
       session: () => ui.session(),
       switchSession: (request) => ui.switchSession(request),
       ...(ui.confirmMode !== undefined ? { confirmPermissionMode: ui.confirmMode } : {}),
+      ...(ui.workflow !== undefined ? { workflow: ui.workflow } : {}),
     });
     if (result === undefined) return false;
     switch (result.kind) {

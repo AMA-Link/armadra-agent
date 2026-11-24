@@ -59,6 +59,7 @@ import { completionCommands, runInteractiveCommand, type CommandUi } from "./com
 import { memoryPanelFor } from "./memory-panel.js";
 import { InteractiveCompletion } from "./completion.js";
 import { confirmBypass } from "./confirm-dialog.js";
+import { dialogChooser } from "./workflow-gate.js";
 import { configUiFor } from "./config-ui.js";
 import { createKeyDispatch } from "./key-dispatch.js";
 import { enterModeOf, interruptKeys, interruptSender } from "./interrupt-send.js";
@@ -411,6 +412,10 @@ export function runInteractiveMode(
     pick: (spec) => openPicker(pickerHost, spec),
     pickModel: modelPickerFor(pickerHost, runtime, context),
     confirmMode,
+    workflow: {
+      choose: dialogChooser(pickerHost),
+      notice: (text, level) => notice(level ?? "info", text),
+    },
     rewind: () => rewind.open(),
     setDraft,
     notice,
