@@ -7,6 +7,7 @@
  */
 
 import type { ModelThinkingLevel } from "../ai/types.js";
+import type { TierTable } from "../agents/tier-ladder.js";
 import type { PermissionMode } from "../permissions/types.js";
 
 /** [W5-A] 底部信息行：full 两行（速率行 + 状态行），compact 一行。 */
@@ -88,7 +89,9 @@ export interface SubagentsConfig {
   /** 排队上限，缺省 16（超出报错）。 */
   maxPending?: number;
   /** 子会话缺省模型；不设继承父会话。 */
-  defaultModel?: string;
+  defaultModel?: string; // M3b 删除
+  /** [#317] 子 Agent 嵌套层数 1–3，缺省 2；项目级只能调小。 */
+  maxDepth?: number;
   /**
    * [W7-B2] task 缺省后台：auto（缺省）= 交互 / RPC / ACP 下后台、`-p` 下前台；always / never 固定。
    * 优先级：调用参数 > 类型定义 > 本键。用户 / 项目 / 宿主级都认。
@@ -117,7 +120,9 @@ export const MODELS_ENABLED_REF = /^[^/\s]+\/\S+$/;
 
 /** [W5-G] 模型别名（子 Agent 定义的 `model: fast | strong`）。 */
 export interface ModelsConfig {
-  aliases?: { fast?: string; strong?: string };
+  /** [#316] 档位阶梯。只认用户级。 */
+  tiers?: TierTable;
+  aliases?: { fast?: string; strong?: string }; // M3b 删除
   /**
    * 模型选择器的显式清单（`provider/model[@channel]`，`provider/*` 整个供应商）：设置后 `/model` 只显示清单内
    * 的模型（加当前模型）；不设时显示已配置 key / 登录 / 本地可达的供应商的全部模型。只认用户级。
@@ -157,6 +162,17 @@ export interface TodoConfig {
   reminder?: number;
 }
 
+/** [#318] 无人值守时 gate 的处理。 */
+export const WORKFLOW_UNATTENDED_GATES = ["reject", "approve"] as const;
+
+/** [#318] 工作流。 */
+export interface WorkflowsConfig {
+  /** 追加的工作流目录（只认用户级，各层累加）。 */
+  dirs?: string[];
+  /** 无人值守时 gate 的处理，缺省 reject；项目级只能写 reject。 */
+  unattendedGate?: (typeof WORKFLOW_UNATTENDED_GATES)[number];
+}
+
 /** 第五波并入 `AmaConfig` 的顶层段。 */
 export interface AmaConfigW5 {
   images?: ImagesConfig;
@@ -169,4 +185,5 @@ export interface AmaConfigW5 {
   limits?: LimitsConfig;
   reminders?: RemindersConfig;
   todo?: TodoConfig;
+  workflows?: WorkflowsConfig;
 }

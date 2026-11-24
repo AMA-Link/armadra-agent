@@ -458,6 +458,11 @@ export interface AcpAmaMeta {
   /** [#269] 子 Agent 的结构化报告（挂在发起它的 `task` 调用的 `tool_call_update` 上）。 */
   taskId?: string;
   report?: SubagentReport;
+  /** [#317] 子 Agent 的父任务与深度（直接子任务 = 1）。 */
+  parentTaskId?: string;
+  depth?: number;
+  /** [#318] 工作流步骤的状态。 */
+  workflow?: { runId: string; workflowId: string; stepId: string; status: string; phase?: string };
 }
 
 // ---------------------------------------------------------------------------

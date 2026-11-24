@@ -36,7 +36,15 @@ import type {
   PlanResolvedEvent,
   SubagentEndEvent,
   SubagentStartEvent,
+  WorkflowUpdateEvent,
 } from "../agent/types-w5.js";
+import type {
+  HostWorkflowHandler,
+  HostWorkflowRunRequest,
+  HostWorkflowStarted,
+  WorkflowUpdate,
+} from "../workflows/run-types.js";
+import type { WorkflowDocument } from "../workflows/types.js";
 
 export type {
   ActionPreview,
@@ -134,6 +142,8 @@ export interface AgentEvents {
   plan_resolved: Omit<PlanResolvedEvent, "type">;
   /** [W6-O] ChatGPT 订阅配额更新（docs/history/wave6-plan.md §4.5）。 */
   quota_update: Omit<QuotaUpdateEvent, "type">;
+  /** [#318] 工作流运行 / 步骤状态变化（host-api 1.5）。 */
+  workflow_update: Omit<WorkflowUpdateEvent, "type">;
 }
 
 /** [#301] `commands.register` 的命令：`name` 不带斜杠，`^[a-z][a-z0-9-]{0,63}$`。 */
@@ -169,6 +179,9 @@ export type HostRunner = SubagentRunner & { readonly description: string };
 export interface RunnerDoneEvent {
   /** 宿主 runner 的 id（即 `task(agent=<id>)`）。 */
   runner: string;
+  /** [#317] 父任务 id 与深度（直接子任务 = 1）；根层缺省。 */
+  parentTaskId?: string;
+  depth?: number;
   /** ama 的任务 id（`SubagentRunRequest.taskId`）；直接调用 runner 时缺省。 */
   taskId?: string;
   /** runner 自己的会话 id（`RunnerHandle.id`）。 */
@@ -185,6 +198,15 @@ export interface RunnerDoneEvent {
   endedAt: number;
   durationMs: number;
 }
+
+export type {
+  HostWorkflowHandler,
+  HostWorkflowRunRequest,
+  HostWorkflowStarted,
+  WorkflowDocument,
+  WorkflowUpdate,
+};
+export type { SubagentWorkflowRef } from "../tools/types.js";
 
 export type AgentEventName = keyof AgentEvents;
 
@@ -258,6 +280,11 @@ export interface HostApi {
     /** 已注册的命令名（全部模块），按注册顺序。 */
     list(): readonly string[];
   };
+  /**
+   * [#318] 宿主执行工作流（host-api 1.5，只交出并起跑）；返回值用于注销，已有提供者时抛
+   * `workflow_handler_exists`。可选面：旧版本运行时没有它，用前判断 `api.workflows !== undefined`。
+   */
+  readonly workflows?: { provide(handler: HostWorkflowHandler): () => void };
   /**
    * [#270] 宿主资源命名空间（host-api 1.2）：注册后内置 `read` 认 `<scheme>://<path>`，按 `read` 的分页与
    * 截断规则返回宿主给的文本（首行标注不可信），权限类 read、从不询问；系统提示工具节多一行列出全部
