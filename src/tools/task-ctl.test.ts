@@ -174,6 +174,44 @@ describe("[#268] resume 后被打断的任务", () => {
   });
 });
 
+describe("task_ctl list 树序", () => {
+  it("父后紧跟其子，子行带缩进前缀", async () => {
+    const mk = (taskId: string, startedAt: number, extra: Partial<TaskInfo>): TaskInfo => ({
+      taskId,
+      agent: "general",
+      runner: "ama",
+      status: "completed",
+      description: "",
+      startedAt,
+      background: false,
+      ...extra,
+    });
+    const tasks = [
+      mk("a", 0, {}),
+      mk("c", 1, { parentTaskId: "a", depth: 2 }),
+      mk("b", 2, {}),
+      mk("d", 3, { parentTaskId: "c", depth: 3 }),
+    ];
+    const control = { list: () => tasks } as unknown as TaskControl;
+    registerTaskControl("sess-tree", control);
+    try {
+      const r = await createTaskCtlTool().execute(
+        { action: "list" },
+        makeToolContext("/w", { sessionId: "sess-tree" }),
+      );
+      const rows = String(r.content).split("\n");
+      expect(rows.map((row) => row.slice(0, row.indexOf(" ·")))).toEqual([
+        "a",
+        "  ↳ c",
+        "    ↳ d",
+        "b",
+      ]);
+    } finally {
+      unregisterTaskControl("sess-tree", control);
+    }
+  });
+});
+
 describe("task_ctl wait 封顶（#242）", () => {
   const info: TaskInfo = {
     taskId: "t1",

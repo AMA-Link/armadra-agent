@@ -57,7 +57,29 @@ function fail(message: string): ToolResult {
   return { content: message, isError: true };
 }
 
+/** 树序：父后紧跟其子，同层按 startedAt；父不在列表里的当根层。 */
+function treeOrder(tasks: readonly TaskInfo[]): TaskInfo[] {
+  const ids = new Set(tasks.map((t) => t.taskId));
+  const kids = new Map<string | undefined, TaskInfo[]>();
+  for (const task of [...tasks].sort((a, b) => a.startedAt - b.startedAt)) {
+    const key =
+      task.parentTaskId !== undefined && ids.has(task.parentTaskId) ? task.parentTaskId : undefined;
+    kids.set(key, [...(kids.get(key) ?? []), task]);
+  }
+  const out: TaskInfo[] = [];
+  const walk = (key: string | undefined): void => {
+    for (const task of kids.get(key) ?? []) {
+      out.push(task);
+      walk(task.taskId);
+    }
+  };
+  walk(undefined);
+  return out;
+}
+
 function line(task: TaskInfo, now: number): string {
+  const depth = task.depth ?? 1;
+  const prefix = depth > 1 ? `${"  ".repeat(depth - 1)}↳ ` : "";
   const parts = [task.taskId, task.agent, task.status];
   if (task.turns !== undefined) parts.push(`${task.turns} turns`);
   if (task.usage !== undefined) parts.push(`${formatTokens(task.usage.totalTokens)} tokens`);
@@ -65,7 +87,7 @@ function line(task: TaskInfo, now: number): string {
   if (task.background) parts.push("background");
   const text = parts.join(" · ");
   const described = task.description === "" ? text : `${text} — ${task.description}`;
-  return task.status === "interrupted" ? `${described} (${INTERRUPTED_TASK_NOTE})` : described;
+  return `${prefix}${described}${task.status === "interrupted" ? ` (${INTERRUPTED_TASK_NOTE})` : ""}`;
 }
 
 async function send(input: TaskCtlInput, ctx: ToolContext): Promise<ToolResult> {
@@ -117,7 +139,11 @@ export function createTaskCtlTool(): ToolDefinition<TaskCtlInput> {
         const tasks = control?.list() ?? ctx.tasks?.list() ?? [];
         if (tasks.length === 0) return { content: "No sub-agent tasks." };
         const now = Date.now();
-        return { content: tasks.map((task) => line(task, now)).join("\n") };
+        return {
+          content: treeOrder(tasks)
+            .map((task) => line(task, now))
+            .join("\n"),
+        };
       }
       const taskId = input.taskId;
       if (taskId === undefined || taskId === "") return fail(`${input.action} needs taskId`);

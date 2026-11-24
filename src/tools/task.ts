@@ -19,12 +19,11 @@
  *   是折叠后的报告（agents/report.ts）；没报告时结果与原来逐字节相同。
  */
 
-import type { ModelThinkingLevel } from "../ai/types.js";
 import { AgentCatalog } from "../agents/catalog.js";
 import { TASK_NOTIFICATION_RULE } from "../agents/result.js";
+import { TIER_LADDER, isTierName, type TierName } from "../agents/tier-ladder.js";
 import type { SubagentRequest, ToolContext, ToolDefinition, ToolResult } from "./types.js";
 
-export const MAX_TASK_DEPTH = 1;
 /** fork 子会话首条 custom 条目里 <task> 指令首行摘要的上限（字符）。 */
 const TASK_LINE_MAX = 120;
 
@@ -57,14 +56,6 @@ export function nestedTaskRejection(ctx: ToolContext, tool: string, fallback: st
   );
 }
 export const DEFAULT_TASK_MAX_TURNS = 30;
-const THINKING: readonly ModelThinkingLevel[] = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-];
 
 export interface TaskInput {
   prompt: string;
@@ -75,8 +66,8 @@ export interface TaskInput {
   isolation?: "none" | "worktree";
   budgetUsd?: number;
   tools?: string[];
+  tier?: TierName;
   model?: string;
-  thinkingLevel?: ModelThinkingLevel;
   maxTurns?: number;
   context?: "fork" | "fresh";
 }
@@ -90,19 +81,25 @@ export interface TaskToolOptions {}
  * 清单里 general 已标 default）。
  */
 export const TASK_CONTEXT_LEAD =
-  "Delegate to a sub-agent (fresh context: give full instructions; context fork: inherits " +
+  "Delegate to a sub-agent (fresh context: give instructions; context fork: inherits " +
   "this conversation).";
+
+/** 两版描述共用的档位量表（固定英文，与是否配置档位无关）。 */
+export const TASK_TIER_GUIDE =
+  " tier: light (lookups, one-file edits) < standard (default) < strong (cross-module, design) < max; model overrides.";
 
 /** 缺省前台（`-p`、`subagents.background: never`）时的描述。 */
 export const FOREGROUND_DESCRIPTION =
   `${TASK_CONTEXT_LEAD} Returns its final report. Parallel in one reply; writers use isolation ` +
-  "worktree. background: returns a taskId (see task_ctl); taskId: continue it.";
+  "worktree. background: returns a taskId; taskId: continue it." +
+  TASK_TIER_GUIDE;
 
 /** [W7-B1] 缺省后台（交互 / RPC / ACP，docs/history/agents-concurrency-plan.md §2.6）时的描述。 */
 export const BACKGROUND_DESCRIPTION =
   `${TASK_CONTEXT_LEAD} Runs in the background by default: returns a taskId; a ` +
-  "<task-notification> follows; keep working. background:false waits for the result. " +
-  "taskId: continue it. Parallel in one reply; writers use isolation worktree.";
+  "<task-notification> follows. background:false waits for the result. " +
+  "taskId: continue it. Parallel in one reply; writers use isolation worktree." +
+  TASK_TIER_GUIDE;
 
 /** 描述里类型清单的标题（清单本身另有 400 token 预算，见 agents/catalog.ts）。 */
 export const TASK_AGENTS_HEADING = "\nAgents:\n";
@@ -133,9 +130,9 @@ export function buildSubagentRequest(input: TaskInput, ctx: ToolContext): Subage
   }
   if (input.maxTurns !== undefined && (!Number.isInteger(input.maxTurns) || input.maxTurns < 1))
     return "maxTurns must be an integer ≥ 1";
-  if (input.thinkingLevel !== undefined && !THINKING.includes(input.thinkingLevel)) {
-    return `thinkingLevel must be one of ${THINKING.join(", ")}`;
-  }
+  if ("thinkingLevel" in input) return "thinkingLevel is not a task parameter; use tier";
+  if (input.tier !== undefined && !isTierName(input.tier))
+    return `tier must be one of ${TIER_LADDER.join(", ")}`;
   if (input.isolation !== undefined && input.isolation !== "none" && input.isolation !== "worktree")
     return 'isolation must be "none" or "worktree"';
   if (input.budgetUsd !== undefined && !(input.budgetUsd > 0)) return "budgetUsd must be > 0";
@@ -158,8 +155,8 @@ export function buildSubagentRequest(input: TaskInput, ctx: ToolContext): Subage
   if (input.isolation !== undefined) request.isolation = input.isolation;
   if (input.budgetUsd !== undefined) request.budgetUsd = input.budgetUsd;
   if (input.tools !== undefined) request.tools = input.tools.filter((t) => t !== "task");
+  if (input.tier !== undefined) request.tier = input.tier;
   if (input.model !== undefined) request.model = input.model;
-  if (input.thinkingLevel !== undefined) request.thinkingLevel = input.thinkingLevel;
   if (input.context !== undefined) request.context = input.context;
   return request;
 }
@@ -184,8 +181,8 @@ export function createTaskTool(_options: TaskToolOptions = {}): ToolDefinition<T
         isolation: { type: "string", enum: ["none", "worktree"] },
         budgetUsd: { type: "number" },
         tools: { type: "array", items: { type: "string" } },
+        tier: { type: "string", enum: [...TIER_LADDER] },
         model: { type: "string" },
-        thinkingLevel: { type: "string", enum: [...THINKING] },
         maxTurns: { type: "integer" },
         context: { type: "string", enum: ["fork", "fresh"] },
       },
@@ -197,7 +194,7 @@ export function createTaskTool(_options: TaskToolOptions = {}): ToolDefinition<T
     promptSnippet: "task: run a sub-agent",
     promptGuidelines: [TASK_NOTIFICATION_RULE],
     async execute(input, ctx): Promise<ToolResult> {
-      if (ctx.depth >= MAX_TASK_DEPTH || ctx.spawnSubagent === undefined) {
+      if (ctx.spawnSubagent === undefined) {
         return fail(
           nestedTaskRejection(
             ctx,
