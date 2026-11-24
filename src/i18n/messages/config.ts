@@ -46,6 +46,7 @@ export const en = {
     hookType: `type must be "command"`,
     hookCommandEmpty: "command is empty",
     clearAtLeast: 'should be "auto" or a non-negative number',
+    tierNeedsTarget: "a tier needs at least one of model and agent",
     agentId: "agent ids may only contain lowercase letters, digits, - . _ (optional acp: prefix)",
   },
   /** 层级合并（merge.ts）的告警。 */
@@ -189,6 +190,7 @@ export const zh = {
     hookType: `type 必须为 "command"`,
     hookCommandEmpty: "命令为空",
     clearAtLeast: '应为 "auto" 或非负数字',
+    tierNeedsTarget: "一个档位至少要有 model 或 agent 之一",
     agentId: "Agent id 只能是小写字母、数字、- . _（可带 acp: 前缀）",
   },
   merge: {

@@ -117,4 +117,30 @@ describe("settings registry", () => {
     expect(byKey.get("defaultModel")).toMatchObject({ kind: "model", prefix: true, apply: "now" });
     expect(byKey.get("ui.theme")?.apply).toBe("restart");
   });
+
+  it("[#316 / #317 / #318] 档位行、maxDepth、unattendedGate；旧键没有行", () => {
+    const byKey = new Map(registry.map((s) => [s.key, s]));
+    expect(byKey.get("models.tiers.light.model")).toMatchObject({
+      kind: "model",
+      group: "model",
+      apply: "nextSession",
+      project: "deny",
+    });
+    expect(byKey.get("models.tiers.max.agent")).toMatchObject({ kind: "text", project: "deny" });
+    expect(byKey.get("models.tiers.strong.thinkingLevel")?.kind).toBe("enum");
+    expect(byKey.get("models.tiers.light.model")?.prefix).toBeUndefined();
+    expect(byKey.get("subagents.maxDepth")).toMatchObject({
+      group: "agents",
+      project: "tighten",
+      minimum: 1,
+      maximum: 3,
+    });
+    expect(byKey.get("workflows.unattendedGate")).toMatchObject({
+      kind: "enum",
+      options: ["reject", "approve"],
+      project: "tighten",
+    });
+    expect(byKey.has("subagents.defaultModel")).toBe(false);
+    expect(byKey.has("models.aliases.fast")).toBe(false);
+  });
 });

@@ -81,7 +81,9 @@ const IMPLICIT_DEFAULTS: Partial<AmaConfig> = {
     backgroundMaxMs: 3_600_000,
     retainSessions: 4,
     forkMaxContextRatio: 0.5,
+    maxDepth: 2,
   },
+  workflows: { dirs: [], unattendedGate: "reject" },
   reminders: { todo: true, fileChanges: true, contextPressure: true, budget: true },
   todo: { reminder: 10 },
 };

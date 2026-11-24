@@ -93,9 +93,11 @@ const ROWS: readonly Row[] = [
   row("fallbackModel", "model", "nextSession", "deny", { kind: "model" }),
   row("plan.model", "model", "nextSession", "deny", { kind: "model" }),
   row("plan.thinkingLevel", "model", "nextSession", "deny"),
-  row("subagents.defaultModel", "model", "nextSession", "deny", { kind: "model" }),
-  row("models.aliases.fast", "model", "nextSession", "deny", { kind: "model" }),
-  row("models.aliases.strong", "model", "nextSession", "deny", { kind: "model" }),
+  ...["light", "standard", "strong", "max"].flatMap((tier) => [
+    row(`models.tiers.${tier}.model`, "model", "nextSession", "deny", { kind: "model" }),
+    row(`models.tiers.${tier}.thinkingLevel`, "model", "nextSession", "deny"),
+    row(`models.tiers.${tier}.agent`, "model", "nextSession", "deny", { kind: "text" }),
+  ]),
   row("permission.mode", "permission", "now", "tighten"),
   row("permission.autoModel", "permission", "nextSession", "deny", { kind: "model" }),
   row("plan.bash", "permission", "nextSession", "tighten"),
@@ -154,6 +156,8 @@ const ROWS: readonly Row[] = [
   row("subagents.maxPending", "agents", "nextSession", "deny"),
   row("subagents.retainSessions", "agents", "nextSession", "deny"),
   row("subagents.forkMaxContextRatio", "agents", "nextSession", "deny"),
+  row("subagents.maxDepth", "agents", "nextSession", "tighten"),
+  row("workflows.unattendedGate", "agents", "nextSession", "tighten"),
   // [W7-B2] 改 task 工具描述（缺省后台 / 前台两种文案），故 prefix
   row("subagents.background", "agents", "restart", "any", { prefix: true }),
   row("subagents.autoBackgroundAfterMs", "agents", "restart", "any"),

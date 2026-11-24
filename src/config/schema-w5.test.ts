@@ -240,3 +240,79 @@ describe("[#266 / #267] 长命令转后台与后台寿命的键", () => {
     expect(merged.config.subagents?.backgroundMaxMs).toBe(1);
   });
 });
+
+describe("[#316 / #317 / #318] 档位、嵌套层数与工作流配置", () => {
+  const project = (config: Partial<AmaConfig>) => ({ version: 1 as const, ...config });
+  it("旧键 models.aliases 与 subagents.defaultModel 是未知键", () => {
+    const diagnostics = validateConfig({
+      version: 1,
+      models: { aliases: { fast: "a/b" } },
+      subagents: { defaultModel: "a/b" },
+    });
+    expect(diagnostics.map((d) => [d.severity, d.path])).toEqual([
+      ["warning", "subagents.defaultModel"],
+      ["warning", "models.aliases"],
+    ]);
+  });
+
+  it("models.tiers：档名、model / agent 至少一个、agent 形状、思考档", () => {
+    expect(
+      validateConfig({
+        version: 1,
+        models: {
+          tiers: { light: { model: "a/b" }, max: { agent: "acp:x", thinkingLevel: "high" } },
+        },
+      }),
+    ).toEqual([]);
+    const bad = validateConfig({
+      version: 1,
+      models: { tiers: { huge: {}, light: {}, standard: { agent: "Bad!" } } },
+    });
+    expect(bad.map((d) => [d.severity, d.path])).toEqual([
+      ["warning", "models.tiers.huge"],
+      ["error", "models.tiers.light"],
+      ["error", "models.tiers.standard.agent"],
+    ]);
+  });
+
+  it("subagents.maxDepth 1–3；项目级只能调小", () => {
+    expect(validateConfig({ version: 1, subagents: { maxDepth: 3 } })).toEqual([]);
+    for (const bad of [0, 4, "2"])
+      expect(
+        validateConfig({ version: 1, subagents: { maxDepth: bad } }).map((d) => d.path),
+      ).toEqual(["subagents.maxDepth"]);
+    const lower = mergeConfigLayers({
+      user: project({ subagents: { maxDepth: 3 } }),
+      project: project({ subagents: { maxDepth: 1 } }),
+    });
+    expect(lower.config.subagents?.maxDepth).toBe(1);
+    const raise = mergeConfigLayers({ project: project({ subagents: { maxDepth: 3 } }) });
+    expect(raise.config.subagents?.maxDepth).toBeUndefined();
+    expect(raise.warnings.join("\n")).toContain("subagents.maxDepth");
+    const same = restrictProjectConfig(project({ subagents: { maxDepth: 2 } }), "default");
+    expect(same.accepted.subagents).toEqual({ maxDepth: 2 });
+  });
+
+  it("workflows：项目级只认 unattendedGate: reject；dirs 与 models 只认用户级", () => {
+    expect(
+      validateConfig({ version: 1, workflows: { dirs: ["a"], unattendedGate: "approve" } }),
+    ).toEqual([]);
+    const result = restrictProjectConfig(
+      project({
+        workflows: { dirs: ["/x"], unattendedGate: "approve" },
+        models: { tiers: { light: { model: "a/b" } } },
+      }),
+      "default",
+    );
+    expect(result.accepted).toEqual({});
+    const text = result.warnings.join("\n");
+    expect(text).toContain("workflows.dirs");
+    expect(text).toContain("workflows.unattendedGate approve");
+    expect(text).toContain("models");
+    const ok = restrictProjectConfig(
+      project({ workflows: { unattendedGate: "reject" } }),
+      "default",
+    );
+    expect(ok.accepted).toEqual({ workflows: { unattendedGate: "reject" } });
+  });
+});
