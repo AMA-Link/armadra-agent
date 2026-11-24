@@ -32,14 +32,6 @@ import {
   WORKFLOW_ERROR_CODES,
   type WorkflowUpdate,
 } from "./workflows/run-types.js";
-import {
-  discoverWorkflows,
-  userWorkflowDir,
-  workflowFileHash,
-  workflowSources,
-  workflowTargetPath,
-} from "./workflows/discover.js";
-import { workflowFromTasks } from "./workflows/from-tasks.js";
 import { runOnHost } from "./workflows/host-handoff.js";
 import { activeWorkflow, startWorkflow, workflowHostOf } from "./workflows/runner.js";
 import { createWorkflowsFactory } from "./cli/compose-workflows.js";
@@ -88,12 +80,6 @@ describe("契约：类型与常量", () => {
 
 describe("契约：桩抛 not_implemented", () => {
   const calls: [string, () => unknown][] = [
-    ["userWorkflowDir", () => userWorkflowDir("")],
-    ["workflowSources", () => workflowSources({ cwd: "", configDir: "" })],
-    ["discoverWorkflows", () => discoverWorkflows([], { trusted: true })],
-    ["workflowTargetPath", () => workflowTargetPath("user", "x", { cwd: "", configDir: "" })],
-    ["workflowFileHash", () => workflowFileHash("")],
-    ["workflowFromTasks", () => workflowFromTasks([], new Map(), "")],
     ["runOnHost", () => runOnHost(undefined as never, undefined as never, undefined as never, {})],
     ["startWorkflow", () => startWorkflow(undefined as never, undefined as never, {})],
     ["workflowHostOf", () => workflowHostOf(undefined as never)],

@@ -12,6 +12,8 @@
  *   `--tools a,b,c` 整组替换（之后只用列出的名字）。
  * - `tools.default`：`+name` / `-name` 在预设上增减；不带前缀的名字整组替换预设的内置工具，
  *   之后再应用带前缀的项。未注册的名字记 warning 并忽略。
+ * - （#318）`workflow_save` 不在任何预设（`annotations.alwaysAsk`，每次都问）；`tools.default: ["+workflow_save"]`
+ *   或 `--tools` 才暴露它。
  * - （D20）`todo` 不在 `default` 里：W5-C0 曾把它加进来，以 `bench-presets` 复测为门（费用增幅 ≤ 5% 且
  *   成功率不降）；W5-Z 用多步长任务复测（docs/benchmarks/presets-todo-2026-10-03.md）成功数下降 1、估价
  *   +4.6%、保守计价 +11.3%，按门撤回。计划批准后的进度改用 `[DONE:n]` 文本标记（plan/done-markers.ts）；

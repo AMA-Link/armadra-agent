@@ -200,6 +200,8 @@ export async function gateToolCall(
   }
 
   const permission = core.options.permission;
+  // [#318] alwaysAsk 不依赖管线：宿主自带的 PermissionPipelineApi 不认这个标注时，allow 也强制改问
+  const alwaysAsk = tool.annotations?.alwaysAsk === true;
   let decision: Decision = hookDecision === "ask" ? "ask" : "allow";
   let approvalReason: ApprovalRequest["reason"] = "hook";
   let denyMessage: string | undefined;
@@ -213,11 +215,12 @@ export async function gateToolCall(
       input,
       unattended: core.options.unattended === true,
     };
+    if (tool.annotations?.alwaysAsk === true) checkInput.alwaysAsk = true;
     if (hookDecision !== undefined) checkInput.hookDecision = hookDecision;
     if (hookReason !== undefined) checkInput.hookReason = hookReason;
     checkInputFor = checkInput;
     modeAtCheck = permission.mode;
-    const verdict = permission.check(checkInput);
+    const verdict = forceAsk(alwaysAsk, permission.check(checkInput));
     decision = verdict.decision;
     approvalReason = verdict.approvalReason ?? "mode";
     denyMessage = verdict.message;
@@ -245,8 +248,9 @@ export async function gateToolCall(
         denyMessage = CLASSIFIER_UNAVAILABLE_MESSAGE; // [#313] 说明真实原因
     }
     if (autoDecision !== undefined) permission.recordAutoDecision?.(call.name, input, autoDecision);
-  } else if (decision === "ask" && core.options.unattended === true) {
-    decision = "deny";
+  } else {
+    if (alwaysAsk && decision === "allow") decision = "ask";
+    if (decision === "ask" && core.options.unattended === true) decision = "deny";
   }
 
   const withAuto = (gate: ToolCallGate): ToolCallGate =>
@@ -266,7 +270,9 @@ export async function gateToolCall(
     if (autoDecision !== undefined) request.autoDecision = autoDecision;
     // [#271] 切换权限模式时按新模式重判同一调用（Hook 决策沿用、不调分类器：classify 仍算 ask）
     if (permission !== undefined && checkInputFor !== undefined) {
-      request.reevaluation = { check: () => permission.check(checkInputFor) };
+      request.reevaluation = {
+        check: () => forceAsk(alwaysAsk, permission.check(checkInputFor)),
+      };
       // 等分类器期间切了模式（请求还没进链、链补判不到）：进链前按新模式同步再判一次
       if (permission.mode !== modeAtCheck) {
         const again = request.reevaluation.check();
@@ -299,6 +305,11 @@ export async function gateToolCall(
     if (answer === "allow_session") permission?.rememberForSession(call.name, input);
   }
   return withAuto(replaced ? { input } : {});
+}
+
+/** alwaysAsk 的工具：管线没有按标注改问（返回 allow）时在这里改成 ask。 */
+function forceAsk<V extends { decision: Decision }>(alwaysAsk: boolean, verdict: V): V {
+  return alwaysAsk && verdict.decision === "allow" ? { ...verdict, decision: "ask" } : verdict;
 }
 
 export async function afterToolCall(

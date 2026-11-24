@@ -99,6 +99,8 @@ export const en = {
     writeIsDir: (path: string) => `${path} is a directory; write will fail`,
     writeOverwrite: (path: string, before: string, next: string) =>
       `Overwrite ${path}: ${before} → ${next}`,
+    workflowExists: (path: string) => `${path} already exists; workflow_save will not overwrite it`,
+    workflowInvalid: (count: number) => `Invalid workflow (${plural(count, "problem")})`,
     editNotUnique: (what: string, count: string) => `${what} is not unique (${count} matches)`,
     editNotFound: (what: string) => `${what} not found`,
     editOverlap: "edit ranges overlap",
@@ -162,6 +164,8 @@ export const zh = {
     writeNew: (path, next) => `新建 ${path}：${next}`,
     writeIsDir: (path) => `${path} 是目录，write 会失败`,
     writeOverwrite: (path, before, next) => `覆盖 ${path}：${before} → ${next}`,
+    workflowExists: (path) => `${path} 已存在，workflow_save 不会覆盖`,
+    workflowInvalid: (count) => `工作流无效（${count} 个问题）`,
     editNotUnique: (what, count) => `${what} 匹配不唯一（${count} 处）`,
     editNotFound: (what) => `未找到 ${what}`,
     editOverlap: "多处修改的区间重叠",

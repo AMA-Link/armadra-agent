@@ -40,6 +40,7 @@ describe("ToolRegistry", () => {
       "task_land",
       "todo",
       "web_fetch",
+      "workflow_save",
       "write",
     ]);
     const modes = Object.fromEntries(reg.active().map((t) => [t.name, executionModeOf(t)]));
@@ -56,10 +57,11 @@ describe("ToolRegistry", () => {
       task_land: "sequential", // [#313] 会改父仓库，走权限管线
       todo: "parallel",
       web_fetch: "parallel",
+      workflow_save: "sequential", // [#318] alwaysAsk，不在任何预设
       write: "sequential",
     });
     expect(builtinTools().map((t) => t.name)).not.toContain("skill");
-    expect(builtinTools().length).toBe(13);
+    expect(builtinTools().length).toBe(14);
     expect(executionModeOf({ permission: "execute" })).toBe("sequential");
   });
 

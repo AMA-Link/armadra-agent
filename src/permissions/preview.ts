@@ -20,6 +20,10 @@ import { basename, join } from "node:path";
 import { EditError, planEdits, type EditOp } from "../tools/edit.js";
 import { normalizeToLF, splitBom } from "../tools/edit-fuzzy.js";
 import { displayPath, resolvePath } from "../tools/paths.js";
+import { resolveConfigDir } from "../config/paths.js";
+import { resolveWorkflowTarget, workflowTargetPath } from "../workflows/discover.js";
+import { formatWorkflowFile } from "../workflows/file.js";
+import { validateWorkflow } from "../workflows/validate.js";
 import { collectNestedCommands, commandWords, matchDangerous, shellWords } from "./dangerous.js";
 import { splitShellSegments } from "./rules.js";
 import { msg } from "../i18n/index.js";
@@ -36,6 +40,8 @@ export const PREVIEW_MAX_TARGETS = 20;
 export interface PreviewOptions {
   /** 相对路径的基准（会话 cwd）。 */
   cwd: string;
+  /** `workflow_save` 的用户级目录（缺省 `resolveConfigDir()`）。 */
+  configDir?: string;
   maxEntries?: number;
   budgetMs?: number;
   now?: () => number;
@@ -371,6 +377,57 @@ function previewWrite(
   unread(abs, request, c, "write");
 }
 
+/** [#318] `workflow_save` 的预览：目标路径 + 将写入文件的前 {@link WORKFLOW_PREVIEW_LINES} 行（YAML）。 */
+export const WORKFLOW_PREVIEW_LINES = 40;
+
+function previewWorkflowSave(
+  input: Record<string, unknown>,
+  c: Collector,
+  configDir?: string,
+): void {
+  const m = msg().permissions.preview;
+  const scope = input["scope"] === "user" ? "user" : "project";
+  const id = typeof input["id"] === "string" ? input["id"] : "";
+  let abs: string;
+  try {
+    abs = workflowTargetPath(scope, id, { cwd: c.cwd, configDir: configDir ?? resolveConfigDir() });
+  } catch {
+    c.lines.push(m.workflowInvalid(1));
+    c.raise("warn");
+    return;
+  }
+  abs = resolveWorkflowTarget(abs); // 符号链接按解析后的真实路径显示
+  const shown = scope === "user" ? abs : displayPath(abs, resolveWorkflowTarget(c.root));
+  const validation = validateWorkflow(input["workflow"]);
+  if (!validation.ok) {
+    c.target(m.workflowInvalid(validation.errors.length), { path: shown, exists: false });
+    for (const issue of validation.errors.slice(0, 5))
+      c.lines.push(`${issue.path}: ${issue.message}`);
+    c.raise("warn");
+    return;
+  }
+  const text = formatWorkflowFile(validation.workflow);
+  const all = text.replace(/\n$/, "").split("\n");
+  const info = tryStat(abs, true);
+  const size = m.size(countLines(text), formatBytes(Buffer.byteLength(text, "utf8")));
+  if (info === undefined) {
+    c.target(m.writeNew(shown, size), { path: shown, exists: false });
+  } else if (input["overwrite"] === true && !info.isDirectory()) {
+    c.target(m.writeOverwrite(shown, formatBytes(info.size), size), {
+      path: shown,
+      exists: true,
+      bytes: info.size,
+    });
+    c.raise("warn");
+  } else {
+    c.target(m.workflowExists(shown), { path: shown, exists: true, bytes: info.size });
+    c.raise("warn");
+  }
+  c.lines.push(...all.slice(0, WORKFLOW_PREVIEW_LINES));
+  if (all.length > WORKFLOW_PREVIEW_LINES)
+    c.lines.push(m.moreLines(all.length - WORKFLOW_PREVIEW_LINES));
+}
+
 function editFailure(message: string): string {
   const m = msg().permissions.preview;
   const many = /^(\S+) matches (\d+) times/.exec(message);
@@ -429,10 +486,14 @@ export function previewAction(request: ApprovalRequest, options: PreviewOptions)
   const kind: ActionPreview["kind"] =
     request.toolName === "bash" || request.toolName === "write" || request.toolName === "edit"
       ? request.toolName
-      : "other";
+      : request.toolName === "workflow_save"
+        ? "write"
+        : "other";
   try {
     if (kind === "bash" && typeof input["command"] === "string") {
       previewBash(input["command"], c, request.reason === "dangerous");
+    } else if (request.toolName === "workflow_save") {
+      previewWorkflowSave(input, c, options.configDir);
     } else if (kind === "write" && typeof input["path"] === "string") {
       previewWrite(input, request, c);
     } else if (kind === "edit" && typeof input["path"] === "string") {

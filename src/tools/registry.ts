@@ -28,6 +28,7 @@ import { TASK_CTL_TOOL, createTaskCtlTool } from "./task-ctl.js";
 import { TASK_LAND_TOOL, createTaskLandTool } from "./task-land.js";
 import { REPORT_TOOL, createReportTool } from "./report.js";
 import { createWebFetchTool, type WebFetchOptions } from "./web/fetch.js";
+import { createWorkflowSaveTool, type WorkflowSaveToolOptions } from "./workflow-save.js";
 
 /**
  * [W5-C0] 主工具 → 随它出现 / 消失的伴随工具。[#269] `report` 也跟着 `task`：子会话用它报告状态，父会话
@@ -161,9 +162,10 @@ export interface BuiltinToolOptions {
   bash?: BashToolOptions;
   task?: TaskToolOptions;
   webFetch?: WebFetchOptions;
+  workflowSave?: WorkflowSaveToolOptions;
 }
 
-/** 全部内置工具（read / write / edit / bash / grep / glob / ls / todo / task / task_ctl / task_land / report / web_fetch）。 */
+/** 全部内置工具（read / write / edit / bash / grep / glob / ls / todo / task / task_ctl / task_land / report / web_fetch / workflow_save）。 */
 export function builtinTools(options: BuiltinToolOptions = {}): ToolDefinition[] {
   const tools = [
     createReadTool(options.read),
@@ -179,6 +181,7 @@ export function builtinTools(options: BuiltinToolOptions = {}): ToolDefinition[]
     createTaskLandTool(),
     createReportTool(),
     createWebFetchTool(options.webFetch),
+    createWorkflowSaveTool(options.workflowSave),
   ] as ToolDefinition[];
   return tools;
 }

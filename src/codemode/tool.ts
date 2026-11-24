@@ -488,11 +488,14 @@ export function codemodeToolFactory(
       layout: mode === "on" ? "on" : "only",
       listTools: () => {
         const active = direct();
+        // [#318] alwaysAsk 工具（workflow_save）只在被活动集显式打开时进脚本可调用表，免得撑大 codemode 描述
+        const enabled = new Set((registry.active?.() ?? []).map((tool) => tool.name));
         return registry
           .list()
           .filter((name) => name !== CODEMODE_TOOL_NAME && allowed(name))
           .map((name) => registry.get(name))
           .filter((t): t is ToolDefinition => t !== undefined)
+          .filter((t) => t.annotations?.alwaysAsk !== true || enabled.has(t.name))
           .map((t) => ({
             tool: t,
             textResult: (registry.sourceOf?.(t.name) ?? "builtin") === "builtin",
