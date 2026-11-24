@@ -73,7 +73,7 @@ describe("第五波键的层级", () => {
           background: "never",
           autoBackgroundAfterMs: 60000,
           maxConcurrent: 64,
-          defaultModel: "x/y",
+          retainSessions: 9,
         },
       }),
       "default",
@@ -83,7 +83,7 @@ describe("第五波键的层级", () => {
     });
     const text = result.warnings.join("\n");
     expect(text).toContain("subagents.maxConcurrent");
-    expect(text).toContain("subagents.defaultModel");
+    expect(text).toContain("subagents.retainSessions");
     const merged = mergeConfigLayers({
       user: project({ subagents: { maxConcurrent: 2, background: "always" } }),
       project: project({ subagents: { background: "never" } }),

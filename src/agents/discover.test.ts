@@ -22,7 +22,7 @@ const reviewer = [
   "description: 只读审查改动，按文件与行号报告问题。",
   "tools: read, grep, glob, bash",
   "permission-mode: plan",
-  "model: fast",
+  "tier: strong",
   "thinking: low",
   "max-turns: 20",
   "isolation: none",
@@ -43,7 +43,8 @@ describe("定义文件解析", () => {
       description: "只读审查改动，按文件与行号报告问题。",
       tools: ["read", "grep", "glob", "bash"],
       permissionMode: "plan",
-      model: "fast",
+      model: "inherit",
+      tier: "strong",
       thinking: "low",
       maxTurns: 20,
       isolation: "none",
@@ -71,6 +72,17 @@ describe("定义文件解析", () => {
       disallowedTools: ["edit", "write"],
     });
     expect(agent).not.toHaveProperty("background");
+  });
+
+  it("model: fast / strong 不加载；tier 取值非法不加载", () => {
+    const fast = parseAgentDefinition("---\ndescription: d\nmodel: fast\n---\n", "/a/x.md", "user");
+    expect(fast.agent).toBeUndefined();
+    expect(fast.warnings).toEqual([
+      "/a/x.md: model: fast is no longer supported; use tier: light | standard | strong | max",
+    ]);
+    const bad = parseAgentDefinition("---\ndescription: d\ntier: huge\n---\n", "/a/y.md", "user");
+    expect(bad.agent).toBeUndefined();
+    expect(bad.warnings).toEqual(["/a/y.md: tier must be light, standard, strong or max"]);
   });
 
   it.each([

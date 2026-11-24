@@ -119,8 +119,6 @@ export interface ExternalWiring {
   hostRunners?: HostRunnerRegistry;
   dataDir?: string;
   config?: AgentsConfig;
-  /** config `subagents.defaultModel`：那是 ama 的模型，不传给外部 CLI。 */
-  defaultModel?: string;
   /** 项目是否已被 ama 信任。 */
   trusted: boolean;
   /** PATH 与版本探测（`AMA_NO_AGENT_PROBE=1` 关闭）。 */
@@ -302,13 +300,13 @@ export class SessionExternalAgents {
       start: async (request) => {
         if (host === undefined) await this.firstRun(spec, request);
         const events = deferEvents(request);
-        const handle = await inner.start(this.forward(spec, events.request));
+        const handle = await inner.start(events.request);
         events.release();
         void handle.wait().finally(() => void this.refreshInfos());
         if (host !== undefined) return handle;
         const reopen = async (resume: string, prompt: string): Promise<RunnerHandle> => {
           return inner.start({
-            ...this.forward(spec, request),
+            ...request,
             prompt,
             resume,
             mode: this.mode(),
@@ -318,20 +316,6 @@ export class SessionExternalAgents {
         return new ExternalTaskHandle(handle, reopen);
       },
     };
-  }
-
-  /** 发给外部 runner 的请求：去掉 ama 自己的缺省模型（`subagents.defaultModel`）。 */
-  private forward(spec: string, request: SubagentRunRequest): SubagentRunRequest {
-    const own = agentEntry(this.wiring.config, spec)?.model;
-    if (
-      request.model !== undefined &&
-      request.model === this.wiring.defaultModel &&
-      request.model !== own
-    ) {
-      const { model: _ama, ...rest } = request;
-      return rest;
-    }
-    return request;
   }
 
   /** 首次在本会话以 `spec` 运行的确认（同一 Agent 并发的首次只问一次）。 */

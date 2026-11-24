@@ -419,6 +419,7 @@ export function startEvent(record: TaskRecord, handle: TaskHandle): SubagentStar
     cwd: record.cwd,
   };
   if (handle.model !== undefined) event.model = handle.model;
+  if (record.info.tier !== undefined) event.tier = record.info.tier;
   if (handle.sessionFile !== undefined) event.sessionFile = handle.sessionFile;
   return event;
 }

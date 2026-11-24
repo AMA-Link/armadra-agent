@@ -85,6 +85,7 @@ export function subagentEnvironment(
   if (isCoordinatorPreset(config)) env.background = true;
   const after = sub?.autoBackgroundAfterMs;
   if (typeof after === "number" && after > 0) env.autoBackgroundAfterMs = after;
+  if (sub?.maxDepth !== undefined) env.maxDepth = sub.maxDepth;
   env.backgroundMaxMs = sub?.backgroundMaxMs ?? DEFAULT_SUBAGENT_BACKGROUND_MAX_MS;
   return env;
 }
@@ -105,8 +106,6 @@ export function externalWiring(deps: ComposeExtensionDeps): ExternalWiring {
   };
   if (hostRunners !== undefined) wiring.hostRunners = hostRunners;
   if (config.agents !== undefined) wiring.config = config.agents;
-  const defaultModel = config.subagents?.defaultModel;
-  if (defaultModel !== undefined) wiring.defaultModel = defaultModel;
   return wiring;
 }
 

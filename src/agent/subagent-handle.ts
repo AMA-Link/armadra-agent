@@ -7,6 +7,7 @@
 
 import type { SubagentRequest } from "../tools/types.js";
 import type { AgentDefinition } from "../agents/types.js";
+import type { TierName } from "../agents/tier-ladder.js";
 import type { SubagentRunner } from "../tools/types.js";
 import {
   applyRunnerEvent,
@@ -68,6 +69,9 @@ export async function startHandle(
     ...(record.modelRef === undefined ? {} : { model: record.modelRef }),
     ...(ref !== undefined && record.agent.runner !== "ama" ? { resume: ref.sessionId } : {}),
     ...(request.budgetUsd === undefined ? {} : { budgetUsd: request.budgetUsd }),
+    ...(request.tier === undefined && record.agent.tier === undefined
+      ? {}
+      : { tier: (request.tier ?? record.agent.tier) as TierName }),
     taskId: record.info.taskId,
     signal,
     onEvent: (event) => applyRunnerEvent(record, event, ctx.sink()),
