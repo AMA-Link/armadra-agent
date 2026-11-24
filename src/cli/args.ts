@@ -21,6 +21,12 @@ import { CODEMODE_MODES } from "../config/types.js";
 import type { TierName } from "../agents/tier-ladder.js";
 import { LOCALES, msg, type Locale } from "../i18n/index.js";
 import { applyRunValue, isRunValueOption, type RunValueOption } from "./args-run.js";
+import {
+  applyWorkflowValue,
+  isWorkflowValueOption,
+  validateWorkflowArgs,
+  type WorkflowValueOption,
+} from "./args-workflow.js";
 
 export const SUBCOMMANDS = [
   "auth",
@@ -90,6 +96,10 @@ export interface ParsedArgs {
   agentDirs?: string[];
   /** [#316] `--tier <档>`：主会话按档位选模型（`--model` 优先）。 */
   tier?: TierName;
+  /** [#318] `--workflow <id>`（只用于 -p）：运行工作流而不是发提示。 */
+  workflow?: string;
+  /** [#318] `--param name=value`（可重复，需要 `--workflow`）。 */
+  workflowParams?: Record<string, string>;
   /** 位置参数 `-`（只用于 -p）：一直等 stdin 到 EOF，不设首字节超时。 */
   stdin: boolean;
   /** `--no-stdin`（只用于 -p）：不读 stdin。 */
@@ -237,9 +247,14 @@ export function emptyArgs(): ParsedArgs {
   };
 }
 
-function applyValue(args: ParsedArgs, option: ValueOption | RunValueOption, value: string): void {
+function applyValue(
+  args: ParsedArgs,
+  option: ValueOption | RunValueOption | WorkflowValueOption,
+  value: string,
+): void {
   if (value === "") throw new UsageError(msg().cli.args.emptyValue(option));
   if (isRunValueOption(option)) return applyRunValue(args, option, value);
+  if (isWorkflowValueOption(option)) return applyWorkflowValue(args, option, value);
   switch (option) {
     case "profile":
       args.profile = value;
@@ -407,6 +422,7 @@ function validate(args: ParsedArgs): void {
   if (args.images.length > 0 && !args.print) {
     throw new UsageError(m.imagePrintOnly);
   }
+  validateWorkflowArgs(args);
 }
 
 /**
@@ -500,14 +516,14 @@ export function parseArgs(argv: readonly string[]): ParseResult {
       }
       continue;
     }
-    if (VALUE_OPTIONS.has(name) || isRunValueOption(name)) {
+    if (VALUE_OPTIONS.has(name) || isRunValueOption(name) || isWorkflowValueOption(name)) {
       let value = inline;
       if (value === undefined) {
         value = argv[i + 1];
         if (value === undefined) throw new UsageError(msg().cli.args.needsValue(name));
         i++;
       }
-      applyValue(args, name as ValueOption | RunValueOption, value);
+      applyValue(args, name as ValueOption | RunValueOption | WorkflowValueOption, value);
       continue;
     }
     if (inline !== undefined) throw new UsageError(msg().cli.args.noValue(name));

@@ -29,6 +29,7 @@
  * - [#303] 提示整段形如 `/名 参数` 且命中扩展命令（`api.commands.register`）：`handled` 把 `message` 写到 stdout、
  *   退出 0、不调模型（json 与 stream-json 给一行 `result` 对象，`text` 为 message）；`prompt` 改发其 `text`；
  *   命令抛错 → stderr 一行、退出码 1。
+ * - [#318] `--workflow <id> [--param name=value]…`：不读提示，转 `print-workflow.ts`（退出码另加 10）。
  * - 退出码：最终助手消息 `error / aborted` 或提示被拒 → 1；有工具调用被拒 → 7；到达预算 → 8；
  *   计划待审批 → 9；SIGINT 130、SIGTERM 143（先 abort）。
  */
@@ -49,6 +50,7 @@ import { promptImages, sessionModel } from "../image-input.js";
 import { msg } from "../../i18n/index.js";
 import { CLASSIFIER_UNAVAILABLE_MESSAGE } from "../../permissions/pipeline.js";
 import { searchToolsHint } from "./search-hint.js";
+import { runPrintWorkflow } from "./print-workflow.js";
 
 export function joinPrompt(argument: string | undefined, piped: string): string {
   const parts = [argument ?? "", piped.replace(/\s+$/, "")].filter((p) => p.trim() !== "");
@@ -126,6 +128,7 @@ function formatSeconds(ms: number): string {
 
 export async function runPrintMode(runtime: Runtime, context: ModeContext): Promise<number> {
   const { io } = context;
+  if (context.args.workflow !== undefined) return runPrintWorkflow(runtime, context);
   const format = context.args.outputFormat ?? "text";
   const stdinMode = context.args.noStdin ? "off" : context.args.stdin ? "explicit" : "auto";
   const piped = await readPromptStdin(io, context.prompt, stdinMode);
