@@ -18,7 +18,7 @@ English · [简体中文](../../reference/rpc.md)
 On startup the server first sends `hello`, then the current session's `session_start`:
 
 ```json
-{"type":"hello","protocolVersion":1,"agent":"ama","version":"0.1.0","capabilities":["approvals","images","hooks","plans","compact_events"]}
+{"type":"hello","protocolVersion":1,"agent":"ama","version":"0.1.0","capabilities":["approvals","images","hooks","plans","compact_events","workflow_gates"]}
 {"type":"session_start","sessionId":"…","cwd":"/work","reason":"startup"}
 ```
 
@@ -117,10 +117,10 @@ After a session switch the server re-subscribes to events and sends `session_sta
 
 ### Approvals
 
-| Command                   | Parameters                                                                            | `data`                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `set_client_capabilities` | `capabilities: ("approvals" \| "images" \| "hooks" \| "plans" \| "compact_events")[]` | `{ capabilities }`                                                                                               |
-| `permission_response`     | `requestId: string`, `decision: "allow" \| "deny" \| "allow_session"`                 | `{ accepted: boolean }` (false = not currently waiting for this id; kept and applied when that request is asked) |
+| Command                   | Parameters                                                                                                | `data`                                                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `set_client_capabilities` | `capabilities: ("approvals" \| "images" \| "hooks" \| "plans" \| "compact_events" \| "workflow_gates")[]` | `{ capabilities }`                                                                                               |
+| `permission_response`     | `requestId: string`, `decision: "allow" \| "deny" \| "allow_session"`                                     | `{ accepted: boolean }` (false = not currently waiting for this id; kept and applied when that request is asked) |
 
 `compact_events` (docs/history/memory-plan.md D9, Chinese): once declared, `turn_end.toolResults`, `message_start` and `entry_appended` no longer repeat the body of tool results and of user messages with images (marked `contentOmitted: true`); the body is sent only in `message_end` and `tool_execution_end`. Without it the event shapes are byte-for-byte unchanged. Shapes are in [Compact events](#compact-events-compact_events). `stream-json` has no such switch and always emits the full shapes.
 
@@ -188,7 +188,25 @@ A moved foreground task is not interrupted: its `task` call returns at once with
 `subagent_end` as usual and, once the parent session is idle, the notification message with `origin: "task"`. Same semantics as
 `Ctrl+B` in the interactive UI.
 
-44 commands in total; their names are the keys of `RpcCommandMap`.
+### Multi-agent workflows (#318)
+
+| Command                 | Parameters                                              | `data`                                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get_workflows`         | —                                                       | `{ workflows: WorkflowSummary[] }` (`id`, `scope`, `filePath`, `title?`, `roles?`, `steps?`, `params?`, `valid`, `error?`; invalid files carry the reason) |
+| `run_workflow`          | `workflowId: string`, `params?: Record<string, string>` | `{ runId, host, url? }`; asynchronous, progress comes as `workflow_update`                                                                                 |
+| `respond_workflow_gate` | `runId`, `stepId`, `decision: "approve" \| "reject"`    | `{ ok: boolean }` (false = nothing is waiting)                                                                                                             |
+| `cancel_workflow`       | `runId`                                                 | `{ ok: boolean }`                                                                                                                                          |
+
+- The parameter is `workflowId`, not `id`: `id` is already the request number of the command envelope.
+- For a run in this process `run_workflow` answers at once with `{ runId, host: false }`. When the run is handed to a host, it waits for the host's reply: `runId` is the host's run id, `host: true`, `url` may be absent. If the host refuses, the command fails with the host's `code` and message.
+- Capability `workflow_gates`: only after the client declares it with `set_client_capabilities` do gates and verification escalations wait for `respond_workflow_gate`. `approve` means pass on a gate and accept (finish with a warning) on a verification escalation; `reject` means reject (`gate_rejected`) on a gate and fail (`verify_failed`) on an escalation. A waiting step shows `status: "waiting"`, `phase: "waiting_human"` in `workflow_update`; tell them apart by `stepId`.
+- Without `workflow_gates`: a gate follows `workflows.unattendedGate` (default `reject`) and a verification escalation always fails. `approve` does not release a failed verification.
+- The `workflow_update` event shape is under [Sub-agent events](#sub-agent-events-wave-5). One is sent for every change of the run and of a step; the entries at the start and end of a run carry no `step`.
+- stdin closed: nobody can answer any more, so a waiting gate is rejected and a verification escalation fails; the server waits for in-flight runs and then exits. SIGINT / SIGTERM cancel the runs first. Runs handed to a host are not affected.
+- Errors: `invalid_arguments` (`workflowId` not a non-empty string, `params` not a string map), `workflow_not_found`, `invalid_workflow`, `missing_param`, `invalid_param`, `prompt_too_long`, `workflow_agent_unavailable`, `workflow_busy`.
+- Golden file `test/fixtures/rpc/workflow.out.jsonl`: a full run with `workflow_gates` declared, including `respond_workflow_gate`.
+
+48 commands in total; their names are the keys of `RpcCommandMap`.
 
 ## Events
 
@@ -258,7 +276,7 @@ Sub-agents started by `task` / `task_ctl` (ama sub-sessions and external agents 
 
 `subagent_end.costUsd` (#317) is this run's spend including descendants, in USD; `TaskInfo.costUsd` in `get_tasks` is the task's running total. ama sub-tasks now report it too (before, only external agents did), and it counts toward the root session's `--max-cost`.
 
-`workflow_update` (#318): appears in the event stream as a session event whenever a workflow run or step changes, with `runId`, `workflowId`, `title`, `status: running | waiting | succeeded | failed | cancelled`, `host` (handed to the host) and `step?` (`id`, `kind`, `status`, `phase?`, `roleId?`, `taskId?`, `attempt?`, `startedAt?`, `endedAt?`, `outputFile?`, `decision?`, `error?`, `warnings?`). The RPC commands (`get_workflows`, `run_workflow`, …) and the `workflow_gates` capability arrive in a later version; `RPC_PROTOCOL_VERSION` is unchanged.
+`workflow_update` (#318): appears in the event stream as a session event whenever a workflow run or step changes, with `runId`, `workflowId`, `title`, `status: running | waiting | succeeded | failed | cancelled`, `host` (handed to the host) and `step?` (`id`, `kind`, `status`, `phase?`, `roleId?`, `taskId?`, `attempt?`, `startedAt?`, `endedAt?`, `outputFile?`, `decision?`, `error?`, `warnings?`). The commands are under [Multi-agent workflows](#multi-agent-workflows-318); all of this is new commands, a capability and an event, so `RPC_PROTOCOL_VERSION` is unchanged.
 
 `report` (#269) is the structured status a sub-agent gives through its `report` tool, `{ state: ready | blocked | failed | waiting, summary, humanAction? }` ([agents.md](../../guides/agents.md) "structured reports", Chinese): `subagent_update{kind:"report"}` is sent after each call (the value folded so far in this run), `subagent_end.report` and `TaskInfo.report` from `get_tasks` carry the final value; all absent when the sub-agent did not report. `humanAction` is something only a person can decide; clients should show it to the person directly. These are new optional fields plus one new `kind` value; `RPC_PROTOCOL_VERSION` is unchanged and clients can ignore a `kind` they do not know.
 

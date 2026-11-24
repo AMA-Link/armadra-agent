@@ -26,6 +26,7 @@
 | [Plan 模式](guides/plan.md)               | 只读调研、计划格式、审批入口与持久化                                        |
 | [会话](guides/sessions.md)                | 统计、检索、`--from` 复用、导出、轨迹、检查点                               |
 | [子 Agent 与外部 Agent](guides/agents.md) | `task` / `task_ctl`、fork、worktree 隔离、外部 Agent 驱动与能力矩阵         |
+| [多 Agent 工作流](guides/workflows.md)    | 文件格式、`/workflow`、`-p --workflow`、SDK、RPC、验证退回与预算            |
 | [记忆](guides/memory.md)                  | 跨会话笔记，缺省关闭                                                        |
 | [命令式 Hook](guides/hooks.md)            | `hooks.json` 的事件、退出码与 stdout JSON                                   |
 | [codemode](guides/codemode.md)            | 模型写脚本批量调用工具，子进程与权限                                        |

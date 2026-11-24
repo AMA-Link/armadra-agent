@@ -35,6 +35,8 @@ CLI 里已有的登录驱动外部编码 Agent（Claude Code、Codex、GitHub Co
   RPC）一律拒绝。
 - **为被调用而做**：`-p`、`--mode rpc`、`--mode acp`、SDK 与宿主适配器都是正式入口；退出码与 JSON 形状都是契约，带版本号，
   每次发布前检查。
+- **多 Agent 工作流**：一份 Markdown 描述角色、并行步骤、审批点与验证，用 `/workflow`、`ama -p --workflow`、SDK 或 RPC
+  运行，也能交给 Armadra 画布（[指南](docs/guides/workflows.md)）。
 - **Skills 而非 MCP**：用 `SKILL.md` 目录、提示模板、命令式 Hook 与宿主适配器扩展 ama。
 
 ## 安装

@@ -1295,6 +1295,8 @@ export type { ToolDefinition, ToolContext, ToolResult, Model, ProviderData, Sess
 
 精简事件（能力 `compact_events`，2026-10 内存批次 M-G）：客户端经 `set_client_capabilities` 声明后，`turn_end.toolResults[]` 每项只留 `{ toolCallId, toolName, isError, timestamp, contentOmitted: true }`，`message_start` 与 `entry_appended`（`message` 条目）里的 toolResult / 带图片的 user 消息 `content: ""` 并标 `contentOmitted: true`；`message_end` 与 `tool_execution_end` 始终全量（前者是客户端替换整条消息的依据，后者带 `details`）。未声明时线路逐字节不变，`hello.capabilities` 列出这一项；`-p --output-format stream-json` 没有这个开关。同一个大结果由 5 份降到 2 份（事件字节约 40%）。见 [rpc.md](../reference/rpc.md)「精简事件」。
 
+多 Agent 工作流（#318）：命令 `get_workflows / run_workflow{workflowId, params?} / respond_workflow_gate{runId, stepId, decision} / cancel_workflow`（总数 48），能力 `workflow_gates`（未声明时 gate 按 `workflows.unattendedGate`、验证升级一律失败），事件 `workflow_update`；参数名用 `workflowId` 是因为 `id` 已是命令信封的请求编号。SDK 增 `listWorkflows(options)` 与 `runWorkflow(session, idOrDocument, options)`；ACP 把步骤映射成合成 tool call（`toolCallId = workflow:<runId>:<stepId>`，`_meta.ama.workflow`，不发 `plan`）。见 [workflows.md](../guides/workflows.md)、[rpc.md](../reference/rpc.md)、[acp.md](../reference/acp.md)。
+
 第五波增量：命令 `plan_response / get_plan / get_todos / get_tasks / get_agents`、能力 `plans`、事件 `plan_* / subagent_* / todo_updated / limit_reached / model_fallback / telemetry_tick`；另有 `--mode acp`（ACP 服务端）与 `@armadra/agent/acp`，见 [wave5-plan.md](../history/wave5-plan.md) §5.6、§6.5、§9。
 
 ## §14 分发
