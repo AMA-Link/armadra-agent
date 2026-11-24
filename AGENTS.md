@@ -19,8 +19,8 @@
 - 设计与硬约束见 [docs/design/design.md](docs/design/design.md)（§1 依赖方向、§2 工程约定、§9.1 缓存保证）；文档按 `guides/`（现状）、`reference/`（协议与格式）、`design/`（目标设计）、`history/` 与 `research/`（只用于追溯）分层，索引在 [docs/README.md](docs/README.md)，新增文档登记进去。
 - 双语：`README.md` / `README.zh-CN.md`、`CHANGELOG.md` / `CHANGELOG.zh-CN.md` 成对维护，新条目两份都加到未发布段；`docs/en/` 按同样分层放八篇英文译本，改中文版时同步。文案约定见 [docs/guides/i18n.md](docs/guides/i18n.md)。
 - 协议形状改动同步 [docs/reference/rpc.md](docs/reference/rpc.md)、[docs/reference/host-api.md](docs/reference/host-api.md)、[docs/reference/acp.md](docs/reference/acp.md) 或 [docs/reference/session-format.md](docs/reference/session-format.md)。
-- 验证：`pnpm run ci`（类型检查、prettier、依赖与 i18n 检查、文档链接检查 `pnpm check:docs`、发版检查、测试、构建与 bundle 冒烟）；bundle 级端到端 `AMA_E2E=1 pnpm test:e2e`。pnpm 10 起 `pnpm ci` 是内置命令，必须写 `pnpm run ci`。
-- CI 在 macOS / Linux / Windows × Node 22 / 24 上跑；路径、换行与 shell 差异要考虑 Windows。测试里拼 `PATH` 用 `path.delimiter`（`pnpm check:portability` 守住）。
+- 验证：`pnpm run ci`（`scripts/ci-run.mjs`：并行跑类型检查、prettier、依赖与 i18n 检查、文档链接检查 `pnpm check:docs`、跨平台与发版检查、构建，再做 bundle 冒烟与单测；`node scripts/ci-run.mjs --with-e2e` 在同一 Vitest 进程池里连同 `test/e2e` 一起跑）；单跑 bundle 级端到端 `AMA_E2E=1 pnpm test:e2e`。pnpm 10 起 `pnpm ci` 是内置命令，必须写 `pnpm run ci`。
+- CI：PR 与 `main` 跑 4 行（Linux × Node 22 / 24、macOS × Node 24、Windows × Node 24），`v*` 发版 tag 跑全 6 行（macOS / Linux / Windows × Node 22 / 24）；路径、换行与 shell 差异要考虑 Windows。测试里拼 `PATH` 用 `path.delimiter`（`pnpm check:portability` 守住）。
 - 推送前钩子（`.githooks/pre-push` → `scripts/hooks/pre-push.mjs`，`pnpm install` 时启用）只查推送范围内的改动，挑选规则与 `ci.yml` 一致；改 CI 时同步它。推送的不是当前检出时不查；未跟踪的源码默认拦下。
 - 发布由维护者推 `v<版本>` tag 触发：CI 创建 GitHub Release 并经 npm 可信发布（OIDC）推送 `@armadra/agent`；本地不手动 `npm publish`。
 

@@ -47,7 +47,7 @@ docs(providers): 渠道节补中转实测
 - 从 `main` 拉出按用途命名的分支，例如 `fix/acp-usage`、`docs/github-community-files`。 / Branch from `main` with a purpose-based name.
 - PR 标题沿用提交信息格式；正文按模板填写，不适用的小节写「无 / None」。 / The PR title follows the commit format; fill in the template and write "无 / None" for sections that do not apply.
 - 用 `Closes #N` 关联 issue。 / Link issues with `Closes #N`.
-- 合并前 `pnpm run ci` 与 CI（macOS / Linux / Windows × Node 22 / 24）全部通过；合并使用 merge commit，保留逐个提交。 / `pnpm run ci` and CI (macOS / Linux / Windows × Node 22 / 24) must pass before merging; merges use a merge commit and keep individual commits.
+- 合并前 `pnpm run ci` 与 CI（PR 跑 Linux × Node 22 / 24、macOS / Windows × Node 24 共 4 行；`v*` 发版 tag 跑三平台 × Node 22 / 24 全 6 行）全部通过；合并使用 merge commit，保留逐个提交。 / `pnpm run ci` and CI (4 rows on PRs: Linux × Node 22 / 24 plus macOS / Windows × Node 24; all 6 rows across macOS / Linux / Windows × Node 22 / 24 on `v*` release tags) must pass before merging; merges use a merge commit and keep individual commits.
 - 不新增运行时依赖；`devDependencies` 新增要在 PR 里说明理由。 / No new runtime dependencies; explain any new `devDependencies` in the PR.
 - 用户可见的变化写进 [CHANGELOG.md](../CHANGELOG.md) 与 [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) 的未发布段，两份都加。 / User-visible changes go into the Unreleased section of both changelogs.
 - 改了协议形状要同步 `docs/reference/rpc.md`、`docs/reference/host-api.md`、`docs/reference/acp.md` 或 `docs/reference/session-format.md` 及 `docs/en/` 的英文版。 / Protocol shape changes must update the matching docs and their English versions in `docs/en/`.
