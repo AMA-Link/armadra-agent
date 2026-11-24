@@ -11,7 +11,13 @@
 - **模型档位**：`models.tiers.<light|standard|strong|max>` 把每档映射到模型、外部 Agent 或两者，可带 `thinkingLevel`（只认用户级）。`task` 工具新增 `tier` 参数（描述里带一行量表）；档位按最近的已配置档回落，可改派给外部 Agent（plan 模式不改派），命中的档记在任务上。内置 `explore` 用 `tier: light`，定义文件可写 `tier:`。
 - **`ama --tier <档>`**：按 `models.tiers` 选主会话的模型与思考档（`--model`、`--thinking` 优先）；附近的档都没配置时不退出，继续走会话记录、`defaultModel`、选择器，并在 stderr 写一行提示。
 - **`ama models tiers`**：打印每档的目标、思考档、每 1M token 价格与典型任务的估算成本。
-- **`subagents.maxDepth`**（1–3，缺省 2，项目级只能调小）与 **`workflows`** 配置段（`dirs`、`unattendedGate`）。嵌套派发本身尚未启用，子 Agent 仍不能调用 `task`。
+- **`subagents.maxDepth`**（1–3，缺省 2，项目级只能调小）与 **`workflows`** 配置段（`dirs`、`unattendedGate`）。
+- **嵌套派发**：`subagents.maxDepth` 现已生效。fresh 子会话可以调用 `task`（fork 子会话不行）。权限不外溢：嵌套任务取发起它的子会话的模式，只读父派出的任务仍只读，从嵌套任务派给外部 Agent 的按 `plan`，只读发起方不能用 `tier` 改派到更高档位。整棵树共享并发池与排队上限，父任务等待子任务时让出名额。预算按本次运行计，并行兄弟从父的余额里预留，后代花费记到各祖先；父停止时级联中止后代。嵌套任务与工作流任务不转后台，模型不能续聊工作流任务。
+- **行为变化：ama 子任务的花费现在计入预算。** 根会话的 `--max-cost` 包含 ama 子任务，`budgetUsd` 对 ama 子任务也生效；以前两者都不计。`subagent_end` 与 `get_tasks` 为 ama 子任务带 `costUsd`。
+- **`alwaysAsk` 权限层**：工具声明 `annotations.alwaysAsk` 后，在拒绝规则之后、危险命令与模式之前，任何模式都询问；allow 规则、Hook allow 与会话授权都不放行，无人值守按拒绝。
+- **`workflow_save` 工具**：把校验过的工作流存成 `.ama/workflows/<id>.md`（或用户配置目录）。不在任何预设里（`+workflow_save` 打开；codemode 只在显式打开时可调），每次都询问。工作流从 `workflows.dirs`、`<configDir>/workflows` 与项目 `.ama/workflows` 发现（未信任项目跳过）。
+- **工作流调度器**（能力层，入口 `/workflow`、`-p --workflow` 在后续版本）：并行、同角色串行续聊同一任务、gate、验证退回与升级、`workflow_update` 事件与 `ama.workflow` 运行记录。无人值守时 gate 按 `workflows.unattendedGate`，验证失败直接失败（`approve` 不放行）；运行预算用尽以 `limit_reached` 结束。
+- **Host API 1.5**：`workflows.provide(handler)`（`versions`、`run(request) → { runId, url? }`；一个 HostContext 一个处理器，重复抛 `workflow_handler_exists`；`workflow_unsupported` 表示等人在画布确认）、宿主事件 `workflow_update`。交出后 ama 不镜像进度、不能取消。`HOST_API_MINOR` 现为 5。
 - **任务树**：任务带可选的 `parentTaskId`、`depth`、`tier`；`/tasks`、`task_ctl list` 与 Agent 栏按缩进的树显示，并有「等待子任务」状态；RPC、宿主 runner 请求与 ACP `_meta.ama` 带这些可选字段（`HOST_API_MINOR`、`RPC_PROTOCOL_VERSION` 不变）。
 - **`@armadra/agent/workflow`**：纯函数子路径导出（`validateWorkflow`、`parseWorkflowFile`、`formatWorkflowFile`、`renderWorkflowPrompt`、`resolveWorkflowParams`、`validateOwnsGlob`、`globsOverlap`、`workflowJsonSchema`），以及两份 JSON：`@armadra/agent/workflow.schema.json`、`@armadra/agent/workflow-glob-vectors.json`。
 - **`task_land`**：经权限管线把 worktree 任务的提交落到当前分支。遇到冲突或会覆盖父的未提交改动时，父仓库恢复原样，worktree 保留。
