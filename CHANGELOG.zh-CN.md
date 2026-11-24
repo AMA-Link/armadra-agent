@@ -8,12 +8,22 @@
 
 ### 新增
 
+- **模型档位**：`models.tiers.<light|standard|strong|max>` 把每档映射到模型、外部 Agent 或两者，可带 `thinkingLevel`（只认用户级）。`task` 工具新增 `tier` 参数（描述里带一行量表）；档位按最近的已配置档回落，可改派给外部 Agent（plan 模式不改派），命中的档记在任务上。内置 `explore` 用 `tier: light`，定义文件可写 `tier:`。
+- **`ama --tier <档>`**：按 `models.tiers` 选主会话的模型与思考档（`--model`、`--thinking` 优先）；附近的档都没配置时不退出，继续走会话记录、`defaultModel`、选择器，并在 stderr 写一行提示。
+- **`ama models tiers`**：打印每档的目标、思考档、每 1M token 价格与典型任务的估算成本。
+- **`subagents.maxDepth`**（1–3，缺省 2，项目级只能调小）与 **`workflows`** 配置段（`dirs`、`unattendedGate`）。嵌套派发本身尚未启用，子 Agent 仍不能调用 `task`。
+- **任务树**：任务带可选的 `parentTaskId`、`depth`、`tier`；`/tasks`、`task_ctl list` 与 Agent 栏按缩进的树显示，并有「等待子任务」状态；RPC、宿主 runner 请求与 ACP `_meta.ama` 带这些可选字段（`HOST_API_MINOR`、`RPC_PROTOCOL_VERSION` 不变）。
+- **`@armadra/agent/workflow`**：纯函数子路径导出（`validateWorkflow`、`parseWorkflowFile`、`formatWorkflowFile`、`renderWorkflowPrompt`、`resolveWorkflowParams`、`validateOwnsGlob`、`globsOverlap`、`workflowJsonSchema`），以及两份 JSON：`@armadra/agent/workflow.schema.json`、`@armadra/agent/workflow-glob-vectors.json`。
 - **`task_land`**：经权限管线把 worktree 任务的提交落到当前分支。遇到冲突或会覆盖父的未提交改动时，父仓库恢复原样，worktree 保留。
 - **`subagents.worktreeSetup`**：只认用户级的命令，在每个新建的任务 worktree 里运行一次，例如链接依赖。
 
 ### 变更
 
 - **worktree 任务能看到未提交改动**：任务从已暂存、未暂存、未跟踪改动的快照开始，父的索引与工作区不变，继承的改动不算产出，也不会被落地。
+
+### 移除
+
+- **不兼容：`models.aliases`、`subagents.defaultModel`、`task` 的 `thinkingLevel` 参数，以及定义文件里的 `model: fast` / `model: strong`。** 配置里还写着这些键会报未知键警告并被忽略，传 `thinkingLevel` 会被拒绝并提示改用 `tier`，写了 `model: fast|strong` 的定义文件带提示跳过。请改用 `models.tiers` 与 `tier`。
 
 ### 修复
 

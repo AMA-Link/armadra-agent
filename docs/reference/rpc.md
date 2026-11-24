@@ -218,7 +218,7 @@
 
 `parentToolCallId` 只出现在 codemode 脚本里经 `tools.*` 发起的内层调用上，值是外层 `codemode` 调用的 id；客户端据此折叠显示。内层调用不进转录。
 
-`message_end`、`turn_end`、`done` / `error` 与回放（`get_messages`、`get_entries`）里的助手消息可能带两个可选字段（模型调用效率批次，docs/history/model-efficiency-plan.md §1.10）：失败消息的 `retryAfterMs`（`Retry-After`，毫秒），工具调用块的 `rawArguments`（模型输出的原始参数字符串）。`subagent_*` 事件不变；`get_tasks` 的 `TaskInfo` 可带 `context?: "fork" | "fresh"`（子会话的实际上下文模式）。都是新增的可选字段，`RPC_PROTOCOL_VERSION` 不变，客户端忽略不认识的字段即可。
+`message_end`、`turn_end`、`done` / `error` 与回放（`get_messages`、`get_entries`）里的助手消息可能带两个可选字段（模型调用效率批次，docs/history/model-efficiency-plan.md §1.10）：失败消息的 `retryAfterMs`（`Retry-After`，毫秒），工具调用块的 `rawArguments`（模型输出的原始参数字符串）。`subagent_*` 事件不变；`get_tasks` 的 `TaskInfo` 可带 `context?: "fork" | "fresh"`（子会话的实际上下文模式）、`tier?`（命中的档，#316）与嵌套任务的 `parentTaskId?`、`depth?`（#317）；`subagent_start` 同样可带 `tier`、`parentTaskId`、`depth`。都是新增的可选字段，`RPC_PROTOCOL_VERSION` 不变，客户端忽略不认识的字段即可。
 
 ### 精简事件（`compact_events`）
 
