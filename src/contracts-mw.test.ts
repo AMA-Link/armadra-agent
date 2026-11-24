@@ -5,7 +5,6 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { AmaError } from "./errors.js";
 import type { TierName } from "./agents/tier-ladder.js";
 import { TYPICAL_TASK_TOKENS } from "./agents/tier-cost.js";
 import type {
@@ -32,13 +31,10 @@ import {
   WORKFLOW_ERROR_CODES,
   type WorkflowUpdate,
 } from "./workflows/run-types.js";
-import { runOnHost } from "./workflows/host-handoff.js";
-import { activeWorkflow, startWorkflow, workflowHostOf } from "./workflows/runner.js";
-import { createWorkflowsFactory } from "./cli/compose-workflows.js";
 
 describe("契约：类型与常量", () => {
-  it("HOST_API_MINOR 仍是 4（改成 5 归 M12）", () => {
-    expect(HOST_API_MINOR).toBe(4);
+  it("HOST_API_MINOR 是 5（#318 起）", () => {
+    expect(HOST_API_MINOR).toBe(5);
   });
 
   it("新增字段全部可选", () => {
@@ -75,32 +71,6 @@ describe("契约：类型与常量", () => {
     const source = readFileSync(new URL("./workflows/types.ts", import.meta.url), "utf8");
     const imports = source.match(/^import .*$/gm) ?? [];
     expect(imports.every((line) => line.startsWith("import type "))).toBe(true);
-  });
-});
-
-describe("契约：桩抛 not_implemented", () => {
-  const calls: [string, () => unknown][] = [
-    ["runOnHost", () => runOnHost(undefined as never, undefined as never, undefined as never, {})],
-    ["startWorkflow", () => startWorkflow(undefined as never, undefined as never, {})],
-    ["workflowHostOf", () => workflowHostOf(undefined as never)],
-    ["activeWorkflow", () => activeWorkflow("s")],
-  ];
-  for (const [name, call] of calls) {
-    it(name, () => {
-      let error: unknown;
-      try {
-        call();
-      } catch (caught) {
-        error = caught;
-      }
-      expect(error).toBeInstanceOf(AmaError);
-      expect((error as AmaError).code).toBe("not_implemented");
-      expect((error as AmaError).message).toBe(`${name} is not implemented yet`);
-    });
-  }
-
-  it("createWorkflowsFactory 的桩什么都不装", () => {
-    expect(createWorkflowsFactory(undefined as never)(undefined as never)).toBeUndefined();
   });
 });
 

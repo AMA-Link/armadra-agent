@@ -78,10 +78,10 @@ export type { CacheMiss, WarmDecision, WarmingDecisionHandler } from "../ai/cach
 export const HOST_API_VERSION = 1 as const;
 export type HostApiVersion = typeof HOST_API_VERSION;
 /**
- * host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`，2 = `resources`，3 = `session_start.uncleanEnd`，4 = `commands`）；
+ * host-api 小版本：只加不改的可选面每加一批递增（1 = `runners.onDone`，2 = `resources`，3 = `session_start.uncleanEnd`，4 = `commands`，5 = `workflows`、`workflow_update` 与任务树字段）；
  * 旧运行时没有 `api.minor`，按 0 算。
  */
-export const HOST_API_MINOR = 4 as const;
+export const HOST_API_MINOR = 5 as const;
 
 export type HostMode = "interactive" | "line" | "print" | "rpc";
 

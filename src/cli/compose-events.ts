@@ -120,6 +120,11 @@ export function bridgeEvent(event: SessionEvent, bus: AgentEventBus): void {
       void bus.emit("plan_resolved", payload);
       return;
     }
+    case "workflow_update": {
+      const { type: _type, ...payload } = event;
+      void bus.emit("workflow_update", payload);
+      return;
+    }
     default:
       return;
   }

@@ -78,6 +78,8 @@ export const en = {
     instructionNeedsPath: "instructions.add: file needs path",
     instructionNeedsText: "instructions.add: text needs text",
     brokerNeedsAsk: "approvals.setBroker: broker needs ask()",
+    workflowsBadHandler: "workflows.provide: handler needs versions (integers) and run()",
+    workflowsHandlerExists: "workflows.provide: another module already provides a workflow handler",
     brokerIgnored: "approvals.setBroker: a broker was already set by another module; ignored",
     commandNotObject: "commands.register: needs a command object",
     commandBadName: (name: string) =>
@@ -173,6 +175,8 @@ export const zh = {
     toolExists: (name) => `tools.register：工具 ${name} 已存在`,
     instructionNeedsPath: "instructions.add：file 需要 path",
     instructionNeedsText: "instructions.add：text 需要 text",
+    workflowsBadHandler: "workflows.provide：handler 需要 versions（整数数组）和 run()",
+    workflowsHandlerExists: "workflows.provide：已有其它模块提供了工作流处理器",
     brokerNeedsAsk: "approvals.setBroker：broker 需要 ask()",
     brokerIgnored: "approvals.setBroker：已有其它模块设置了 broker，本次忽略",
     commandNotObject: "commands.register：需要命令对象",
