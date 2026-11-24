@@ -1,16 +1,11 @@
 /**
  * 子 Agent 任务注册表（docs/history/wave5-plan.md §7.3–§7.6，D13、D23–D24）。[W5-G]
  *
- * 每个根会话一份（按会话 id 登记；compose-agents.ts 的扩展在会话构造时建，SDK / 测试直接构造的会话在首次
- * task 时以缺省环境懒建）。职责：解析类型（catalog）→ 选 runner（ama 子会话或 `env.runners` 的外部 / 宿主
- * runner）；并发池（`subagents.maxConcurrent`，缺省 4）+ 排队上限（`maxPending`，缺省 16，超出报错不要重试）；
- * 前台（等结果）/ 后台（立即返回 taskId，完成后 `<task-notification>` 走父会话 followUp 队列）；`taskId` 续聊
- * （句柄保留 `subagents.retainSessions` 个，LRU，JSONL 永在，释放后按会话文件 / 外部会话 id 重接）；结果 > 50 KB
- * 保留头尾并全文落 `outputs/`；worktree 隔离；事件 `subagent_start / update / end`，父会话 `custom{ama.task}` 记
- * 快照、resume 时重建（未完成标 `interrupted`）。[W6-A] 视图 `live()` / `message()`（subagent-direct.ts）；
- * [W7-B1] 缺省后台、转后台 `background()`、通知与 `settled()`（subagent-background.ts）；[#267] 后台寿命上限
- * `extend()` / `takeExpired()`（subagent-lifetime.ts）；[#269] 结构化报告：运行开始清 `info.report`，runner 的
- * `report` 事件即时进快照并发 `subagent_update`，结束时以结果为准加 `[report]` 行（agents/report.ts）。
+ * 每个根会话一份（按会话 id 登记）。职责：解析类型（catalog）→ 选 runner（ama 子会话或外部 / 宿主
+ * runner）；并发池（`subagents.maxConcurrent`，缺省 4）+ 排队上限；前台 / 后台；`taskId` 续聊；结果上限；
+ * worktree 隔离；事件与父会话 `custom{ama.task}` 快照。[W6-A] 视图（subagent-direct.ts）；[W7-B1] 转后台与通知
+ * （subagent-background.ts）；[#267] 后台寿命；[#269] 结构化报告；[#317] 嵌套派发（subagent-nest.ts：整棵树
+ * 共享一个池与预算，记录收尾在 subagent-finish.ts）。
  */
 
 import { AmaError } from "../errors.js";
@@ -18,28 +13,26 @@ import type {
   SubagentRequest,
   SubagentResult,
   SubagentRunner,
-  SubagentStatus,
   TaskInfo,
   TaskRegistryView,
 } from "../tools/types.js";
 import { DEFAULT_AGENT } from "../agents/builtin.js";
 import { AgentCatalog, type AgentModelConfig } from "../agents/catalog.js";
-import { resolveTaskModel } from "../agents/tiers.js";
-import { capTaskText, decorateTaskText, writeTaskOutput } from "../agents/result.js";
 import {
   SubagentPool,
   TASK_CUSTOM_TYPE,
-  TERMINAL_STATUSES,
   failedResult as failed,
-  flushText,
+  beginRun,
   newRecord,
   rebuildRecords,
   taskStats,
   type AmaRunnerSpec,
   type ProgressSink,
   type TaskHandle,
+  type NestedSpawner,
   type TaskLive,
   type TaskRecord,
+  type TaskRunBudget,
 } from "../agents/task-record.js";
 import {
   registerTaskControl,
@@ -52,7 +45,6 @@ import type { TimeoutTimers } from "../tools/timers.js";
 import type { AgentDefinition, AgentInfo } from "../agents/types.js";
 import type { SessionCore } from "./session-core.js";
 import type { SessionTaskStats } from "./types.js";
-import { finishWorktree } from "./worktree.js";
 import { prepareTaskWorktree } from "./worktree-setup.js";
 import { landTask } from "./subagent-land.js";
 import { appendTraceEntry } from "./session-trace-writer.js";
@@ -68,6 +60,25 @@ import {
   waitForTask,
   type BackgroundReason,
 } from "./subagent-background.js";
+import {
+  DEFAULT_MAX_DEPTH,
+  cascadeAbort,
+  chargeAncestors,
+  continueBlocked,
+  ownSpent,
+  parkParent,
+  deriveRequest,
+  planNested,
+  rememberRequest,
+  requestedLimits,
+  reserveBudget,
+  settleChild,
+  unparkParent,
+  type NestPlan,
+  type RunLimits,
+} from "./subagent-nest.js";
+import { chooseTaskModel } from "./subagent-model.js";
+import { finishRecord } from "./subagent-finish.js";
 import { DEFAULT_RETAINED, SubagentStore } from "./subagent-store.js";
 import { startHandle } from "./subagent-handle.js";
 import {
@@ -238,7 +249,6 @@ export class SubagentRegistry implements TaskControl {
     return waitForTask(record, timeoutMs, options.signal ?? this.waits.signal(taskId), this.waits);
   }
 
-  /** [W7-B1] `task_ctl wait` 用的打断信号（`background()` 触发后换新）。 */
   detachSignal(taskId: string): AbortSignal {
     return this.waits.signal(taskId);
   }
@@ -295,16 +305,31 @@ export class SubagentRegistry implements TaskControl {
     if (record === undefined) throw new AmaError("task_not_found", `unknown task ${taskId}`);
     if (record.running === undefined) return record.last;
     record.controller?.abort();
+    cascadeAbort(this.tasks, taskId); // [#317] 父 stop 级联到在跑的后代
     return record.running;
+  }
+
+  /** [#317] 子会话读本次运行的轮数 / 美元上限（续聊时按本次请求重算）。 */
+  runBudget(taskId: string): Readonly<TaskRunBudget> | undefined {
+    return this.tasks.get(taskId)?.run;
   }
 
   // -------------------------------------------------------------------------
   // 运行
   // -------------------------------------------------------------------------
 
-  async run(request: SubagentRequest, ama: AmaRunnerFactory): Promise<SubagentResult> {
+  /** `spawner` 只由嵌套派发（发起子会话）给；此时 `request.parentTaskId` 是发起任务的 id。 */
+  async run(
+    request: SubagentRequest,
+    ama: AmaRunnerFactory,
+    spawner?: NestedSpawner,
+  ): Promise<SubagentResult> {
     if (this.disposed) return failed("the session is closed");
-    if (request.taskId !== undefined) return this.continueTask(request, ama);
+    if (spawner === undefined && request.parentTaskId !== undefined) {
+      request = { ...request };
+      delete request.parentTaskId; // 只由运行时写
+    }
+    if (request.taskId !== undefined) return this.continueTask(request, ama, spawner);
     const name = request.agent ?? DEFAULT_AGENT;
     let agent = this.catalog.get(name);
     if (agent === undefined)
@@ -316,34 +341,30 @@ export class SubagentRegistry implements TaskControl {
       return failed(
         `Too many sub-agent tasks are queued (${queued}). Do not retry; wait for running tasks first (task_ctl wait).`,
       );
-    const model = resolveTaskModel(
+    const chosen = chooseTaskModel(
+      { catalog: this.catalog, env: this.env, hostMode: this.host.options.permission?.mode },
       agent,
-      {
-        ...(request.model === undefined ? {} : { model: request.model }),
-        ...(request.tier === undefined ? {} : { tier: request.tier }),
-        ...(request.thinkingLevel === undefined ? {} : { thinkingLevel: request.thinkingLevel }),
-        agentNamed: request.agent !== undefined,
-      },
-      this.env.modelConfig ?? {},
-      {
-        available: (id) => {
-          const target = this.catalog.get(id);
-          return (
-            target !== undefined &&
-            target.runner !== "ama" &&
-            this.env.runners?.(target) !== undefined
-          );
-        },
-        // plan 模式不改派（P0-1）；带 tools 白名单的请求也不改派，外部 runner 不认白名单
-        allowRouting: this.host.options.permission?.mode !== "plan" && request.tools === undefined,
-      },
+      request,
+      spawner,
+      (message) => this.host.log("warn", message),
     );
-    if (model.warning !== undefined) this.host.log("warn", `agent ${name}: ${model.warning}`);
-    // 改派：换成档位指向的外部 Agent（resolveTaskModel 已确认它可运行）
-    if (model.agent !== undefined) agent = this.catalog.get(model.agent) ?? agent;
-    if (model.thinkingLevel !== undefined && model.thinkingLevel !== request.thinkingLevel)
-      request = { ...request, thinkingLevel: model.thinkingLevel };
-    const background = request.background ?? agent.background ?? this.env.background ?? false;
+    const { model } = chosen;
+    agent = chosen.agent;
+    request = chosen.request;
+    let limits: RunLimits = requestedLimits(undefined, request, agent.maxTurns);
+    let parent: TaskRecord | undefined;
+    if (spawner !== undefined) {
+      const plan = this.plan(request, limits);
+      if (typeof plan === "string") return failed(plan);
+      ({ limits } = plan);
+      parent = plan.parent;
+    }
+    const nested = parent !== undefined;
+    // 嵌套与工作流任务一律前台
+    const background =
+      !nested &&
+      request.workflow === undefined &&
+      (request.background ?? agent.background ?? this.env.background ?? false);
     const taskId = `t${++this.seq}`;
     const record = newRecord(
       {
@@ -354,35 +375,56 @@ export class SubagentRegistry implements TaskControl {
         background,
         status: "running",
         startedAt: this.now(),
+        ...(nested
+          ? { parentTaskId: request.parentTaskId as string, depth: (parent?.info.depth ?? 1) + 1 }
+          : {}),
+        ...(request.workflow === undefined ? {} : { workflow: request.workflow }),
       },
       agent,
       request.parentToolCallId,
-      this.host.cwd,
+      parent?.cwd ?? this.host.cwd,
       request.isolation ?? agent.isolation,
+      {
+        firstPrompt: request.prompt,
+        ...(spawner === undefined ? {} : { spawner }),
+      },
     );
+    rememberRequest(record, request);
+    if (request.readOnly === true) record.readOnly = true; // 首跑记下，续聊沿用
     if (model.ref !== undefined) record.modelRef = model.ref;
     if (model.tier !== undefined) record.info.tier = model.tier;
     this.tasks.set(taskId, record);
-    return this.launch(record, request, ama, background);
+    return this.launch(record, deriveRequest(request, limits), ama, background, limits, parent);
   }
 
-  private continueTask(request: SubagentRequest, ama: AmaRunnerFactory): Promise<SubagentResult> {
-    const taskId = request.taskId as string;
-    const record = this.tasks.get(taskId);
-    if (record === undefined) return Promise.resolve(failed(`Unknown task ${taskId}.`));
-    if (record.running !== undefined)
-      return Promise.resolve(
-        failed(`Task ${taskId} is still running; use task_ctl wait or stop first.`),
-      );
-    const ref = record.info.sessionRef;
-    const resumable =
-      record.agent.runner === "ama" ? ref?.sessionFile !== undefined : ref !== undefined;
-    if (record.handle === undefined && !resumable)
-      return Promise.resolve(
-        failed(`Task ${taskId} cannot be continued (its session was not saved).`),
-      );
-    const background = request.background ?? record.agent.background ?? this.env.background;
-    return this.launch(record, request, ama, background ?? false);
+  private plan(request: SubagentRequest, wanted: RunLimits): NestPlan | string {
+    const { maxDepth = DEFAULT_MAX_DEPTH } = this.env;
+    return planNested(this.tasks, request.parentTaskId ?? "", wanted, maxDepth);
+  }
+
+  private continueTask(
+    request: SubagentRequest,
+    ama: AmaRunnerFactory,
+    spawner?: NestedSpawner,
+  ): Promise<SubagentResult> {
+    const record = this.tasks.get(request.taskId as string);
+    const blocked = continueBlocked(record, request);
+    if (blocked !== undefined || record === undefined)
+      return Promise.resolve(failed(blocked ?? "unknown task"));
+    let limits = requestedLimits(record, request, record.agent.maxTurns);
+    let parent: TaskRecord | undefined;
+    if (spawner !== undefined) {
+      const plan = this.plan(request, limits);
+      if (typeof plan === "string") return Promise.resolve(failed(plan));
+      ({ limits } = plan);
+      parent = plan.parent;
+      record.spawner = spawner;
+    }
+    const background =
+      parent === undefined &&
+      record.info.workflow === undefined &&
+      (request.background ?? record.agent.background ?? this.env.background ?? false);
+    return this.launch(record, deriveRequest(request, limits), ama, background, limits, parent);
   }
 
   private launch(
@@ -390,15 +432,19 @@ export class SubagentRegistry implements TaskControl {
     request: SubagentRequest,
     ama: AmaRunnerFactory,
     background: boolean,
+    limits: RunLimits,
+    parent?: TaskRecord,
   ): Promise<SubagentResult> {
+    beginRun(record, limits); // [#317] 轮数 / 美元按本次运行算
+    if (record.readOnly === true && request.readOnly !== true)
+      request = { ...request, readOnly: true };
     const controller = new AbortController();
     record.controller = controller;
     record.info.status = "running";
     record.info.background = background;
     delete record.info.endedAt;
-    // [#269] 报告槽按运行划定：续聊开始时清空上一次运行的报告
-    delete record.info.report;
-    // [#267] 上一次运行到点被停止的标记不带进这次续聊（否则这次正常结束会被误报）；还没报告的保留并标 relaunched
+    delete record.info.report; // [#269] 报告槽按运行划定
+    // [#267] 上次到点被停止的标记不带进这次续聊；还没报告的标 relaunched
     if (record.expired?.taken === true) delete record.expired;
     else if (record.expired !== undefined) record.expired.relaunched = true;
     record.text = "";
@@ -410,7 +456,17 @@ export class SubagentRegistry implements TaskControl {
     else parentSignal?.addEventListener("abort", onParentAbort, { once: true });
     this.store.persist(record);
     let timer: NodeJS.Timeout | undefined;
-    const running = this.execute(record, request, ama, controller.signal).finally(() => {
+    const reserved = parent === undefined ? 0 : reserveBudget(parent, limits);
+    if (parent !== undefined) parkParent(parent, this.pool);
+    const exec = this.execute(record, request, ama, controller.signal, parent?.cwd);
+    const settled =
+      parent === undefined
+        ? exec
+        : exec.finally(async () => {
+            settleChild(parent, record, reserved);
+            await unparkParent(parent, this.pool);
+          });
+    const running = settled.finally(() => {
       clearTimeout(timer);
       clearLifetime(record, this.lifetimeEnv());
       parentSignal?.removeEventListener("abort", onParentAbort);
@@ -434,7 +490,7 @@ export class SubagentRegistry implements TaskControl {
     });
     record.foregroundWaiter = waiter;
     const after = this.env.autoBackgroundAfterMs ?? 0;
-    if (after > 0) {
+    if (after > 0 && parent === undefined && record.info.workflow === undefined) {
       timer = setTimeout(() => this.background(record.info.taskId, "timeout"), after);
       timer.unref?.();
     }
@@ -446,6 +502,7 @@ export class SubagentRegistry implements TaskControl {
     request: SubagentRequest,
     ama: AmaRunnerFactory,
     signal: AbortSignal,
+    baseCwd: string = this.host.cwd,
   ): Promise<SubagentResult> {
     record.queued = true;
     try {
@@ -455,9 +512,10 @@ export class SubagentRegistry implements TaskControl {
       return this.finish(record, { ...failed("aborted by user"), status: "aborted" });
     }
     delete record.queued;
+    record.slot = true;
     try {
       const setup = this.env.modelConfig?.subagents?.worktreeSetup;
-      await prepareTaskWorktree(record, this.host.cwd, this.host.manager.id, setup, signal);
+      await prepareTaskWorktree(record, baseCwd, this.host.manager.id, setup, signal);
       const handle = await this.handleFor(record, request, ama, signal);
       const onAbort = (): void => void handle.stop().catch(() => undefined);
       if (signal.aborted) onAbort();
@@ -471,7 +529,10 @@ export class SubagentRegistry implements TaskControl {
       const message = error instanceof Error ? error.message : String(error);
       return this.finish(record, failed(`Sub-agent failed: ${message}`), signal.aborted);
     } finally {
-      this.pool.release();
+      if (record.slot === true) {
+        record.slot = false;
+        this.pool.release();
+      }
     }
   }
 
@@ -483,7 +544,11 @@ export class SubagentRegistry implements TaskControl {
   ): Promise<TaskHandle> {
     return startHandle(record, request, ama, signal, {
       runners: (agent) => this.env.runners?.(agent),
-      mode: this.host.options.permission?.mode ?? "default",
+      // 嵌套记录取发起子会话的模式（只读子会话 = plan），不取根；只读请求一律 plan
+      mode:
+        request.readOnly === true
+          ? "plan"
+          : (record.spawner?.permissionMode ?? this.host.options.permission?.mode ?? "default"),
       touch: (taskId) => this.store.touch(taskId),
       emit: (event) => this.host.emit(event),
       sink: () => this.sink(),
@@ -499,78 +564,24 @@ export class SubagentRegistry implements TaskControl {
     };
   }
 
-  private async finish(
+  private finish(
     record: TaskRecord,
     result: SubagentResult,
     aborted = false,
   ): Promise<SubagentResult> {
-    flushText(record, this.sink());
-    const status: SubagentStatus = aborted
-      ? "aborted"
-      : result.status !== undefined && TERMINAL_STATUSES.includes(result.status as SubagentStatus)
-        ? (result.status as SubagentStatus)
-        : result.isError
-          ? "failed"
-          : "completed";
-    if (record.worktree !== undefined) {
-      try {
-        record.worktreeOutcome = await finishWorktree(record.worktree);
-        if (!record.worktreeOutcome.changed) delete record.worktree;
-      } catch (error) {
-        this.host.log("warn", `worktree cleanup failed: ${String(error)}`);
-      }
-    }
-    const info = record.info;
-    info.status = status;
-    info.endedAt = this.now();
-    if (result.usage.totalTokens > 0 || info.usage === undefined) info.usage = result.usage;
-    record.text = result.text;
-    let outputFile: string | undefined;
-    const full = result.text;
-    const capped = capTaskText(full, this.store.outputFileFor(info.taskId));
-    if (capped.truncated || info.background) {
-      outputFile = writeTaskOutput(
-        this.store.outputDirectory(),
-        this.store.outputName(info.taskId),
-        full,
-      );
-      if (outputFile !== undefined) info.outputFile = outputFile;
-    }
-    // [#269] 结构化报告：runner 给的为准（这次运行折叠后的值）；没有就清掉运行中记下的
-    const report = result.report;
-    if (report === undefined) delete info.report;
-    else info.report = report;
-    const outcome = record.worktreeOutcome;
-    const final: SubagentResult = {
-      ...result,
-      text: decorateTaskText(capped.text, status, report, outcome),
-      taskId: info.taskId,
-      status,
-      isError: status === "failed" || status === "aborted",
-    };
-    if (outputFile !== undefined) final.outputFile = outputFile;
-    if (info.sessionRef !== undefined) final.sessionRef = info.sessionRef;
-    if (report !== undefined) final.report = report;
-    record.last = final;
-    this.store.persist(record);
-    const end: Extract<Parameters<RegistryHost["emit"]>[0], { type: "subagent_end" }> = {
-      type: "subagent_end",
-      taskId: info.taskId,
-      status,
-    };
-    if (info.usage !== undefined) end.usage = info.usage;
-    if (result.cache !== undefined) end.cache = result.cache;
-    if (outputFile !== undefined) end.outputFile = outputFile;
-    if (outcome !== undefined) end.worktree = { branch: outcome.branch, changed: outcome.changed };
-    if (report !== undefined) end.report = report;
-    this.host.emit(end);
-    this.store.retain(info.taskId);
-    return final;
+    return finishRecord(
+      {
+        host: this.host,
+        store: this.store,
+        tasks: this.tasks,
+        now: () => this.now(),
+        sink: this.sink(),
+      },
+      record,
+      result,
+      aborted,
+    );
   }
-
-  // -------------------------------------------------------------------------
-  // 落盘、保留与重建
-  // -------------------------------------------------------------------------
 
   /** 会话关闭：停止运行中的任务、释放保留的子会话。 */
   dispose(): void {

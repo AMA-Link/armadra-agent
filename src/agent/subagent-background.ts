@@ -230,6 +230,8 @@ export function backgroundRecords(
 ): string[] {
   const moved: string[] = [];
   for (const record of records) {
+    // [#317] 嵌套任务与工作流任务一律前台，不转后台
+    if ((record.info.depth ?? 1) >= 2 || record.info.workflow !== undefined) continue;
     const waiter = record.foregroundWaiter;
     const running = record.running;
     if (waiter === undefined || running === undefined || record.info.status !== "running") continue;

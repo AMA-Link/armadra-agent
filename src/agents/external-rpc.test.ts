@@ -34,6 +34,8 @@ function normalize(line: Line, root: string): string {
     if (["timestamp", "durationMs", "startedAt", "endedAt"].includes(key)) return 0;
     // 子 ama 的用量随系统提示与工具表变化，不进黄金
     if (key === "usage") return "<usage>";
+    // 花费由用量推出，外部桩的用量每次不同
+    if (key === "costUsd") return "<cost>";
     if (typeof value !== "string") return value;
     return value.split(root).join("<root>").replace(/\\/g, "/").replace(UUID, "<uuid>");
   });

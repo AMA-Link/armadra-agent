@@ -407,7 +407,7 @@ export function createToolContext(
   const checkpoint = core.checkpointHooks?.();
   if (checkpoint !== undefined) extra.checkpoint = checkpoint;
   if (outputDir !== undefined) extra.outputDir = outputDir;
-  if (core.depth === 0 && core.options.subagents !== false) {
+  if (core.options.subagents !== false && (core.depth === 0 || core.options.nested !== undefined)) {
     extra.spawnSubagent = (request: Parameters<NonNullable<ToolContext["spawnSubagent"]>>[0]) =>
       core.spawnSubagent(request);
   }

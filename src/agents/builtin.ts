@@ -15,6 +15,12 @@ export const SUBAGENT_ROLE_PREAMBLE =
   "your final reply. Complete the task directly; do not delegate further. End with a concise " +
   `report: what you did, key findings, and files changed (if any). ${REPORT_ROLE_HINT}`;
 
+/** [#317] 可再派任务的子会话用的前言：只把「不要再委派」换成「只委派明显受益的部分」。 */
+export const SUBAGENT_ROLE_PREAMBLE_NESTED =
+  "You are a sub-agent: the main agent delegated one task to you. It cannot see your work, only " +
+  "your final reply. Complete the task; delegate only parts that clearly benefit from it. End " +
+  `with a concise report: what you did, key findings, and files changed (if any). ${REPORT_ROLE_HINT}`;
+
 function builtin(
   name: string,
   description: string,
@@ -64,7 +70,12 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = Object.freeze([
 export const DEFAULT_AGENT = "general";
 
 /** 子会话系统提示 `role` 节：通用说明 + 类型正文。 */
-export function agentRole(agent: Pick<AgentDefinition, "prompt">): string {
+export function agentRole(
+  agent: Pick<AgentDefinition, "prompt">,
+  options?: { nested?: boolean },
+): string {
   const own = agent.prompt.trim();
-  return own === "" ? SUBAGENT_ROLE_PREAMBLE : `${SUBAGENT_ROLE_PREAMBLE}\n\n${own}`;
+  const preamble =
+    options?.nested === true ? SUBAGENT_ROLE_PREAMBLE_NESTED : SUBAGENT_ROLE_PREAMBLE;
+  return own === "" ? preamble : `${preamble}\n\n${own}`;
 }

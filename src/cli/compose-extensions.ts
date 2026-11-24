@@ -27,6 +27,7 @@ import { createLimitsExtension } from "../agent/limits.js";
 import { createRemindersExtension, remindersSettings } from "../agent/reminders.js";
 import { planExtensionFor } from "../plan/compose.js";
 import { createSubagentsFactory } from "./compose-agents.js";
+import { createWorkflowsFactory } from "./compose-workflows.js";
 import { requestTimeoutsFactory } from "./compose-request.js";
 import type { SessionAssembly } from "./deps.js";
 import { createExternalStatsExtension } from "../drivers/store.js";
@@ -44,7 +45,8 @@ export function composeExtensions(deps: ComposeExtensionDeps): SessionExtensionF
     // [W5-F]  createPlanExtension(...)
     planExtensionFor(deps),
     // [W5-H2] createRemindersExtension(...), createLimitsExtension(...)
-    ({ core }) => (core.depth > 0 ? undefined : createLimitsExtension(core, core.options.limits)),
+    // [#317] 所有深度都装：子会话的美元预算与后代花费记账（子会话没有上限时扩展只记账）
+    ({ core }) => createLimitsExtension(core, core.options.limits),
     ({ core }) => createRemindersExtension(core, remindersSettings(deps.assembly.config)),
     // [W5-I]  createImageBudgetExtension(...)
     ({ core }) => createImageBudgetExtension(core),
@@ -55,6 +57,7 @@ export function composeExtensions(deps: ComposeExtensionDeps): SessionExtensionF
     ({ core }) =>
       core.depth > 0 ? undefined : createExternalStatsExtension(() => core.manager.branch()),
     createSubagentsFactory(deps), // [W5-G] 子 Agent 任务注册表
+    createWorkflowsFactory(deps), // [#318] 工作流（M12 实现）
     requestTimeoutsFactory(deps), // [ME-C] request.streamIdleTimeoutMs → 每次请求的流中空闲上限
   ];
 }

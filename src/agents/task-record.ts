@@ -293,6 +293,8 @@ export interface TaskRecord {
   spawner?: NestedSpawner;
   /** [#318] 首次 prompt（截到 {@link FIRST_PROMPT_MAX_CHARS}）。 */
   firstPrompt?: string;
+  /** [#318] 首跑要求只读（工作流 plan 角色）；续聊沿用，随快照持久化。 */
+  readOnly?: boolean;
 }
 
 export function newRecord(
@@ -529,6 +531,7 @@ export function recordData(record: TaskRecord): Record<string, unknown> {
     parentToolCallId: record.parentToolCallId,
     cwd: record.cwd,
     ...(record.firstPrompt === undefined ? {} : { firstPrompt: record.firstPrompt }),
+    ...(record.readOnly === true ? { readOnly: true } : {}),
   };
 }
 
@@ -544,10 +547,10 @@ export function rebuildRecords(
     if (entry.type !== "custom" || entry.customType !== TASK_CUSTOM_TYPE) continue;
     // 子会话自己的首条 ama.task 没有 status，跳过
     const data = entry.data as Partial<
-      TaskInfo & { parentToolCallId: string; cwd: string; firstPrompt: string }
+      TaskInfo & { parentToolCallId: string; cwd: string; firstPrompt: string; readOnly: boolean }
     >;
     if (typeof data.taskId !== "string" || data.status === undefined) continue;
-    const { parentToolCallId = "", cwd: runCwd = cwd, firstPrompt, ...rest } = data;
+    const { parentToolCallId = "", cwd: runCwd = cwd, firstPrompt, readOnly, ...rest } = data;
     const info = { ...rest } as TaskInfo;
     info.depth ??= 1;
     if (info.status === "running") info.status = "interrupted";
@@ -555,12 +558,11 @@ export function rebuildRecords(
       ...(catalog.get(DEFAULT_AGENT) as AgentDefinition),
       name: info.agent,
     };
-    records.set(
-      info.taskId,
-      newRecord(info, agent, parentToolCallId, runCwd, "none", {
-        ...(typeof firstPrompt === "string" ? { firstPrompt } : {}),
-      }),
-    );
+    const record = newRecord(info, agent, parentToolCallId, runCwd, "none", {
+      ...(typeof firstPrompt === "string" ? { firstPrompt } : {}),
+    });
+    if (readOnly === true) record.readOnly = true;
+    records.set(info.taskId, record);
     const n = /^t(\d+)$/.exec(info.taskId);
     if (n !== null) seq = Math.max(seq, Number(n[1]));
   }
