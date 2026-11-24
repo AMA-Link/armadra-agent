@@ -64,6 +64,7 @@
   },
   "files": [
     "dist",
+    "!dist/.tsbuildinfo",
     "schema/*.json",
     "docs/README.md",
     "docs/guides/*.md",
