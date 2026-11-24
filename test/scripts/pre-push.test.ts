@@ -67,6 +67,16 @@ describe("pre-push：挑检查", () => {
     expect(isDocsOnly(["THIRD_PARTY_NOTICES.md"])).toBe(false);
     const plan = planChecks(["docs/guides/a.md"], { base: SHA });
     expect(plan.statics.map((step) => step.id)).toEqual(["format", "check:docs"]);
+    expect(plan.statics[0]?.args).toEqual([
+      "exec",
+      "prettier",
+      "--check",
+      "--ignore-unknown",
+      "--cache",
+      "--cache-location",
+      "node_modules/.cache/prettier/.prettier-cache",
+      "docs/guides/a.md",
+    ]);
     expect(plan.after).toEqual([]);
   });
 

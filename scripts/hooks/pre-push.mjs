@@ -71,6 +71,12 @@ const MODELS_DEV =
   /^(scripts\/update-models-dev\.mjs$|test\/fixtures\/models-dev\/|src\/ai\/providers\/|\.github\/workflows\/models-dev\.yml$)/;
 const WORKFLOWS = [".github/workflows/models-dev.yml", ".github/workflows/ci.yml"];
 
+const PRETTIER_CACHE = [
+  "--cache",
+  "--cache-location",
+  "node_modules/.cache/prettier/.prettier-cache",
+];
+
 /**
  * 按改动的文件排出要跑的步骤。返回 `{ docsOnly, statics, build, after, actionlint, modelsDev }`；
  * 步骤是 `{ id, command, args, env? }`。
@@ -85,7 +91,14 @@ export function planChecks(files, { base, exists = () => true } = {}) {
         ? {
             id: "format",
             command: "pnpm",
-            args: ["exec", "prettier", "--check", "--ignore-unknown", ...present],
+            args: [
+              "exec",
+              "prettier",
+              "--check",
+              "--ignore-unknown",
+              ...PRETTIER_CACHE,
+              ...present,
+            ],
           }
         : null;
   const docs = { id: "check:docs", command: "pnpm", args: ["check:docs"] };

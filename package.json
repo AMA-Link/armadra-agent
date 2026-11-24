@@ -82,15 +82,15 @@
     "provenance": true
   },
   "scripts": {
-    "build": "pnpm build:lib && pnpm build:bundle",
+    "build": "pnpm run \"/^build:/\"",
     "build:lib": "tsc -p tsconfig.build.json",
     "build:bundle": "node scripts/build-bundle.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "AMA_E2E=1 vitest run test/e2e",
-    "fmt": "prettier --write .",
-    "fmt:check": "prettier --check .",
+    "fmt": "prettier --write --cache --cache-location node_modules/.cache/prettier/.prettier-cache .",
+    "fmt:check": "prettier --check --cache --cache-location node_modules/.cache/prettier/.prettier-cache .",
     "check:deps": "node scripts/check-no-deps.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:docs": "node scripts/check-doc-links.mjs",
