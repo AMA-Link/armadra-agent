@@ -67,6 +67,38 @@ describe.skipIf(!hasGit)("worktree 隔离（需要 git）", () => {
     expect(await runGit(["branch", "--list", "ama/task-t1"], root)).toBe("");
   });
 
+  it("[#313] 三类未提交改动进入 worktree，父的索引与工作区不变，继承的改动不算任务产出", async () => {
+    const root = repo();
+    writeFileSync(join(root, "pkg", "staged.txt"), "staged\n");
+    await runGit(["add", "pkg/staged.txt"], root);
+    writeFileSync(join(root, "pkg", "a.txt"), "dirty\n");
+    writeFileSync(join(root, "pkg", "new.txt"), "new\n");
+    writeFileSync(join(root, ".gitignore"), "ignored.txt\n");
+    writeFileSync(join(root, "ignored.txt"), "secret\n");
+    const before = await runGit(["status", "--porcelain"], root);
+    const head = (await runGit(["rev-parse", "HEAD"], root)).trim();
+    const tree = await createWorktree(root, "t1");
+    expect(tree.base).not.toBe(head);
+    expect(readFileSync(join(tree.path, "pkg", "a.txt"), "utf8")).toBe("dirty\n");
+    expect(readFileSync(join(tree.path, "pkg", "staged.txt"), "utf8")).toBe("staged\n");
+    expect(readFileSync(join(tree.path, "pkg", "new.txt"), "utf8")).toBe("new\n");
+    expect(existsSync(join(tree.path, "ignored.txt"))).toBe(false);
+    expect(await runGit(["status", "--porcelain"], root)).toBe(before);
+    expect((await runGit(["rev-parse", "HEAD"], root)).trim()).toBe(head);
+    expect(await finishWorktree(tree)).toEqual({ branch: "ama/task-t1", changed: false });
+    expect(await runGit(["for-each-ref", "refs/ama"], root)).toBe("");
+  });
+
+  it("[#313] 重开保留的 worktree 沿用创建时的起点", async () => {
+    const root = repo();
+    writeFileSync(join(root, "pkg", "a.txt"), "dirty\n");
+    const first = await createWorktree(root, "t1");
+    writeFileSync(join(first.path, "pkg", "a.txt"), "child\n");
+    expect((await finishWorktree(first)).changed).toBe(true);
+    const again = await createWorktree(root, "t1");
+    expect(again.base).toBe(first.base);
+  });
+
   it("并行建 / 删多个 worktree：同一仓库的 worktree 增删与删分支串行，全部成功", async () => {
     const root = repo();
     let inFlight = 0;

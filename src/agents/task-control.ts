@@ -5,6 +5,7 @@
  * tools/task-ctl.ts 不 import agent/ 的实现（agent/tool-runner → tools/registry → task-ctl 会成环）。
  */
 
+import type { LandResult } from "../agent/worktree-land.js";
 import type { ExtendOutcome } from "../tools/background-jobs.js";
 import type { SubagentResult, TaskRegistryView } from "../tools/types.js";
 
@@ -39,6 +40,8 @@ export interface TaskControl extends TaskRegistryView {
   extend(taskId: string, ms?: number): ExtendOutcome;
   /** [#267] 取走到达寿命上限、已停止且尚未通知的任务（提醒通道用）。 */
   takeExpired(): ExpiredTask[];
+  /** [#313] 把 worktree 任务的提交落到父当前分支（`task_land`）。 */
+  land?(taskId: string): Promise<LandResult>;
 }
 
 const controls = new Map<string, TaskControl>();

@@ -245,12 +245,23 @@ describe("描述与缓存稳定", () => {
     );
   });
 
+  it("[#313] task_land 不进 codemode 的描述", () => {
+    const tool = createCodemodeTool({
+      listTools: () => builtinTools().map((t) => ({ tool: t, textResult: true })),
+      capability: strict,
+    });
+    expect(tool.description).toContain("task_ctl");
+    expect(tool.description).not.toContain("task_land");
+  });
+
   it("on 写法：直接工具与仅脚本工具都只列名字，不内联声明；bash 可调时带 BashResult", () => {
-    const list = builtinTools().map((tool) => ({
-      tool,
-      textResult: true,
-      direct: ["bash", "edit", "glob", "grep", "read", "web_fetch", "write"].includes(tool.name),
-    }));
+    const list = builtinTools()
+      .filter((tool) => tool.name !== "task_land") // [#313] createCodemodeTool 在清单里去掉
+      .map((tool) => ({
+        tool,
+        textResult: true,
+        direct: ["bash", "edit", "glob", "grep", "read", "web_fetch", "write"].includes(tool.name),
+      }));
     const text = buildCodemodeDescription(list, 3000, strict, "on");
     expect(text).toContain(
       "Your direct tools are callable here too, same arguments: bash, edit, glob, grep, read, web_fetch, write (tools.bash resolves to BashResult; the others to text).",

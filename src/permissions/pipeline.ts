@@ -137,6 +137,10 @@ export function planDecision(
 export const UNATTENDED_MESSAGE =
   "This tool call requires approval, but no one is available to approve it (unattended mode).";
 
+/** [#313] auto 模式的分类器请求失败、又没有人审批时的拒绝原因（固定英文，不带上游错误原文）。 */
+export const CLASSIFIER_UNAVAILABLE_MESSAGE =
+  "This tool call requires approval: the auto-mode classifier is unavailable and no one is available to approve it (unattended mode).";
+
 export const ALLOWLIST_MESSAGE =
   'Not in the allowlist: permission mode "allowlist" only runs read-only tools and calls matched by an allow rule, and never asks.';
 

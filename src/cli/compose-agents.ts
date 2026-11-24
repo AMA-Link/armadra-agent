@@ -30,6 +30,7 @@ import {
 import { hostRunnersOf } from "../host/api-impl.js";
 import { isCoordinatorPreset } from "../tools/presets.js";
 import { COORDINATOR_WAIT_MAX_MS, bindTaskCtlWaitCap } from "../tools/task-ctl.js";
+import { refuseTaskLand } from "../tools/task-land.js";
 import { bindTaskAgents, bindTaskBackground } from "../tools/task.js";
 import { resolveTaskBackground } from "../agent/subagent-background.js";
 import type { ComposeExtensionDeps } from "./compose-extensions.js";
@@ -149,7 +150,9 @@ export function createSubagentsFactory(deps: ComposeExtensionDeps): SessionExten
   const env = subagentEnvironment(deps, catalog);
   bindTaskBackground(task, env.background === true);
   // [#242] 协调者预设：task_ctl wait 超时封顶（task 与 task_ctl 同进退）
-  if (isCoordinatorPreset(deps.assembly.config))
+  if (isCoordinatorPreset(deps.assembly.config)) {
     bindTaskCtlWaitCap(deps.assembly.tools.get("task_ctl"), COORDINATOR_WAIT_MAX_MS);
+    refuseTaskLand(deps.assembly.tools.get("task_land")); // [#313] 协调者不写文件
+  }
   return ({ core }) => (core.depth > 0 ? undefined : createSubagentExtension(core, env, wiring));
 }

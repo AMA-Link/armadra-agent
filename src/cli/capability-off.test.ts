@@ -93,7 +93,7 @@ const ROWS: Row[] = [
     words: ["task_ctl", "<task-notification>"],
     on: {},
     off: { config: { tools: { default: [], disabled: ["task"] } } },
-    tools: ["task", "task_ctl"],
+    tools: ["task", "task_ctl", "task_land"],
     text: [TASK_NOTIFICATION_RULE, "task:"],
     commands: ["tasks"],
     script: true,
@@ -249,8 +249,10 @@ describe("能力关闭契约", () => {
       const on = await observe(row, "on");
       for (const tool of row.tools) {
         expect(on.tools, `on/tools ${tool}`).toContain(tool);
-        if (row.script) expect(on.allTools, `on/ALL_TOOLS ${tool}`).toContain(tool);
-        if (row.child && tool !== "task_ctl")
+        // [#313] task_land 只作直接工具，不进脚本清单
+        if (row.script && tool !== "task_land")
+          expect(on.allTools, `on/ALL_TOOLS ${tool}`).toContain(tool);
+        if (row.child && tool !== "task_ctl" && tool !== "task_land")
           expect(on.childTools, `on/child ${tool}`).toContain(tool);
       }
       for (const text of row.text ?? []) expect(on.system, `on/system ${text}`).toContain(text);

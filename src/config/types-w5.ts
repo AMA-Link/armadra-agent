@@ -105,6 +105,11 @@ export interface SubagentsConfig {
    * fork 回落为 fresh；0.05–0.95，缺省 0.5。只认用户级。
    */
   forkMaxContextRatio?: number;
+  /**
+   * [#313] 新建 worktree 后在其根目录运行的命令（如安装或链接依赖）；失败则任务失败。只认用户级：
+   * 项目配置不能借此执行命令。
+   */
+  worktreeSetup?: string;
 }
 
 /** `models.enabled` 的一项：`provider/model[@channel]` 或 `provider/*`。 */

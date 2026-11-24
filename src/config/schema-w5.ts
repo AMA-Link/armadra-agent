@@ -117,6 +117,7 @@ export function validateConfigW5(c: Checker, config: Obj): void {
       "backgroundMaxMs",
       "retainSessions",
       "forkMaxContextRatio",
+      "worktreeSetup",
     ],
     (s, p) => {
       c.number(s, "maxConcurrent", p, 1, 64);
@@ -127,6 +128,7 @@ export function validateConfigW5(c: Checker, config: Obj): void {
       c.number(s, "backgroundMaxMs", p, 0, MAX_TIMER_MS);
       c.number(s, "retainSessions", p, 0);
       c.number(s, "forkMaxContextRatio", p, 0.05, 0.95);
+      c.string(s, "worktreeSetup", p);
     },
   );
   checkSection(c, config, "models", ["aliases", "enabled"], (s, p) => {

@@ -1,6 +1,6 @@
 # Agent：子 Agent 与外部 Agent
 
-模型只认识两个工具：`task`（委派）与 `task_ctl`（管理后台任务）。`task(agent=…)` 的 `agent` 既可以是 ama 自己的子 Agent
+模型只认识三个工具：`task`（委派）、`task_ctl`（管理后台任务）与 `task_land`（把 worktree 任务落到当前分支）。`task(agent=…)` 的 `agent` 既可以是 ama 自己的子 Agent
 类型，也可以是外部 CLI Agent（外部部分见下文「外部 Agent」节）。设计依据：[wave5-plan.md](../history/wave5-plan.md) §7、D13、D22–D24。
 
 ## 子 Agent
@@ -200,11 +200,21 @@ Relay this question to the user verbatim; do not answer it yourself.
 ### worktree 隔离
 
 `isolation: "worktree"` 时，ama 在父 cwd 所在仓库里执行
-`git worktree add -b ama/task-<名字> <仓库>/.ama/worktrees/<名字>`（名字 = 会话 id 前 8 位 + `taskId`），子会话的 cwd 是
-worktree 里与父 cwd 对应的目录。结束时没有改动（工作区干净且没有新提交）就删掉 worktree 与分支；有改动则保留，结果末尾给出
-分支名、路径与 `git diff --stat`（含未跟踪文件），由你决定是否合并。`.ama/worktrees/` 下自动写一个 `.gitignore`（`*`），
-父仓库的 `git status` 与 grep / glob 都看不到这些目录。不在 git 仓库里时直接报错，不会退回共享目录。
-多个隔离任务同时开始或结束时，同一仓库的 worktree 增删与删分支按顺序执行（它们都会改 `.git/worktrees`）；另一个 ama 进程同时操作时遇到的瞬时错误会短暂重试。worktree 里的编辑不记进父会话的检查点。注意：worktree 不共享依赖（`node_modules` 等），不保证能直接构建或运行测试。
+`git worktree add -b ama/task-<名字> <仓库>/.ama/worktrees/<名字> <起点>`（名字 = 会话 id 前 8 位 + `taskId`），子会话的 cwd 是
+worktree 里与父 cwd 对应的目录。`.ama/worktrees/` 下自动写一个 `.gitignore`（`*`），父仓库的 `git status` 与 grep / glob 都看不到这些目录。
+不在 git 仓库里时直接报错，不会退回共享目录。多个隔离任务同时开始或结束时，同一仓库的 worktree 增删与删分支按顺序执行；另一个 ama 进程同时操作时遇到的瞬时错误会短暂重试。worktree 里的编辑不记进父会话的检查点。
+
+**起点包含未提交改动。** 父工作区有已暂存、未暂存或未跟踪的改动（不含已忽略文件）时，ama 经临时索引把它们写成一个合成提交，任务分支从这里开始，父的索引与工作区不变。有无改动、diff 摘要和落地都以这个起点为基准，继承来的改动不算任务产出。快照失败时回落到 `HEAD`，结果里会写明。注意：合成提交在任务分支上，含未跟踪文件，不要直接推送 `ama/task-*` 分支。
+
+**结束。** 没有改动（工作区干净且没有新提交）就删掉 worktree 与分支；有改动则保留，结果末尾给出分支名、路径与 `git diff --stat`（含未跟踪文件）。
+
+**落地：`task_land { taskId }`。** 把任务遗留改动提交到任务分支，再把任务自己的提交 cherry-pick 到父仓库当前分支，成功后删除 worktree 与分支；合成提交不会被落地。它是 `execute` 权限的独立工具，走完整权限管线；子会话、`coordinator` 预设和 codemode 脚本里都不可用。
+
+- 冲突、会覆盖父的未提交改动、任务分支含 merge 提交时不落地：父的 HEAD、索引和工作区恢复原样，worktree 保留，结果列出冲突文件。
+- 父仓库正在 merge、rebase、cherry-pick 等操作时直接拒绝，不会中止你自己的操作。
+- 会话 resume 后不再持有 worktree 记录，`task_land` 会拒绝，请用 git 处理保留的分支。
+
+**初始化：`subagents.worktreeSetup`。** worktree 不共享依赖（`node_modules` 等）。这个配置给一条命令，在每个新建 worktree 的根目录运行一次，环境变量 `AMA_WORKTREE_PARENT` 指向父仓库，例如 `ln -s "$AMA_WORKTREE_PARENT/node_modules" node_modules`。命令失败、超时（10 分钟）或被中止时删除该 worktree 并让任务失败。只认用户级配置，项目级配置不能借此执行命令。
 
 ### fork 模式
 
@@ -263,6 +273,7 @@ RPC `get_tasks` / `get_agents` 返回任务快照与可用类型（来源、定�
 | `subagents.retainSessions`        | 保留在内存里的已结束子会话数（LRU），缺省 4，0 = 结束即释放；只认用户级                              |
 | `subagents.defaultModel`          | 子 Agent 缺省模型，不设继承父会话                                                                    |
 | `subagents.forkMaxContextRatio`   | fork 回落比例（见「fork 模式」），0.05–0.95，缺省 0.5；只认用户级                                    |
+| `subagents.worktreeSetup`         | 新建任务 worktree 后运行一次的命令（见「worktree 隔离」）；只认用户级                                |
 | `subagents.background`            | `auto`（缺省）\| `always` \| `never`，见「前台与后台」；用户 / 项目 / 宿主级都认                     |
 | `subagents.autoBackgroundAfterMs` | 前台任务运行超过该毫秒数自动转后台，缺省 0（关闭）；用户 / 项目级都认                                |
 | `subagents.backgroundMaxMs`       | 后台任务的寿命上限（毫秒），缺省 3 600 000（1 小时），0 不限；只认用户级（见「长命令与后台寿命」）   |

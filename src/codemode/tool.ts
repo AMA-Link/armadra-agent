@@ -23,6 +23,7 @@ import { join } from "node:path";
 import type { AmaConfig } from "../config/types.js";
 import type { BashStructured } from "../tools/bash.js";
 import { codemodeCallableFilter, resolveCodemodeMode } from "../tools/presets.js";
+import { TASK_LAND_TOOL } from "../tools/task-land.js";
 import type { ToolContext, ToolDefinition, ToolResult } from "../tools/types.js";
 import {
   codemodeAvailability,
@@ -304,13 +305,16 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
   const inlineBudget = options.inlineBudget ?? DEFAULT_INLINE_BUDGET;
   const maxResultChars = options.maxResultChars ?? DEFAULT_MAX_TOOL_RESULT_CHARS;
   let frozenDescription: string | undefined;
+  // [#313] 落地会改父仓库：只作为直接工具经权限管线调用，脚本里不可调用，也不占描述长度
+  const listCallable = (): CallableTool[] =>
+    options.listTools().filter(({ tool: t }) => t.name !== TASK_LAND_TOOL);
 
   const tool: ToolDefinition<CodemodeInput> = {
     name: CODEMODE_TOOL_NAME,
     label: "Codemode",
     get description(): string {
       frozenDescription ??= buildCodemodeDescription(
-        options.listTools(),
+        listCallable(),
         inlineBudget,
         capability,
         options.layout,
@@ -340,7 +344,7 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
       } catch (error) {
         return { content: (error as Error).message, isError: true };
       }
-      const tools: ToolDecl[] = options.listTools().map(({ tool: t, textResult }) => ({
+      const tools: ToolDecl[] = listCallable().map(({ tool: t, textResult }) => ({
         name: t.name,
         declaration: toolDeclaration(t, textResult ? {} : { textResult: false }),
       }));
@@ -363,9 +367,7 @@ export function createCodemodeTool(options: CodemodeToolOptions): ToolDefinition
         maxWorkers: resolveMaxWorkers(options.maxWorkers),
         searchTools: (query, searchOptions) =>
           searchTools(
-            options
-              .listTools()
-              .map(({ tool: t }) => ({ name: t.name, description: t.description })),
+            listCallable().map(({ tool: t }) => ({ name: t.name, description: t.description })),
             query,
             searchOptions,
           ),

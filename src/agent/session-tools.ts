@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import type { ToolCallBlock } from "../ai/types.js";
 import { DEFAULT_APPROVAL_TIMEOUT_MS } from "../permissions/broker.js";
 import { previewAction } from "../permissions/preview.js";
-import { PermissionPipeline } from "../permissions/pipeline.js";
+import { CLASSIFIER_UNAVAILABLE_MESSAGE, PermissionPipeline } from "../permissions/pipeline.js";
 import type {
   ActionPreview,
   ApprovalDecision,
@@ -241,6 +241,8 @@ export async function gateToolCall(
       autoDecision = { layer: "classifier", decision: judged.decision, reason: judged.reason };
       if (judged.cached) autoDecision.cached = true;
       if (judged.decision === "allow") decision = "allow";
+      else if (judged.failed === true && decision === "deny")
+        denyMessage = CLASSIFIER_UNAVAILABLE_MESSAGE; // [#313] 说明真实原因
     }
     if (autoDecision !== undefined) permission.recordAutoDecision?.(call.name, input, autoDecision);
   } else if (decision === "ask" && core.options.unattended === true) {
