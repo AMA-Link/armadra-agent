@@ -62,6 +62,9 @@ export async function startHandle(
         })
       : ctx.runners(record.agent);
   if (runner === undefined) throw new Error(`runner ${record.agent.runner} is not available`);
+  const { parentTaskId, workflow } = record.info;
+  // 请求的档（不是解析结果）：请求显式给的，否则 Agent 定义里的
+  const tier: TierName | undefined = request.tier ?? record.agent.tier;
   const handle: TaskHandle = await runner.start({
     prompt: request.prompt,
     cwd: record.cwd,
@@ -69,10 +72,11 @@ export async function startHandle(
     ...(record.modelRef === undefined ? {} : { model: record.modelRef }),
     ...(ref !== undefined && record.agent.runner !== "ama" ? { resume: ref.sessionId } : {}),
     ...(request.budgetUsd === undefined ? {} : { budgetUsd: request.budgetUsd }),
-    ...(request.tier === undefined && record.agent.tier === undefined
-      ? {}
-      : { tier: (request.tier ?? record.agent.tier) as TierName }),
     taskId: record.info.taskId,
+    ...(parentTaskId === undefined ? {} : { parentTaskId }),
+    depth: record.info.depth ?? 1,
+    ...(tier === undefined ? {} : { tier }),
+    ...(workflow === undefined ? {} : { workflow }),
     signal,
     onEvent: (event) => applyRunnerEvent(record, event, ctx.sink()),
   });
