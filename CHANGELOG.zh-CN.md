@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 新增
+
+- **ACP 客户端开会话 `_meta`**：`AcpClient.features.sessionMeta`（`true`）与 `AcpSessionOptions.meta`；`newSession` / `resumeSession` / `loadSession` 把 `meta` 原样放进请求参数的 `_meta`（各家命名空间，客户端不解释、不校验）。没有 `meta`（缺席、`undefined`、`{}`）时不发 `_meta` 键，线路不变；`prompt` 等其他请求不带。
+
 ## 0.22.0（2026-11-24）
 
 ### 新增

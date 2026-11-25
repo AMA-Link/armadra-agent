@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Added
+
+- **ACP client session `_meta`**: `AcpClient.features.sessionMeta` (`true`) and `AcpSessionOptions.meta`; `newSession` / `resumeSession` / `loadSession` forward `meta` verbatim as `_meta` in the request params (vendor namespaces are neither interpreted nor validated). With no `meta` (absent, `undefined` or `{}`) no `_meta` key is sent and the wire is unchanged; `prompt` and other requests never carry it.
+
 ## 0.22.0 (2026-11-24)
 
 ### Added

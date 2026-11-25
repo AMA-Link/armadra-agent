@@ -33,6 +33,7 @@ describe("AcpClient 开会话的 mcpServers", () => {
   it("声明特性，供宿主检测", () => {
     expect(AcpClient.features).toEqual({
       mcpServers: true,
+      sessionMeta: true,
       elicitation: true,
       configOptions: true,
       terminal: true,
@@ -73,6 +74,83 @@ describe("AcpClient 开会话的 mcpServers", () => {
       client.newSession("/w", controller.signal, { mcpServers: servers }),
     ).rejects.toThrow();
     expect(servers).toEqual([SERVER]);
+    await peer.transport.terminate();
+  });
+});
+
+describe("AcpClient 开会话的 _meta", () => {
+  const META = { antigravity: { systemPrompt: { append: "rules" } }, grok: { yoloMode: true } };
+
+  it("声明 features.sessionMeta", () => {
+    expect(AcpClient.features.sessionMeta).toBe(true);
+  });
+
+  it("带 meta：new / resume / load 都把它原样放进 _meta", async () => {
+    const { client, peer } = await connect();
+    const options = { meta: META };
+    const { sessionId } = await client.newSession("/w", undefined, options);
+    await client.resumeSession(sessionId, "/w", undefined, options);
+    await client.loadSession(sessionId, "/w", undefined, options);
+    for (const method of ["session/new", "session/resume", "session/load"]) {
+      const [params] = sent(peer, method) as Array<Record<string, unknown>>;
+      expect(params?.["_meta"]).toEqual(META);
+      expect(params?.["mcpServers"]).toEqual([]);
+    }
+    assertAcpWire(peer.wire);
+    await peer.transport.terminate();
+  });
+
+  it("与 mcpServers 同时给时两样都发", async () => {
+    const { client, peer } = await connect();
+    await client.newSession("/w", undefined, { mcpServers: [SERVER], meta: META });
+    expect(sent(peer, "session/new")).toEqual([{ cwd: "/w", mcpServers: [SERVER], _meta: META }]);
+    assertAcpWire(peer.wire);
+    await peer.transport.terminate();
+  });
+
+  it.each([
+    ["缺席", undefined],
+    ["meta 为 undefined", { meta: undefined }],
+    ["meta 为空对象", { meta: {} }],
+  ])("%s：不发 _meta 键，线路与旧版相同", async (_name, options) => {
+    const { client, peer } = await connect();
+    const { sessionId } = await client.newSession("/w", undefined, options);
+    await client.resumeSession(sessionId, "/w", undefined, options);
+    await client.loadSession(sessionId, "/w", undefined, options);
+    expect(sent(peer, "session/new")).toEqual([{ cwd: "/w", mcpServers: [] }]);
+    expect(sent(peer, "session/resume")).toEqual([{ sessionId, cwd: "/w", mcpServers: [] }]);
+    expect(sent(peer, "session/load")).toEqual([{ sessionId, cwd: "/w", mcpServers: [] }]);
+    for (const method of ["session/new", "session/resume", "session/load"]) {
+      expect(Object.keys(sent(peer, method)[0] as object)).not.toContain("_meta");
+    }
+    await peer.transport.terminate();
+  });
+
+  it("Agent 对带 _meta 的 session/new 回 -32602：RpcError 原样抛出", async () => {
+    const toAgent = new PassThrough();
+    const fromAgent = new PassThrough();
+    const agent = new JsonRpcPeer({
+      input: toAgent,
+      output: fromAgent,
+      onRequest: async (method) => {
+        if (method === "initialize") return { protocolVersion: 1, agentCapabilities: {} };
+        throw new RpcError(-32602, "bad _meta");
+      },
+    });
+    const client = new AcpClient({ input: fromAgent, output: toAgent });
+    await client.initialize();
+    const error = await client.newSession("/w", undefined, { meta: META }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RpcError);
+    expect(error).toMatchObject({ code: -32602, message: "bad _meta" });
+    client.close();
+    agent.close();
+  });
+
+  it("meta 不进 prompt", async () => {
+    const { client, peer } = await connect();
+    const { sessionId } = await client.newSession("/w", undefined, { meta: META });
+    await client.prompt(sessionId, [{ type: "text", text: "hi" }]);
+    expect(JSON.stringify(sent(peer, "session/prompt"))).not.toContain("_meta");
     await peer.transport.terminate();
   });
 });
