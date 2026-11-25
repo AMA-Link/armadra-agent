@@ -1,5 +1,5 @@
 import { PassThrough } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { JsonRpcPeer, RpcError } from "../jsonrpc.js";
 import { assertAcpWire } from "../../../test/helpers/acp-schema.js";
 import { memoryTransport } from "../test-support.js";
@@ -39,6 +39,7 @@ describe("AcpClient 开会话的 mcpServers", () => {
       terminal: true,
       auth: true,
       elicitationComplete: true,
+      extRequest: true,
     });
   });
 
@@ -437,5 +438,130 @@ describe("AcpClient 的 terminal/*", () => {
     await expect(agent.request("terminal/create", {})).rejects.toMatchObject({ code: -32602 });
     await expect(agent.request("fs/read_text_file", {})).rejects.toMatchObject({ code: -32601 });
     close();
+  });
+});
+
+describe("AcpClient 的扩展请求 _*", () => {
+  type OnExt = NonNullable<ConstructorParameters<typeof AcpClient>[0]["onExtRequest"]>;
+  const PARAMS = { sessionId: "s1", toolCallId: "call-1", planContent: "# 计划" };
+
+  /** 客户端与一个最小的对端 Agent（只答 initialize）；对端也开 `$/cancel_request`。 */
+  async function connectExt(onExtRequest?: OnExt) {
+    const toAgent = new PassThrough();
+    const fromAgent = new PassThrough();
+    const agent = new JsonRpcPeer({
+      input: toAgent,
+      output: fromAgent,
+      cancelRequests: true,
+      onRequest: async (method) => {
+        if (method !== "initialize") throw new RpcError(-32601, method);
+        return { protocolVersion: 1, agentCapabilities: {} };
+      },
+    });
+    const client = new AcpClient({
+      input: fromAgent,
+      output: toAgent,
+      ...(onExtRequest !== undefined ? { onExtRequest } : {}),
+    });
+    await client.initialize();
+    return {
+      agent,
+      close: () => {
+        client.close();
+        agent.close();
+      },
+    };
+  }
+
+  it("features.extRequest 为 true", () => {
+    expect(AcpClient.features.extRequest).toBe(true);
+  });
+
+  it("方法名与参数原样交给回调，返回值原样作为 result", async () => {
+    const seen: Array<[string, unknown]> = [];
+    const { agent, close } = await connectExt(async (method, params) => {
+      seen.push([method, params]);
+      return { outcome: "approved", extra: [1, 2] };
+    });
+    await expect(agent.request("_x.ai/exit_plan_mode", PARAMS)).resolves.toEqual({
+      outcome: "approved",
+      extra: [1, 2],
+    });
+    expect(seen).toEqual([["_x.ai/exit_plan_mode", PARAMS]]);
+    close();
+  });
+
+  it("回调抛 RpcError 回对应错误，抛其他异常回错误响应", async () => {
+    let n = 0;
+    const { agent, close } = await connectExt(async () => {
+      if (n++ === 0) throw new RpcError(-32602, "bad plan");
+      throw new Error("boom");
+    });
+    await expect(agent.request("_x.ai/exit_plan_mode", PARAMS)).rejects.toMatchObject({
+      code: -32602,
+      message: "bad plan",
+    });
+    await expect(agent.request("_x.ai/ask_user_question", PARAMS)).rejects.toBeInstanceOf(RpcError);
+    close();
+  });
+
+  it("没给回调：扩展请求回 -32601", async () => {
+    const { agent, close } = await connectExt();
+    await expect(agent.request("_x.ai/exit_plan_mode", PARAMS)).rejects.toMatchObject({
+      code: -32601,
+    });
+    close();
+  });
+
+  it("给了回调：非 _ 前缀的未知方法仍回 -32601，且不进回调", async () => {
+    const seen: string[] = [];
+    const { agent, close } = await connectExt(async (method) => {
+      seen.push(method);
+      return {};
+    });
+    await expect(agent.request("fs/read_text_file", {})).rejects.toMatchObject({ code: -32601 });
+    await expect(agent.request("x.ai/exit_plan_mode", {})).rejects.toMatchObject({ code: -32601 });
+    expect(seen).toEqual([]);
+    close();
+  });
+
+  it("对端撤回请求时 signal 触发", async () => {
+    let signal: AbortSignal | undefined;
+    let started!: () => void;
+    const running = new Promise<void>((r) => (started = r));
+    const { agent, close } = await connectExt(
+      (_method, _params, s) =>
+        new Promise((_, reject) => {
+          signal = s;
+          s.addEventListener("abort", () => reject(new RpcError(-32800, "cancelled")), {
+            once: true,
+          });
+          started();
+        }),
+    );
+    const controller = new AbortController();
+    const pending = agent.request("_x.ai/exit_plan_mode", PARAMS, controller.signal);
+    pending.catch(() => undefined);
+    await running;
+    expect(signal?.aborted).toBe(false);
+    controller.abort();
+    await expect(pending).rejects.toBeInstanceOf(RpcError);
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+    close();
+  });
+
+  it("连接关闭时 signal 触发", async () => {
+    let signal: AbortSignal | undefined;
+    let started!: () => void;
+    const running = new Promise<void>((r) => (started = r));
+    const { agent, close } = await connectExt((_m, _p, s) => {
+      signal = s;
+      started();
+      return new Promise(() => undefined);
+    });
+    agent.request("_x.ai/exit_plan_mode", PARAMS).catch(() => undefined);
+    await running;
+    close();
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
   });
 });
