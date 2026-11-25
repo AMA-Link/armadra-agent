@@ -4,6 +4,12 @@
 
 > 从 0.6.0 起 [CHANGELOG.md](CHANGELOG.md) 为英文，本文件保留中文记录（0.1–0.5.1 的完整历史在此）。新条目两份都要加。
 
+## 未发布
+
+### 新增
+
+- **ACP 客户端扩展请求**：`AcpClientOptions.onExtRequest(method, params, signal)` 接方法名以 `_` 开头的请求（如 grok 的 `_x.ai/exit_plan_mode`）；参数原样交回，返回值即 result，抛 `RpcError` 回对应错误，`signal` 在对端撤回请求或连接关闭时 abort。`AcpClient.features.extRequest` 为 `true`。没给回调时这类请求仍回 -32601，没有 `_` 前缀的未知方法也一样。
+
 ## 0.23.0（2026-11-24）
 
 ### 新增

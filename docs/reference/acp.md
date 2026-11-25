@@ -261,7 +261,8 @@ Pi 没有权限模式，也没有审批通道，所以桥给每次运行加载�
 - `elicitation/complete`（Agent → 客户端通知，URL 型 elicitation 在带外完成）：构造参数给了 `onElicitationComplete({ elicitationId })` 才接，并把 `initialize` 的 `elicitation` 声明成 `{ form: {}, url: {} }`（只给 `onElicitation` 时仍是 `{}`）。同一 `elicitationId` 的请求若还没答，它处理器的 `signal` 随之 abort、答 `{ action: "cancel" }`，宿主据此收掉卡片；参数里没有字符串 `elicitationId` 的通知被忽略。
 - 表单字段：除 `string` / `number` / `integer` / `boolean` 外，`type: "array"` 是字符串多选（`items: { type: "string", enum }` 或带标题的 `items: { anyOf: [{ const, title }] }`，可带 `minItems` / `maxItems`），`string` 字段可带 `oneOf: [{ const, title }]`（带标题的单选）。答复 `content` 里多选值是字符串数组。`multiSelectOptions(field)` / `singleSelectOptions(field)` 把这几种写法收成 `{ const, title }` 列表（不是对应控件返回 undefined）；不认识的 `type` 原样保留，不要当已知控件渲染。
 - 会话管理：`listSessions(cwd?, cursor?, signal?)` 发 `session/list`（`supportsList()`），`listAllSessions(cwd?, signal?, maxPages = 100)` 跟 `nextCursor` 翻页取全；`closeSession(sessionId, signal?)` 发 `session/close`（`supportsClose()`）。规范要求关闭等同先取消，所以 `closeSession` 先让该会话挂起的权限请求答 `cancelled`、elicitation 答 `cancel`，别的会话不受影响。Agent 没声明能力会答 -32601，需要登录时答 -32000，错误码都原样抛出。
-- `AcpClient.features`：`{ mcpServers, sessionMeta, elicitation, configOptions, terminal, auth, elicitationComplete }`，宿主据此做特性检测。
+- `_` 开头的扩展请求（Agent 向宿主发的厂商扩展方法，ACP 规定扩展方法以下划线开头，如 grok 的 `_x.ai/exit_plan_mode`、`_x.ai/ask_user_question`）：构造参数给了 `onExtRequest(method, params, signal)` 才接；方法名与参数原样交回，返回值原样作为 `result`，抛 `RpcError` 回对应错误，其他异常回 -32603；`signal` 在对端撤回请求（`$/cancel_request`）或连接关闭时 abort。没给回调、或方法名不以 `_` 开头且不是上面已有处理器接管的，仍回 -32601。客户端不解释扩展请求的形状，应答格式由宿主按各家的真实请求决定。
+- `AcpClient.features`：`{ mcpServers, sessionMeta, elicitation, configOptions, terminal, auth, elicitationComplete, extRequest }`，宿主据此做特性检测。
 
 `AcpDriver` 在客户端之上实现驱动契约（`AgentDriver`）：
 
