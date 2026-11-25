@@ -88,6 +88,13 @@ export interface AcpClientHandlers {
    * 答复，抛 `RpcError` 回对应错误。`signal`：连接关闭时 abort。权限、cwd 限制与输出上限由宿主负责。
    */
   onTerminal?(method: string, params: unknown, signal: AbortSignal): Promise<unknown>;
+  /**
+   * 扩展请求：方法名以 `_` 开头（ACP 规定扩展方法以下划线开头，如 grok 的 `_x.ai/exit_plan_mode`、
+   * `_x.ai/ask_user_question`）且不是上面已有处理器接管的请求。`method` 是完整方法名，`params` 原样交回，返回值原样作为
+   * `result`，抛 `RpcError` 回对应错误（其他异常回 -32603）。`signal`：对端撤回本请求（`$/cancel_request`）或连接关闭时
+   * abort。没给它，扩展请求仍回 -32601。
+   */
+  onExtRequest?(method: string, params: unknown, signal: AbortSignal): Promise<unknown>;
   onProtocolError?(line: string, reason: string): void;
   onClose?(): void;
 }
@@ -151,7 +158,8 @@ export class AcpClient {
    * - `configOptions`：`setConfigOption` 与开会话答的 `configOptions`；
    * - `terminal`：构造参数 `onTerminal` 接 `terminal/*`；
    * - `auth`：`authenticate` / `logout`、构造参数 `authTerminal`、`isAuthRequiredError`；
-   * - `elicitationComplete`：构造参数 `onElicitationComplete` 接 `elicitation/complete`，表单字段含多选与 `oneOf`。
+   * - `elicitationComplete`：构造参数 `onElicitationComplete` 接 `elicitation/complete`，表单字段含多选与 `oneOf`；
+   * - `extRequest`：构造参数 `onExtRequest` 接 `_` 开头的扩展请求。
    */
   static readonly features: {
     readonly mcpServers: true;
@@ -161,6 +169,7 @@ export class AcpClient {
     readonly terminal: true;
     readonly auth: true;
     readonly elicitationComplete: true;
+    readonly extRequest: true;
   } = {
     mcpServers: true,
     sessionMeta: true,
@@ -169,6 +178,7 @@ export class AcpClient {
     terminal: true,
     auth: true,
     elicitationComplete: true,
+    extRequest: true,
   };
 
   private readonly peer: JsonRpcPeer;
@@ -413,6 +423,8 @@ export class AcpClient {
       return this.onElicitation(params, connection);
     if (method.startsWith("terminal/") && this.options.onTerminal !== undefined)
       return this.options.onTerminal(method, params, connection);
+    if (method.startsWith("_") && this.options.onExtRequest !== undefined)
+      return this.options.onExtRequest(method, params, connection);
     if (method !== ACP_METHODS.requestPermission)
       throw new RpcError(RPC_ERRORS.methodNotFound, `client does not support ${method}`);
     const request = params as AcpRequestPermissionParams;
