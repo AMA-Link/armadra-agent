@@ -85,14 +85,19 @@ describe.skipIf(!hasBundle)("e2e：ACP 桥（bundle 子进程 + 假 pi）", () =
       .filter((l) => l !== "")
       .map((l) => JSON.parse(l) as { type?: string; argv?: string[] });
     expect(commands[0]?.argv?.slice(0, 2)).toEqual(["--mode", "rpc"]);
-    expect(commands.flatMap((c) => (c.type !== undefined ? [c.type] : []))).toEqual([
+    const types = commands.flatMap((c) => (c.type !== undefined ? [c.type] : []));
+    // session/new 答复后的用量快照是答复之后异步发的（见 PiBridgeServer.opened），
+    // 与客户端紧接着发的 prompt 没有先后保证；只断言确定的部分：
+    // 启动三条在前，prompt 恰一条，用量快照恰两条（开会话一次、回合结束一次），回合结束那条在 prompt 之后。
+    expect(types.slice(0, 3)).toEqual([
       "get_state",
       "get_available_models",
       "get_available_thinking_levels",
-      "get_session_stats",
-      "prompt",
-      "get_session_stats",
     ]);
+    expect(types.filter((t) => t === "prompt")).toHaveLength(1);
+    expect(types.filter((t) => t === "get_session_stats")).toHaveLength(2);
+    expect(types.at(-1)).toBe("get_session_stats");
+    expect(types).toHaveLength(6);
   });
 
   it("pi 低于下限：session/new 答 pi_outdated，不起进程", async () => {
