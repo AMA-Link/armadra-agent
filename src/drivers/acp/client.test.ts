@@ -1,8 +1,9 @@
 import { PassThrough } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { JsonRpcPeer, RpcError } from "../jsonrpc.js";
 import { assertAcpWire } from "../../../test/helpers/acp-schema.js";
-import { memoryTransport } from "../test-support.js";
+import { memoryTransport, type WireLine } from "../test-support.js";
+import { createLineReader } from "../../modes/rpc/jsonl.js";
 import { runFakeAcpAgent } from "./testing/fake-agent.js";
 import { AcpClient } from "./client.js";
 import type { AcpStdioMcpServer } from "./types.js";
@@ -39,6 +40,7 @@ describe("AcpClient 开会话的 mcpServers", () => {
       terminal: true,
       auth: true,
       elicitationComplete: true,
+      extRequest: true,
     });
   });
 
@@ -390,6 +392,7 @@ describe("AcpClient 的 terminal/*", () => {
     await client.initialize();
     return {
       agent,
+      client,
       capabilities: initParams!.clientCapabilities,
       close: () => {
         client.close();
@@ -430,6 +433,21 @@ describe("AcpClient 的 terminal/*", () => {
     close();
   });
 
+  it("session/cancel 让该会话挂起的 terminal 回调 abort，回调不理会 signal 也答 -32800", async () => {
+    let signal: AbortSignal | undefined;
+    const { agent, client, close } = await connectTerminal((_m, _p, s) => {
+      signal = s;
+      return new Promise(() => undefined);
+    });
+    const pending = agent.request("terminal/create", { sessionId: "s1", command: "ls" });
+    const settled = expect(pending).rejects.toMatchObject({ code: -32800 });
+    await vi.waitFor(() => expect(signal).toBeDefined());
+    await client.cancel("s1");
+    expect(signal?.aborted).toBe(true);
+    await settled;
+    close();
+  });
+
   it("处理器抛 RpcError 即回对应错误；非 terminal/ 方法仍 method not found", async () => {
     const { agent, close } = await connectTerminal(async () => {
       throw new RpcError(-32602, "bad cwd");
@@ -437,5 +455,173 @@ describe("AcpClient 的 terminal/*", () => {
     await expect(agent.request("terminal/create", {})).rejects.toMatchObject({ code: -32602 });
     await expect(agent.request("fs/read_text_file", {})).rejects.toMatchObject({ code: -32601 });
     close();
+  });
+});
+
+describe("AcpClient 的扩展请求 _*", () => {
+  type OnExt = NonNullable<ConstructorParameters<typeof AcpClient>[0]["onExtRequest"]>;
+  const PARAMS = { sessionId: "s1", toolCallId: "call-1", planContent: "# 计划" };
+
+  /** 客户端与一个最小的对端 Agent（只答 initialize）；对端也开 `$/cancel_request`，并录线。 */
+  async function connectExt(onExtRequest?: OnExt) {
+    const toAgent = new PassThrough();
+    const fromAgent = new PassThrough();
+    const wire: WireLine[] = [];
+    const tap = (stream: PassThrough, dir: "in" | "out"): void => {
+      createLineReader(stream, (line) => {
+        wire.push({ dir, msg: JSON.parse(line) as Record<string, unknown> });
+      });
+    };
+    tap(toAgent, "in");
+    tap(fromAgent, "out");
+    const agent = new JsonRpcPeer({
+      input: toAgent,
+      output: fromAgent,
+      cancelRequests: true,
+      onRequest: async (method) => {
+        if (method !== "initialize") throw new RpcError(-32601, method);
+        return { protocolVersion: 1, agentCapabilities: {} };
+      },
+    });
+    const protocolErrors: string[] = [];
+    const client = new AcpClient({
+      input: fromAgent,
+      output: toAgent,
+      onProtocolError: (_line, reason) => protocolErrors.push(reason),
+      ...(onExtRequest !== undefined ? { onExtRequest } : {}),
+    });
+    await client.initialize();
+    return {
+      agent,
+      client,
+      wire,
+      protocolErrors,
+      close: () => {
+        client.close();
+        agent.close();
+      },
+    };
+  }
+
+  it("features.extRequest 为 true", () => {
+    expect(AcpClient.features.extRequest).toBe(true);
+  });
+
+  it("方法名与参数原样交给回调，返回值原样作为 result", async () => {
+    const seen: Array<[string, unknown]> = [];
+    const { agent, wire, close } = await connectExt(async (method, params) => {
+      seen.push([method, params]);
+      return { outcome: "approved", extra: [1, 2] };
+    });
+    await expect(agent.request("_x.ai/exit_plan_mode", PARAMS)).resolves.toEqual({
+      outcome: "approved",
+      extra: [1, 2],
+    });
+    expect(seen).toEqual([["_x.ai/exit_plan_mode", PARAMS]]);
+    assertAcpWire(wire);
+    close();
+  });
+
+  it("回调抛 RpcError 回对应错误；抛其他异常对端只看到 internal error，原文交给 onProtocolError", async () => {
+    let n = 0;
+    const { agent, wire, protocolErrors, close } = await connectExt(async () => {
+      if (n++ === 0) throw new RpcError(-32602, "bad plan");
+      throw new Error("secret detail");
+    });
+    await expect(agent.request("_x.ai/exit_plan_mode", PARAMS)).rejects.toMatchObject({
+      code: -32602,
+      message: "bad plan",
+    });
+    await expect(agent.request("_x.ai/ask_user_question", PARAMS)).rejects.toMatchObject({
+      code: -32603,
+      message: "internal error",
+    });
+    expect(protocolErrors).toEqual(["_x.ai/ask_user_question: secret detail"]);
+    expect(JSON.stringify(wire)).not.toContain("secret detail");
+    assertAcpWire(wire);
+    close();
+  });
+
+  it("没给回调：扩展请求回 -32601", async () => {
+    const { agent, close } = await connectExt();
+    await expect(agent.request("_x.ai/exit_plan_mode", PARAMS)).rejects.toMatchObject({
+      code: -32601,
+    });
+    close();
+  });
+
+  it("给了回调：非 _ 前缀的未知方法仍回 -32601，且不进回调", async () => {
+    const seen: string[] = [];
+    const { agent, close } = await connectExt(async (method) => {
+      seen.push(method);
+      return {};
+    });
+    await expect(agent.request("fs/read_text_file", {})).rejects.toMatchObject({ code: -32601 });
+    await expect(agent.request("x.ai/exit_plan_mode", {})).rejects.toMatchObject({ code: -32601 });
+    expect(seen).toEqual([]);
+    close();
+  });
+
+  /** 挂起的回调：记下 signal，且不理会它。 */
+  function hanging() {
+    const state: { signal?: AbortSignal } = {};
+    let started!: () => void;
+    const running = new Promise<void>((r) => (started = r));
+    const handler: OnExt = (_m, _p, s) => {
+      state.signal = s;
+      started();
+      return new Promise(() => undefined);
+    };
+    return { state, running, handler };
+  }
+
+  it("对端撤回请求时 signal 触发，错误响应 -32800", async () => {
+    const h = hanging();
+    const { agent, wire, close } = await connectExt(h.handler);
+    const controller = new AbortController();
+    const pending = agent.request("_x.ai/exit_plan_mode", PARAMS, controller.signal);
+    pending.catch(() => undefined);
+    await h.running;
+    expect(h.state.signal?.aborted).toBe(false);
+    controller.abort();
+    await vi.waitFor(() => expect(h.state.signal?.aborted).toBe(true));
+    const id = wire.find((l) => l.dir === "out" && l.msg["method"] === "_x.ai/exit_plan_mode")?.msg[
+      "id"
+    ];
+    await vi.waitFor(() =>
+      expect(
+        wire.find((l) => l.dir === "in" && l.msg["id"] === id && l.msg["error"] !== undefined)?.msg[
+          "error"
+        ],
+      ).toMatchObject({ code: -32800 }),
+    );
+    close();
+  });
+
+  it("连接关闭时 signal 触发", async () => {
+    const h = hanging();
+    const { agent, close } = await connectExt(h.handler);
+    agent.request("_x.ai/exit_plan_mode", PARAMS).catch(() => undefined);
+    await h.running;
+    close();
+    await vi.waitFor(() => expect(h.state.signal?.aborted).toBe(true));
+  });
+
+  it("session/cancel 与 closeSession 让该会话挂起的扩展回调 abort，回调不理会 signal 也答 -32800", async () => {
+    for (const end of ["cancel", "close"] as const) {
+      const h = hanging();
+      const { agent, client, close } = await connectExt(h.handler);
+      const pending = agent.request("_x.ai/exit_plan_mode", PARAMS);
+      const settled = expect(pending).rejects.toMatchObject({ code: -32800 });
+      await h.running;
+      // 别的会话不受影响
+      if (end === "cancel") await client.cancel("other");
+      expect(h.state.signal?.aborted).toBe(false);
+      if (end === "cancel") await client.cancel("s1");
+      else void client.closeSession("s1").catch(() => undefined);
+      expect(h.state.signal?.aborted).toBe(true);
+      await settled;
+      close();
+    }
   });
 });

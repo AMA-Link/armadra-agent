@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## Unreleased
+
+### Added
+
+- **ACP client extension requests**: `AcpClientOptions.onExtRequest(method, params, signal)` receives requests whose method starts with `_` (e.g. grok's `_x.ai/exit_plan_mode`); params are handed over untouched, the return value is the result, a thrown `RpcError` is answered as that error, and `signal` aborts when the peer withdraws the request or the connection closes. `AcpClient.features.extRequest` is `true`. Without the callback these requests still answer -32601, as do unknown methods without the `_` prefix.
+
 ## 0.23.0 (2026-11-24)
 
 ### Added
