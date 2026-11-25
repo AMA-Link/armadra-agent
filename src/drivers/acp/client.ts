@@ -113,6 +113,14 @@ function mcpServersOf(options: AcpSessionOptions | undefined) {
   return [...(options?.mcpServers ?? [])];
 }
 
+/** 开会话参数里的 `_meta`：缺席、`undefined`、空对象都不发该键；有值时原样放入（不解释、不校验）。 */
+function metaOf(options: AcpSessionOptions | undefined): {
+  _meta?: Readonly<Record<string, unknown>>;
+} {
+  const meta = options?.meta;
+  return meta !== undefined && Object.keys(meta).length > 0 ? { _meta: meta } : {};
+}
+
 const ELICITATION_ACTIONS = new Set(["accept", "decline", "cancel"]);
 
 /** 处理器的答复收成规范形状：动作不认识当 cancel，`content` 只随 accept。 */
@@ -138,6 +146,7 @@ export class AcpClient {
   /**
    * 本版客户端支持的可选能力，供宿主做特性检测（旧版没有这个字段，旧一点的只有 `mcpServers`）：
    * - `mcpServers`：开会话时可经 {@link AcpSessionOptions} 传 MCP 服务器；
+   * - `sessionMeta`：开会话时可经 {@link AcpSessionOptions}`.meta` 带会话级 `_meta`；
    * - `elicitation`：构造参数 `onElicitation` 接 `elicitation/create`；
    * - `configOptions`：`setConfigOption` 与开会话答的 `configOptions`；
    * - `terminal`：构造参数 `onTerminal` 接 `terminal/*`；
@@ -146,6 +155,7 @@ export class AcpClient {
    */
   static readonly features: {
     readonly mcpServers: true;
+    readonly sessionMeta: true;
     readonly elicitation: true;
     readonly configOptions: true;
     readonly terminal: true;
@@ -153,6 +163,7 @@ export class AcpClient {
     readonly elicitationComplete: true;
   } = {
     mcpServers: true,
+    sessionMeta: true,
     elicitation: true,
     configOptions: true,
     terminal: true,
@@ -288,7 +299,7 @@ export class AcpClient {
   ): Promise<AcpNewSessionResult> {
     return this.peer.request(
       ACP_METHODS.sessionNew,
-      { cwd, mcpServers: mcpServersOf(options) },
+      { cwd, mcpServers: mcpServersOf(options), ...metaOf(options) },
       signal,
     );
   }
@@ -302,7 +313,7 @@ export class AcpClient {
   ): Promise<AcpLoadSessionResult> {
     return this.peer.request(
       ACP_METHODS.sessionResume,
-      { sessionId, cwd, mcpServers: mcpServersOf(options) },
+      { sessionId, cwd, mcpServers: mcpServersOf(options), ...metaOf(options) },
       signal,
     );
   }
@@ -316,7 +327,7 @@ export class AcpClient {
   ): Promise<AcpLoadSessionResult> {
     return this.peer.request(
       ACP_METHODS.sessionLoad,
-      { sessionId, cwd, mcpServers: mcpServersOf(options) },
+      { sessionId, cwd, mcpServers: mcpServersOf(options), ...metaOf(options) },
       signal,
     );
   }

@@ -189,6 +189,11 @@ export type AcpMcpServer = AcpStdioMcpServer | Record<string, unknown>;
 export interface AcpSessionOptions {
   /** 随 `session/new|resume|load` 发给 Agent；缺省空数组。 */
   mcpServers?: readonly AcpMcpServer[];
+  /**
+   * 原样作为 `session/new|resume|load` 的 `_meta` 发给 Agent；顶层键是各家自己的命名空间，客户端不解释、
+   * 不校验。缺席、`undefined`、空对象时不发 `_meta` 键。只随这三个开会话方法发，不进 `prompt` 等请求。
+   */
+  meta?: Readonly<Record<string, unknown>> | undefined;
 }
 
 export interface AcpSessionMode {
@@ -205,6 +210,7 @@ export interface AcpSessionModeState {
 export interface AcpNewSessionParams {
   cwd: string;
   mcpServers: AcpMcpServer[];
+  _meta?: Readonly<Record<string, unknown>>;
 }
 export interface AcpNewSessionResult {
   sessionId: string;
@@ -216,6 +222,7 @@ export interface AcpLoadSessionParams {
   sessionId: string;
   cwd: string;
   mcpServers: AcpMcpServer[];
+  _meta?: Readonly<Record<string, unknown>>;
 }
 export interface AcpLoadSessionResult {
   modes?: AcpSessionModeState | null;
