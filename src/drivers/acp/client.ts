@@ -85,14 +85,15 @@ export interface AcpClientHandlers {
   /**
    * `terminal/*`（create / output / wait_for_exit / kill / release）：宿主替 Agent 起终端。给了它才声明
    * `clientCapabilities.terminal: true` 并把这些请求交给它；`method` 是完整方法名，`params` 原样交回，返回值即
-   * 答复，抛 `RpcError` 回对应错误。`signal`：连接关闭时 abort。权限、cwd 限制与输出上限由宿主负责。
+   * 答复，抛 `RpcError` 回对应错误。`signal`：连接关闭、或 `params.sessionId` 对应的会话被 `cancel` / `closeSession` 时 abort（abort 后无论回调是否理会都答 -32800）。权限、cwd 限制与输出上限由宿主负责。
    */
   onTerminal?(method: string, params: unknown, signal: AbortSignal): Promise<unknown>;
   /**
    * 扩展请求：方法名以 `_` 开头（ACP 规定扩展方法以下划线开头，如 grok 的 `_x.ai/exit_plan_mode`、
    * `_x.ai/ask_user_question`）且不是上面已有处理器接管的请求。`method` 是完整方法名，`params` 原样交回，返回值原样作为
-   * `result`，抛 `RpcError` 回对应错误（其他异常回 -32603）。`signal`：对端撤回本请求（`$/cancel_request`）或连接关闭时
-   * abort。没给它，扩展请求仍回 -32601。
+   * `result`，抛 `RpcError` 回对应错误（其他异常回 -32603 `internal error`）。`signal`：对端撤回本请求（`$/cancel_request`）、连接关闭、
+   * 或 `params.sessionId` 对应的会话被 `cancel` / `closeSession` 时 abort；abort 后无论回调是否理会 signal 都答 -32800。
+   * 非 `RpcError` 的异常对端只看到 `internal error`，原始信息交给 `onProtocolError`（没给则写 stderr）。没给它，扩展请求仍回 -32601。
    */
   onExtRequest?(method: string, params: unknown, signal: AbortSignal): Promise<unknown>;
   onProtocolError?(line: string, reason: string): void;
@@ -186,6 +187,8 @@ export class AcpClient {
   private readonly pendingPermissions = new Map<string, Set<AbortController>>();
   /** sessionId（没给就是空串）→ 挂起 elicitation 的取消器。 */
   private readonly pendingElicitations = new Map<string, Set<AbortController>>();
+  /** 挂起的 `terminal/*` 与扩展请求，按 `params.sessionId`（字符串时）登记；cancel / closeSession 时一起 abort。 */
+  private readonly pendingHostCalls = new Map<string, Set<AbortController>>();
   /** elicitationId → 挂起 elicitation 的取消器（`elicitation/complete` 用）。 */
   private readonly elicitationsById = new Map<string, AbortController>();
   private initResult: AcpInitializeResult | undefined;
@@ -204,6 +207,7 @@ export class AcpClient {
       onClose: () => {
         for (const set of this.pendingPermissions.values()) for (const c of set) c.abort();
         for (const set of this.pendingElicitations.values()) for (const c of set) c.abort();
+        for (const set of this.pendingHostCalls.values()) for (const c of set) c.abort();
         options.onClose?.();
       },
       ...(options.onProtocolError !== undefined
@@ -379,6 +383,7 @@ export class AcpClient {
   closeSession(sessionId: string, signal?: AbortSignal): Promise<AcpCloseSessionResult> {
     for (const controller of this.pendingPermissions.get(sessionId) ?? []) controller.abort();
     for (const controller of this.pendingElicitations.get(sessionId) ?? []) controller.abort();
+    for (const controller of this.pendingHostCalls.get(sessionId) ?? []) controller.abort();
     return this.peer.request(ACP_METHODS.sessionClose, { sessionId }, signal);
   }
 
@@ -407,11 +412,56 @@ export class AcpClient {
   async cancel(sessionId: string): Promise<void> {
     for (const controller of this.pendingPermissions.get(sessionId) ?? []) controller.abort();
     for (const controller of this.pendingElicitations.get(sessionId) ?? []) controller.abort();
+    for (const controller of this.pendingHostCalls.get(sessionId) ?? []) controller.abort();
     await this.peer.notify(ACP_METHODS.sessionCancel, { sessionId });
   }
 
   close(): void {
     this.peer.close();
+  }
+
+  /**
+   * 把 `terminal/*` 与扩展请求交给宿主回调：`params.sessionId` 是字符串时登记，cancel / closeSession 时 abort；
+   * 回调与 signal 竞速，abort 后即使回调不理会 signal 也答 -32800。`maskErrors`：非 `RpcError` 的异常对端只看到
+   * 固定文案 `internal error`，原始信息交给 `onProtocolError`（没有就写 stderr）。
+   */
+  private async hostCall(
+    method: string,
+    params: unknown,
+    connection: AbortSignal,
+    handler: (method: string, params: unknown, signal: AbortSignal) => Promise<unknown>,
+    maskErrors: boolean,
+  ): Promise<unknown> {
+    const sessionId = (params as { sessionId?: unknown } | null | undefined)?.sessionId;
+    const controller = new AbortController();
+    const set =
+      typeof sessionId === "string"
+        ? (this.pendingHostCalls.get(sessionId) ?? new Set())
+        : undefined;
+    if (set !== undefined && typeof sessionId === "string") {
+      set.add(controller);
+      this.pendingHostCalls.set(sessionId, set);
+    }
+    const signal = AbortSignal.any([controller.signal, connection]);
+    const cancelled = (): RpcError =>
+      new RpcError(RPC_ERRORS.requestCancelled, `${method}: request cancelled`);
+    try {
+      return await Promise.race([
+        (async () => handler(method, params, signal))(),
+        new Promise<never>((_, reject) => {
+          if (signal.aborted) reject(cancelled());
+          else signal.addEventListener("abort", () => reject(cancelled()), { once: true });
+        }),
+      ]);
+    } catch (error) {
+      if (!maskErrors || error instanceof RpcError) throw error;
+      const reason = `${method}: ${error instanceof Error ? error.message : String(error)}`;
+      if (this.options.onProtocolError !== undefined) this.options.onProtocolError(method, reason);
+      else process.stderr.write(`${reason}\n`);
+      throw new RpcError(RPC_ERRORS.internalError, "internal error");
+    } finally {
+      set?.delete(controller);
+    }
   }
 
   private async onRequest(
@@ -422,9 +472,9 @@ export class AcpClient {
     if (method === ACP_METHODS.elicitationCreate && this.options.onElicitation !== undefined)
       return this.onElicitation(params, connection);
     if (method.startsWith("terminal/") && this.options.onTerminal !== undefined)
-      return this.options.onTerminal(method, params, connection);
+      return this.hostCall(method, params, connection, this.options.onTerminal, false);
     if (method.startsWith("_") && this.options.onExtRequest !== undefined)
-      return this.options.onExtRequest(method, params, connection);
+      return this.hostCall(method, params, connection, this.options.onExtRequest, true);
     if (method !== ACP_METHODS.requestPermission)
       throw new RpcError(RPC_ERRORS.methodNotFound, `client does not support ${method}`);
     const request = params as AcpRequestPermissionParams;
