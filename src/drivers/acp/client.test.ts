@@ -96,6 +96,7 @@ describe("AcpClient 开会话的 _meta", () => {
       expect(params?.["_meta"]).toEqual(META);
       expect(params?.["mcpServers"]).toEqual([]);
     }
+    assertAcpWire(peer.wire);
     await peer.transport.terminate();
   });
 
@@ -103,6 +104,7 @@ describe("AcpClient 开会话的 _meta", () => {
     const { client, peer } = await connect();
     await client.newSession("/w", undefined, { mcpServers: [SERVER], meta: META });
     expect(sent(peer, "session/new")).toEqual([{ cwd: "/w", mcpServers: [SERVER], _meta: META }]);
+    assertAcpWire(peer.wire);
     await peer.transport.terminate();
   });
 
@@ -122,6 +124,26 @@ describe("AcpClient 开会话的 _meta", () => {
       expect(Object.keys(sent(peer, method)[0] as object)).not.toContain("_meta");
     }
     await peer.transport.terminate();
+  });
+
+  it("Agent 对带 _meta 的 session/new 回 -32602：RpcError 原样抛出", async () => {
+    const toAgent = new PassThrough();
+    const fromAgent = new PassThrough();
+    const agent = new JsonRpcPeer({
+      input: toAgent,
+      output: fromAgent,
+      onRequest: async (method) => {
+        if (method === "initialize") return { protocolVersion: 1, agentCapabilities: {} };
+        throw new RpcError(-32602, "bad _meta");
+      },
+    });
+    const client = new AcpClient({ input: fromAgent, output: toAgent });
+    await client.initialize();
+    const error = await client.newSession("/w", undefined, { meta: META }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RpcError);
+    expect(error).toMatchObject({ code: -32602, message: "bad _meta" });
+    client.close();
+    agent.close();
   });
 
   it("meta 不进 prompt", async () => {
