@@ -10,11 +10,6 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 ### Added
 
 - **ACP client session `_meta`**: `AcpClient.features.sessionMeta` (`true`) and `AcpSessionOptions.meta`; `newSession` / `resumeSession` / `loadSession` forward `meta` verbatim as `_meta` in the request params (vendor namespaces are neither interpreted nor validated). With no `meta` (absent, `undefined` or `{}`) no `_meta` key is sent and the wire is unchanged; `prompt` and other requests never carry it.
-
-## 0.22.0 (2026-11-24)
-
-### Added
-
 - **Model tiers**: `models.tiers.<light|standard|strong|max>` maps each tier to a model, an external agent, or both, with an optional `thinkingLevel` (user level only). The `task` tool takes `tier` (with a one-line scale in its description); the tier is resolved with fallback to the nearest configured tier, may reroute to an external agent (not in plan mode), and the hit tier is recorded on the task. Built-in `explore` uses `tier: light`; agent definition files accept `tier:`.
 - **`ama --tier <tier>`**: picks the main session model and thinking level from `models.tiers` (`--model` and `--thinking` win). When no tier near it is configured it keeps going (session record, `defaultModel`, picker) and writes one line to stderr.
 - **`ama models tiers`**: prints each tier's target, thinking level, price per 1M tokens and the estimated cost of a typical task.
@@ -32,16 +27,21 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 - **Host API 1.5**: `workflows.provide(handler)` (`versions`, `run(request) -> { runId, url? }`; one handler per HostContext, a second throws `workflow_handler_exists`; `workflow_unsupported` means waiting for confirmation on the canvas), the `workflow_update` host event. After hand-off ama does not mirror progress and cannot cancel. `HOST_API_MINOR` is now 5.
 - **Task tree**: tasks carry optional `parentTaskId`, `depth` and `tier`; `/tasks`, `task_ctl list` and the agent bar show them as an indented tree with a "waiting for subtasks" state; RPC, host runner requests and ACP `_meta.ama` carry the optional fields (`HOST_API_MINOR` and `RPC_PROTOCOL_VERSION` unchanged).
 - **`@armadra/agent/workflow`**: a pure subpath export (`validateWorkflow`, `parseWorkflowFile`, `formatWorkflowFile`, `renderWorkflowPrompt`, `resolveWorkflowParams`, `validateOwnsGlob`, `globsOverlap`, `workflowJsonSchema`) plus the JSON files `@armadra/agent/workflow.schema.json` and `@armadra/agent/workflow-glob-vectors.json`.
+
+### Removed
+
+- **Breaking: `models.aliases`, `subagents.defaultModel`, the `task` `thinkingLevel` parameter, and `model: fast` / `model: strong` in agent definition files.** Configs that still set the keys get an unknown-key warning and the keys are ignored, `thinkingLevel` is rejected with a hint to use `tier`, and definition files with `model: fast|strong` are skipped with a warning. Use `models.tiers` and `tier` instead.
+
+## 0.22.0 (2026-11-24)
+
+### Added
+
 - **`task_land`**: lands a worktree task's commits on the current branch through the permission pipeline. On conflict, or when parent uncommitted work would be overwritten, the parent is restored and the worktree is kept.
 - **`subagents.worktreeSetup`**: a user-level command run once in each new task worktree, for example to link dependencies.
 
 ### Changed
 
 - **Worktree tasks now see uncommitted work**: they start from a snapshot of staged, unstaged and untracked changes. The parent index and working tree are not touched, and inherited changes are not reported or landed.
-
-### Removed
-
-- **Breaking: `models.aliases`, `subagents.defaultModel`, the `task` `thinkingLevel` parameter, and `model: fast` / `model: strong` in agent definition files.** Configs that still set the keys get an unknown-key warning and the keys are ignored, `thinkingLevel` is rejected with a hint to use `tier`, and definition files with `model: fast|strong` are skipped with a warning. Use `models.tiers` and `tier` instead.
 
 ### Fixed
 
