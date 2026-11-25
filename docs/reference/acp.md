@@ -246,7 +246,7 @@ Pi 没有权限模式，也没有审批通道，所以桥给每次运行加载�
 - 开会话（`newSession` / `resumeSession` / `loadSession`）的 `mcpServers` 缺省为空数组；宿主可传第三个参数
   `{ mcpServers }`（如 stdio 的 `{ name, command, args, env: [{ name, value }] }`），原样转发给 Agent。
   `AcpClient.features.mcpServers === true` 表示支持（旧版没有 `features`）。ama 自己作客户端时仍不传。
-- 开会话的第三个参数还可带 `meta`（`Readonly<Record<string, unknown>>`）：`newSession` / `resumeSession` / `loadSession` 把它原样放进请求参数的 `_meta`，顶层键是各家自己的命名空间（如 `antigravity.systemPrompt.append`），客户端不解释、不校验。`meta` 缺席、`undefined` 或空对象时不发 `_meta` 键，线路与旧版逐字节相同；只随这三个开会话方法发，不进 `prompt` 等其他请求。`AcpClient.features.sessionMeta === true` 表示支持（旧版没有该项，宿主一律当不支持）。
+- 开会话的第三个参数还可带 `meta`（`Readonly<Record<string, unknown>>`）：`newSession` / `resumeSession` / `loadSession` 把它原样放进请求参数的 `_meta`，顶层键是各家自己的命名空间（如 `antigravity.systemPrompt.append`），客户端不解释、不校验。`meta` 缺席、`undefined` 或空对象时不发 `_meta` 键，线路与旧版逐字节相同；只随这三个开会话方法发，不进 `prompt` 等其他请求。`meta` 必须能被 JSON 序列化。`AcpClient.features.sessionMeta === true` 表示支持（旧版没有该项，宿主一律当不支持）。
 - `elicitation/create`（Agent 向人要结构化输入）：构造参数给了 `onElicitation(params, signal)` 才在 `initialize` 声明
   `clientCapabilities.elicitation` 并接这个请求；没给时不声明、请求回 method not found（与旧版相同）。答复收成
   `{ action: "accept" | "decline" | "cancel", content? }`（`content` 只随 accept，不认识的动作当 cancel）；`cancel(sessionId)`
