@@ -5,6 +5,12 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 > This file is in English starting with 0.6.0. Release notes for 0.1 through 0.5.1 are in Chinese in
 > [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md). New entries go into both files.
 
+## 0.25.0 (2026-11-27)
+
+### Maintenance
+
+- **Patch release aligned with the unified version**: no changes in the agent.
+
 ## 0.24.0 (2026-11-25)
 
 ### Added
